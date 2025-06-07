@@ -761,36 +761,37 @@ export default function ProfilePage() {
                     <span className="sr-only">Open menu</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 p-2">
+                <DropdownMenuContent align="end" className="w-72 p-2">
                   {/* Primary Account */}
                   <DropdownMenuItem
                     onClick={() => (!isConnectedAccount ? null : resetToMainAccount())}
                     className={`p-4 ${!isConnectedAccount ? "bg-muted" : "cursor-pointer"}`}
                   >
                     <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center">
-                        <div className="w-6 h-6 mr-2 overflow-hidden rounded-full">
+                      <div className="flex items-center max-w-[85%]">
+                        <div className="w-7 h-7 mr-2 overflow-hidden rounded-full flex-shrink-0">
                           <Image
                             src={user?.user_metadata?.avatar_url || "/placeholder.svg?height=24&width=24"}
                             alt={user?.user_metadata?.full_name || "Main Account"}
-                            width={24}
-                            height={24}
+                            width={28}
+                            height={28}
                             className="object-cover"
                           />
                         </div>
-                        <span>{profile?.name || "Main Account"} (You)</span>
+                        <span className="text-base truncate">{profile?.name || "Main Account"} (You)</span>
                       </div>
                       {!isConnectedAccount && (
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
+                          width="18"
+                          height="18"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
+                          className="flex-shrink-0"
                         >
                           <path d="M20 6 9 17l-5-5" />
                         </svg>
@@ -808,31 +809,31 @@ export default function ProfilePage() {
                       className={`p-4 ${isConnectedAccount && profile?.id === account.id ? "bg-muted" : "cursor-pointer"}`}
                     >
                       <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 mr-2 overflow-hidden rounded-full">
+                        <div className="flex items-center max-w-[75%]">
+                          <div className="w-7 h-7 mr-2 overflow-hidden rounded-full flex-shrink-0">
                             <Image
                               src={account.avatar_url || "/placeholder.svg?height=24&width=24"}
                               alt={account.name}
-                              width={24}
-                              height={24}
+                              width={28}
+                              height={28}
                               className="object-cover"
                             />
                           </div>
-                          <span>{account.name}</span>
+                          <span className="text-base truncate">{account.name}</span>
                         </div>
                         <div className="flex items-center">
                           {isConnectedAccount && profile?.id === account.id && (
                             <svg
                               xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
+                              width="18"
+                              height="18"
                               viewBox="0 0 24 24"
                               fill="none"
                               stroke="currentColor"
                               strokeWidth="2"
                               strokeLinecap="round"
                               strokeLinejoin="round"
-                              className="mr-2"
+                              className="mr-2 flex-shrink-0"
                             >
                               <path d="M20 6 9 17l-5-5" />
                             </svg>
@@ -840,7 +841,7 @@ export default function ProfilePage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
                             onClick={(e) => {
                               e.stopPropagation()
                               handleAccountAction(account)
@@ -858,8 +859,8 @@ export default function ProfilePage() {
                   <DropdownMenuItem onClick={() => setShowAddAccountDialog(true)} className="p-4">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
+                      width="18"
+                      height="18"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -873,7 +874,7 @@ export default function ProfilePage() {
                       <line x1="19" y1="8" x2="24" y2="13" />
                       <line x1="24" y1="8" x2="19" y2="13" />
                     </svg>
-                    Add Connected Account
+                    <span className="text-base">Add Connected Account</span>
                   </DropdownMenuItem>
 
                   <DropdownMenuSeparator />
@@ -881,8 +882,8 @@ export default function ProfilePage() {
                   <DropdownMenuItem onClick={signOut} className="p-4">
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
+                      width="18"
+                      height="18"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -895,7 +896,7 @@ export default function ProfilePage() {
                       <polyline points="16,17 21,12 16,7" />
                       <line x1="21" y1="12" x2="9" y2="12" />
                     </svg>
-                    Log Out
+                    <span className="text-base">Log Out</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
