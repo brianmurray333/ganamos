@@ -3,6 +3,26 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 serve(async (req) => {
   try {
     let postId, posterEmail, posterName, fixerName, postTitle
+    let isAuthorized = false
+
+    // Check authorization
+    const authHeader = req.headers.get("Authorization")
+    const url = new URL(req.url)
+    const authParam = url.searchParams.get("auth")
+
+    // Check if authorized via header or URL param
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      isAuthorized = true
+    } else if (authParam) {
+      isAuthorized = true
+    }
+
+    if (!isAuthorized) {
+      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     // Handle both POST (JSON body) and GET (URL parameters) requests
     if (req.method === "POST") {
@@ -13,7 +33,6 @@ serve(async (req) => {
       fixerName = body.fixerName
       postTitle = body.postTitle
     } else if (req.method === "GET") {
-      const url = new URL(req.url)
       postId = url.searchParams.get("postId")
       posterEmail = url.searchParams.get("posterEmail")
       posterName = url.searchParams.get("posterName")
@@ -25,6 +44,9 @@ serve(async (req) => {
         headers: { "Content-Type": "application/json" },
       })
     }
+
+    // Log the received parameters
+    console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY")
     const fromEmail = Deno.env.get("FROM_EMAIL") || "noreply@ganamos.app"
