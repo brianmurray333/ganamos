@@ -2,7 +2,29 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 serve(async (req) => {
   try {
-    const { postId, posterEmail, posterName, fixerName, postTitle } = await req.json()
+    let postId, posterEmail, posterName, fixerName, postTitle
+
+    // Handle both POST (JSON body) and GET (URL parameters) requests
+    if (req.method === "POST") {
+      const body = await req.json()
+      postId = body.postId
+      posterEmail = body.posterEmail
+      posterName = body.posterName
+      fixerName = body.fixerName
+      postTitle = body.postTitle
+    } else if (req.method === "GET") {
+      const url = new URL(req.url)
+      postId = url.searchParams.get("postId")
+      posterEmail = url.searchParams.get("posterEmail")
+      posterName = url.searchParams.get("posterName")
+      fixerName = url.searchParams.get("fixerName")
+      postTitle = url.searchParams.get("postTitle")
+    } else {
+      return new Response(JSON.stringify({ success: false, error: "Method not allowed" }), {
+        status: 405,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY")
     const fromEmail = Deno.env.get("FROM_EMAIL") || "noreply@ganamos.app"
