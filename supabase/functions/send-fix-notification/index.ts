@@ -2,48 +2,12 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 serve(async (req) => {
   try {
-    const url = new URL(req.url)
-    const authParam = url.searchParams.get("auth")
-    const authHeader = req.headers.get("Authorization")
-
-    // Debug logging
+    console.log("=== EDGE FUNCTION CALLED ===")
     console.log("Request method:", req.method)
-    console.log("Auth header:", authHeader ? "Present" : "Missing")
-    console.log("Auth param:", authParam ? "Present" : "Missing")
     console.log("Full URL:", req.url)
 
+    const url = new URL(req.url)
     let postId, posterEmail, posterName, fixerName, postTitle
-    let isAuthorized = false
-
-    // Check authorization - be more permissive for debugging
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      isAuthorized = true
-      console.log("Authorized via header")
-    } else if (authParam && authParam.length > 10) {
-      isAuthorized = true
-      console.log("Authorized via URL param")
-    }
-
-    if (!isAuthorized) {
-      console.log("Authorization failed - returning 401")
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "Unauthorized",
-          debug: {
-            hasAuthHeader: !!authHeader,
-            hasAuthParam: !!authParam,
-            authParamLength: authParam ? authParam.length : 0,
-          },
-        }),
-        {
-          status: 401,
-          headers: { "Content-Type": "application/json" },
-        },
-      )
-    }
-
-    console.log("Authorization successful!")
 
     // Handle both POST (JSON body) and GET (URL parameters) requests
     if (req.method === "POST") {
@@ -66,7 +30,6 @@ serve(async (req) => {
       })
     }
 
-    // Log the received parameters
     console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY")
@@ -76,10 +39,11 @@ serve(async (req) => {
     console.log("Email config:", { fromEmail, hasResendKey: !!resendApiKey })
 
     if (!resendApiKey) {
+      console.error("RESEND_API_KEY not configured")
       throw new Error("RESEND_API_KEY not configured")
     }
 
-    console.log(`Sending fix notification email to ${posterEmail} for post ${postId}`)
+    console.log(`Attempting to send email to ${posterEmail} for post ${postId}`)
 
     const emailData = {
       from: fromEmail,
@@ -106,6 +70,8 @@ serve(async (req) => {
       `,
     }
 
+    console.log("Calling Resend API...")
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -114,6 +80,8 @@ serve(async (req) => {
       },
       body: JSON.stringify(emailData),
     })
+
+    console.log("Resend API response status:", response.status)
 
     if (!response.ok) {
       const errorText = await response.text()
