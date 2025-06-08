@@ -2,27 +2,48 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 serve(async (req) => {
   try {
+    const url = new URL(req.url)
+    const authParam = url.searchParams.get("auth")
+    const authHeader = req.headers.get("Authorization")
+
+    // Debug logging
+    console.log("Request method:", req.method)
+    console.log("Auth header:", authHeader ? "Present" : "Missing")
+    console.log("Auth param:", authParam ? "Present" : "Missing")
+    console.log("Full URL:", req.url)
+
     let postId, posterEmail, posterName, fixerName, postTitle
     let isAuthorized = false
 
-    // Check authorization
-    const authHeader = req.headers.get("Authorization")
-    const url = new URL(req.url)
-    const authParam = url.searchParams.get("auth")
-
-    // Check if authorized via header or URL param
+    // Check authorization - be more permissive for debugging
     if (authHeader && authHeader.startsWith("Bearer ")) {
       isAuthorized = true
-    } else if (authParam) {
+      console.log("Authorized via header")
+    } else if (authParam && authParam.length > 10) {
       isAuthorized = true
+      console.log("Authorized via URL param")
     }
 
     if (!isAuthorized) {
-      return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
-        status: 401,
-        headers: { "Content-Type": "application/json" },
-      })
+      console.log("Authorization failed - returning 401")
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Unauthorized",
+          debug: {
+            hasAuthHeader: !!authHeader,
+            hasAuthParam: !!authParam,
+            authParamLength: authParam ? authParam.length : 0,
+          },
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
     }
+
+    console.log("Authorization successful!")
 
     // Handle both POST (JSON body) and GET (URL parameters) requests
     if (req.method === "POST") {
@@ -49,8 +70,10 @@ serve(async (req) => {
     console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY")
-    const fromEmail = Deno.env.get("FROM_EMAIL") || "noreply@ganamos.app"
+    const fromEmail = Deno.env.get("FROM_EMAIL") || "noreply@ganamos.earth"
     const siteUrl = Deno.env.get("SITE_URL") || "https://ganamos.vercel.app"
+
+    console.log("Email config:", { fromEmail, hasResendKey: !!resendApiKey })
 
     if (!resendApiKey) {
       throw new Error("RESEND_API_KEY not configured")
