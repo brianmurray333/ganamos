@@ -23,14 +23,26 @@ serve(async (req) => {
       posterName = url.searchParams.get("posterName")
       fixerName = url.searchParams.get("fixerName")
       postTitle = url.searchParams.get("postTitle")
-    } else {
-      return new Response(JSON.stringify({ success: false, error: "Method not allowed" }), {
-        status: 405,
+    }
+
+    console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
+
+    // If this is just a test call, return success
+    if (url.searchParams.get("test")) {
+      console.log("Test call - returning success")
+      return new Response(JSON.stringify({ success: true, message: "Test successful" }), {
         headers: { "Content-Type": "application/json" },
       })
     }
 
-    console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
+    // Skip email sending if any required parameter is missing
+    if (!postId || !posterEmail || !posterName || !postTitle) {
+      console.log("Missing required parameters - skipping email")
+      return new Response(JSON.stringify({ success: false, error: "Missing required parameters" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
 
     const resendApiKey = Deno.env.get("RESEND_API_KEY")
     const fromEmail = Deno.env.get("FROM_EMAIL") || "noreply@ganamos.earth"
@@ -53,7 +65,7 @@ serve(async (req) => {
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #16a34a;">Someone submitted a fix for your issue! 🔧</h2>
           <p>Hi ${posterName},</p>
-          <p><strong>${fixerName}</strong> has submitted a fix for your issue:</p>
+          <p><strong>${fixerName || "Someone"}</strong> has submitted a fix for your issue:</p>
           <div style="background: #f3f4f6; padding: 16px; border-radius: 8px; margin: 16px 0;">
             <h3 style="margin: 0; color: #374151;">${postTitle}</h3>
           </div>
