@@ -201,24 +201,41 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     setSubmittingFix(true)
     try {
       console.log("🔍 FIX SUBMISSION - Starting AI verification process")
-      const verificationResponse = await fetch("/api/verify-fix", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          beforeImage: post?.imageUrl || post?.image_url,
-          afterImage: fixImage,
-          description: post?.description,
-          title: post?.title,
-        }),
-      })
-      console.log("🔍 FIX SUBMISSION - Verification API response status:", verificationResponse.status)
-      if (!verificationResponse.ok) {
-        const errorData = await verificationResponse.text()
-        console.error("🔍 FIX SUBMISSION - AI Verification API Error:", errorData)
-        throw new Error(`Failed to verify fix with AI. Status: ${verificationResponse.status}. ${errorData}`)
+
+      let verificationResult
+      try {
+        const verificationResponse = await fetch("/api/verify-fix", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            beforeImage: post?.imageUrl || post?.image_url,
+            afterImage: fixImage,
+            description: post?.description,
+            title: post?.title,
+          }),
+        })
+        console.log("🔍 FIX SUBMISSION - Verification API response status:", verificationResponse.status)
+
+        if (!verificationResponse.ok) {
+          const errorData = await verificationResponse.text()
+          console.error("🔍 FIX SUBMISSION - AI Verification API Error:", errorData)
+          // Instead of throwing, we'll use a default confidence score
+          verificationResult = {
+            confidence: 5, // Default middle confidence
+            reasoning: "AI verification service unavailable. Using default confidence score.",
+          }
+        } else {
+          verificationResult = await verificationResponse.json()
+          console.log("🔍 FIX SUBMISSION - AI Verification Result:", verificationResult)
+        }
+      } catch (verificationError) {
+        console.error("🔍 FIX SUBMISSION - AI Verification failed:", verificationError)
+        // Fallback to default values if the API call fails completely
+        verificationResult = {
+          confidence: 5, // Default middle confidence
+          reasoning: "AI verification service unavailable. Using default confidence score.",
+        }
       }
-      const verificationResult = await verificationResponse.json()
-      console.log("🔍 FIX SUBMISSION - AI Verification Result:", verificationResult)
 
       // ANONYMOUS FIX HANDLING
       if (!user) {
@@ -750,7 +767,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                       strokeLinejoin="round"
                     >
                       {" "}
-                      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />{" "}
+                      <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0-2-2h-3l-2.5-3z" />{" "}
                       <circle cx="12" cy="12" r="3" />{" "}
                     </svg>
                   </Button>
