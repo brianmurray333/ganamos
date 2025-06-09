@@ -193,8 +193,8 @@ export function PostCard({ post }: { post: Post }) {
 
   return (
     <>
-      <Card className="overflow-hidden border dark:border-gray-800">
-        <div className="relative w-full h-48 cursor-pointer" onClick={handleClick}>
+      <Card className="overflow-hidden border dark:border-gray-800 cursor-pointer" onClick={handleClick}>
+        <div className="relative w-full h-48">
           {imageError ? (
             <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
               <svg
