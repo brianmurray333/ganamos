@@ -859,7 +859,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {post.under_review &&
           post.submitted_fix_image_url &&
           user &&
-          (post.userId === user.id || post.user_id === user.id)
+          (post.userId === user.id ||
+            post.user_id === user.id ||
+            (post.is_anonymous && user.email === ADMIN_USER_EMAIL))
             ? "Review Submitted Fix"
             : "Issue Details"}
         </h1>
@@ -867,7 +869,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       {post.under_review &&
       post.submitted_fix_image_url &&
       user &&
-      (post.userId === user.id || post.user_id === user.id) ? (
+      (post.userId === user.id ||
+        post.user_id === user.id ||
+        (post.is_anonymous && user.email === ADMIN_USER_EMAIL)) ? (
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div>
             <div className="relative w-full h-40 overflow-hidden rounded-lg">
