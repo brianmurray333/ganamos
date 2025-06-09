@@ -189,13 +189,13 @@ export function CameraCapture({ onCapture, onBack }: { onCapture: (imageSrc: str
               <div style={safeAreaStyles}>
                 <Button
                   type="button"
-                  size="lg"
                   onClick={takePhoto}
-                  className="rounded-full w-16 h-16 p-0 bg-white hover:bg-gray-200 shadow-lg border-4 border-white/75"
+                  className="w-16 h-16 rounded-full p-1 bg-white/75 hover:bg-white/90 shadow-lg flex items-center justify-center focus:outline-none"
                   aria-label="Take Photo"
                 >
-                  {/* SVG removed for iPhone style button */}
-                  <span className="sr-only">Take Photo</span>
+                  <div className="w-full h-full rounded-full bg-black p-0.5 flex items-center justify-center">
+                    <div className="w-full h-full rounded-full bg-white"></div>
+                  </div>
                 </Button>
               </div>
 
