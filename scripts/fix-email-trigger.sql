@@ -9,7 +9,6 @@ DECLARE
     poster_name TEXT;
     fixer_name TEXT;
     post_title TEXT;
-    email_subject TEXT;
 BEGIN
     -- Only proceed if under_review changed to true
     IF NEW.under_review = TRUE AND (OLD.under_review IS NULL OR OLD.under_review = FALSE) THEN
@@ -20,7 +19,6 @@ BEGIN
         IF NEW.user_id IS NULL THEN -- This post was created anonymously
             poster_email := 'brianmurray03@gmail.com'; -- Hardcoded admin email
             poster_name := 'Admin Reviewer'; -- Name for the email greeting
-            email_subject := '[ADMIN REVIEW] Fix Submitted: ' || COALESCE(post_title, 'Untitled Post');
         ELSE
             -- Existing logic to get original poster's email and name
             BEGIN
@@ -49,7 +47,6 @@ BEGIN
                 RETURN NEW;
             END IF;
             
-            email_subject := 'Fix submitted for: ' || COALESCE(post_title, 'Untitled Post');
         END IF;
         
         -- Insert into notification_queue using the actual column structure
@@ -60,7 +57,6 @@ BEGIN
             poster_name, 
             fixer_name, 
             post_title, 
-            email_subject,
             created_at
         ) VALUES (
             NEW.id,
@@ -68,7 +64,6 @@ BEGIN
             poster_name,
             fixer_name,
             post_title,
-            email_subject,
             NOW()
         );
         
