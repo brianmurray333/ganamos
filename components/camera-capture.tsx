@@ -180,7 +180,7 @@ export function CameraCapture({ onCapture, onBack }: { onCapture: (imageSrc: str
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </Button>
-              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 bg-black/50 text-white text-sm px-4 py-2 rounded-full shadow-md">
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 bg-black/50 text-white/80 text-sm px-6 py-2 rounded-full shadow-md">
                 Take a clear photo of the issue
               </div>
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-[85vh] object-cover" />
