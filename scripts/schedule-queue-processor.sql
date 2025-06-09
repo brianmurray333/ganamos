@@ -1,6 +1,7 @@
--- Ensure pg_cron is enabled in your Supabase dashboard under Database > Extensions
+-- Ensure pg_cron is enabled in your Supabase dashboard under Database > Extensions (You've just done this!)
 
--- 1. (Optional) Unschedule the job if it already exists to avoid conflicts
+-- 1. (Optional but good practice) Unschedule the job if it somehow exists from a previous attempt
+-- This will error if the job doesn't exist, which is fine.
 -- SELECT cron.unschedule('invoke-process-notification-queue');
 
 -- 2. Schedule the job to run every 5 minutes
@@ -18,8 +19,8 @@ SELECT cron.schedule(
     $$
 );
 
--- To check if the job is scheduled:
+-- To check if the job is scheduled (run this after the command above):
 -- SELECT * FROM cron.job;
 
--- To check the run details:
+-- To check the run details (run this after ~5 minutes):
 -- SELECT * FROM cron.job_run_details ORDER BY start_time DESC;
