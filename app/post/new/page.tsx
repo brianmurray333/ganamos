@@ -23,32 +23,39 @@ import { getCurrentLocationWithName } from "@/lib/geocoding" // Import the geoco
 
 // Pre-load the camera component
 import dynamic from "next/dynamic"
-const DynamicCameraCapture = dynamic(
-  () => import("@/components/camera-capture").then((mod) => ({ default: mod.CameraCapture })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex flex-col items-center justify-center p-8 border rounded-lg border-dashed">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="48"
-          height="48"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-muted-foreground mb-4 animate-pulse"
-        >
-          <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
-          <circle cx="12" cy="13" r="3" />
-        </svg>
-        <p className="text-sm text-muted-foreground">Loading camera...</p>
-      </div>
-    ),
-  },
-)
+const DynamicCameraCapture = dynamic(() => import("@/components/camera-capture"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-col items-center justify-center p-8 min-h-[300px]">
+      {/* Assuming you have a LoadingSpinner component */}
+      {/* import LoadingSpinner from '@/components/loading-spinner'; */}
+      {/* <LoadingSpinner message="Starting camera..." /> */}
+      {/* Using a simple version if LoadingSpinner is not directly available here */}
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="48"
+        height="48"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="text-muted-foreground mb-4 animate-spin"
+      >
+        <line x1="12" y1="2" x2="12" y2="6" />
+        <line x1="12" y1="18" x2="12" y2="22" />
+        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" />
+        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+        <line x1="2" y1="12" x2="6" y2="12" />
+        <line x1="18" y1="12" x2="22" y2="12" />
+        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" />
+        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
+      </svg>
+      <p className="text-sm text-muted-foreground">Starting camera...</p>
+    </div>
+  ),
+})
 
 export default function NewPostPage() {
   const [description, setDescription] = useState("")
@@ -501,42 +508,8 @@ export default function NewPostPage() {
 
   return (
     <div className="container px-4 py-6 mx-auto max-w-md">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Button variant="ghost" size="icon" onClick={handleBack} className="mr-2">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            <span className="sr-only">Back</span>
-          </Button>
-          <h1 className="text-2xl font-bold">Post Issue</h1>
-        </div>
-
-        {!isAnonymous && (
-          <button
-            onClick={() => router.push("/wallet")}
-            className="flex items-center space-x-1 bg-[#3E1C09] text-[#FDE68A] px-3 py-1.5 rounded-full text-sm font-medium hover:bg-[#2D1507] transition-colors"
-          >
-            <div className="w-4 h-4 relative">
-              <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={16} height={16} className="object-contain" />
-            </div>
-            <span>{formatSatsValue(profile?.balance || 0)}</span>
-          </button>
-        )}
-      </div>
-
       {step === "photo" ? (
-        <DynamicCameraCapture onCapture={handleCapture} />
+        <DynamicCameraCapture onCapture={handleCapture} onBack={handleBack} />
       ) : (
         <>
           {!showCreateAccountPrompt && (

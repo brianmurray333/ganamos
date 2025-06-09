@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useMobile } from "@/hooks/use-mobile"
 
-export function CameraCapture({ onCapture }: { onCapture: (imageSrc: string) => void }) {
+export function CameraCapture({ onCapture, onBack }: { onCapture: (imageSrc: string) => void; onBack: () => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [stream, setStream] = useState<MediaStream | null>(null)
@@ -159,8 +159,31 @@ export function CameraCapture({ onCapture }: { onCapture: (imageSrc: string) => 
             </div>
           ) : (
             <div className="relative">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                className="absolute top-4 left-4 z-50 bg-black/30 hover:bg-black/40 text-white rounded-full p-2"
+                aria-label="Go back"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </Button>
+              <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 bg-black/50 text-white text-sm px-4 py-2 rounded-full shadow-md">
+                Take a clear photo of the issue
+              </div>
               <video ref={videoRef} autoPlay playsInline muted className="w-full h-[85vh] object-cover" />
-              <div className="absolute inset-0 pointer-events-none border-4 border-white border-opacity-50 rounded-lg m-4"></div>
 
               {/* Overlay controls on the camera view - using inline styles for safe area */}
               <div style={safeAreaStyles}>
@@ -219,8 +242,6 @@ export function CameraCapture({ onCapture }: { onCapture: (imageSrc: string) => 
       </Card>
 
       <canvas ref={canvasRef} className="hidden" />
-
-      <p className="text-center text-sm text-muted-foreground">Take a clear photo of the issue</p>
     </div>
   )
 }
