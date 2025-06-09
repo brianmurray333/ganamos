@@ -12,6 +12,7 @@ import { formatSatsValue } from "@/lib/utils"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { Plus, X, Filter, Map, User } from "lucide-react"
 import type { Post } from "@/lib/types"
+import { AccountSwitcherDropdown } from "@/components/account-switcher-dropdown"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { getCurrentLocationWithName } from "@/lib/geocoding"
 
@@ -25,7 +26,16 @@ interface ActiveFilters {
 }
 
 export default function DashboardPage() {
-  const { user, profile, loading, session, sessionLoaded, isConnectedAccount } = useAuth()
+  const {
+    user,
+    profile,
+    loading,
+    session,
+    sessionLoaded,
+    isConnectedAccount,
+    connectedAccounts,
+    fetchConnectedAccounts,
+  } = useAuth()
   const router = useRouter()
   const [currentLocation, setCurrentLocation] = useState(getCurrentLocation())
   const [posts, setPosts] = useState<Post[]>([])
@@ -49,6 +59,12 @@ export default function DashboardPage() {
       router.push("/auth/login")
     }
   }, [session, sessionLoaded, router])
+
+  useEffect(() => {
+    if (user) {
+      fetchConnectedAccounts()
+    }
+  }, [user, fetchConnectedAccounts])
 
   useEffect(() => {
     if (!loading && !user) {
@@ -281,16 +297,6 @@ export default function DashboardPage() {
         <div className="container px-1 pt-6 mx-auto max-w-md">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              {/* Show connected account avatar if using a connected account */}
-              {isConnectedAccount && profile && (
-                <Avatar className="h-8 w-8 border-2 border-amber-500">
-                  <AvatarImage src={profile.avatar_url || undefined} alt={profile.name} />
-                  <AvatarFallback>
-                    <User className="h-4 w-4" />
-                  </AvatarFallback>
-                </Avatar>
-              )}
-
               <Button
                 variant="ghost"
                 onClick={async () => {
@@ -325,14 +331,31 @@ export default function DashboardPage() {
                 </button>
               )}
             </div>
-            <Button
-              variant="ghost"
-              onClick={handleSatsClick}
-              className="flex items-center px-3 py-1 text-sm font-medium bg-amber-100 rounded-full text-amber-800 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
-            >
-              <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={16} height={16} className="mr-1" />
-              {profile ? formatSatsValue(profile.balance) : formatSatsValue(0)}
-            </Button>
+
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                onClick={handleSatsClick}
+                className="flex items-center px-3 py-1 text-sm font-medium bg-amber-100 rounded-full text-amber-800 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:hover:bg-amber-900"
+              >
+                <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={16} height={16} className="mr-1" />
+                {profile ? formatSatsValue(profile.balance) : formatSatsValue(0)}
+              </Button>
+
+              {/* Show avatar if user has connected accounts */}
+              {connectedAccounts.length > 0 && (
+                <AccountSwitcherDropdown>
+                  <Button variant="ghost" className="h-9 w-9 rounded-full p-0">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.name || "User"} />
+                      <AvatarFallback>
+                        <User className="h-4 w-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </AccountSwitcherDropdown>
+              )}
+            </div>
           </div>
         </div>
       </div>
