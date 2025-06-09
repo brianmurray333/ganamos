@@ -25,6 +25,9 @@ import { reverseGeocode } from "@/lib/geocoding"
 import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction } from "@/app/actions/post-actions" // Adjust path if necessary
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
 
+// Admin user who can review anonymous posts
+const ADMIN_USER_EMAIL = "brianmurray03@gmail.com"
+
 export default function PostDetailPage({ params }: { params: { id: string } }) {
   // const { id } = useParams() // params.id is used directly
   const [showAnonymousRewardOptions, setShowAnonymousRewardOptions] = useState(false)
@@ -1031,7 +1034,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       {post.under_review &&
         post.submitted_fix_image_url &&
         user &&
-        (post.userId === user.id || post.user_id === user.id) && (
+        (post.userId === user.id ||
+          post.user_id === user.id ||
+          (post.is_anonymous && user.email === ADMIN_USER_EMAIL)) && (
           <div className="space-y-4 mb-6">
             {post.submitted_fix_note && (
               <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
@@ -1097,7 +1102,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         post.under_review &&
         post.submitted_fix_image_url &&
         user &&
-        (post.userId === user.id || post.user_id === user.id)
+        (post.userId === user.id || post.user_id === user.id || (post.is_anonymous && user.email === ADMIN_USER_EMAIL))
       ) && (
         <Card className="mb-6 border dark:border-gray-800">
           <CardContent className="p-4">
