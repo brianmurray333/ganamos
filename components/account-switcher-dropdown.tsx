@@ -179,7 +179,9 @@ export function AccountSwitcherDropdown({ triggerClassName, children }: AccountS
                     className="object-cover"
                   />
                 </div>
-                <span className="text-base truncate">{profile?.name || "Main Account"} (You)</span>
+                <span className="text-base truncate">
+                  {user?.user_metadata?.full_name || user?.user_metadata?.name || "Main Account"} (You)
+                </span>
               </div>
               {!isConnectedAccount && (
                 <svg
