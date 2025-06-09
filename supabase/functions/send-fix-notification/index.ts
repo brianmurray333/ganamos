@@ -7,7 +7,7 @@ serve(async (req) => {
     console.log("Full URL:", req.url)
 
     const url = new URL(req.url)
-    let postId, posterEmail, posterName, fixerName, postTitle
+    let postId, posterEmail, posterName, fixerName, postTitle, emailSubject
 
     // Handle both POST (JSON body) and GET (URL parameters) requests
     if (req.method === "POST") {
@@ -17,15 +17,17 @@ serve(async (req) => {
       posterName = body.posterName
       fixerName = body.fixerName
       postTitle = body.postTitle
+      emailSubject = body.emailSubject // NEW: Extract custom subject
     } else if (req.method === "GET") {
       postId = url.searchParams.get("postId")
       posterEmail = url.searchParams.get("posterEmail")
       posterName = url.searchParams.get("posterName")
       fixerName = url.searchParams.get("fixerName")
       postTitle = url.searchParams.get("postTitle")
+      emailSubject = url.searchParams.get("emailSubject") // NEW: Extract custom subject
     }
 
-    console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle })
+    console.log("Received parameters:", { postId, posterEmail, posterName, fixerName, postTitle, emailSubject })
 
     // If this is just a test call, return success
     if (url.searchParams.get("test")) {
@@ -57,10 +59,14 @@ serve(async (req) => {
 
     console.log(`Attempting to send email to ${posterEmail} for post ${postId}`)
 
+    // NEW: Use custom subject if provided, otherwise use default
+    const finalSubject = emailSubject || `Fix submitted for: ${postTitle}`
+    console.log("Using email subject:", finalSubject)
+
     const emailData = {
       from: fromEmail,
       to: [posterEmail],
-      subject: `Fix submitted for: ${postTitle}`,
+      subject: finalSubject, // NEW: Use dynamic subject
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #16a34a;">Someone submitted a fix for your issue! 🔧</h2>
