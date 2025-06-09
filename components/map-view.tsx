@@ -392,72 +392,78 @@ export function MapView({
       // Update the marker's content based on selection state
       private updateContent() {
         const rewardText = this.formatSatsForPin(this.post.reward)
-        const markerScale = this.isSelected ? "1.1" : "1"
+        const markerScale = this.isSelected ? "1.15" : "1"
+        const markerShadow = this.isSelected
+          ? "0 0 20px rgba(254, 213, 107, 0.6), 0 4px 12px rgba(0, 0, 0, 0.15)"
+          : "0 2px 8px rgba(0, 0, 0, 0.1)"
         const badgeOpacity = this.isSelected ? "1" : "0.95"
+        const zIndex = this.isSelected ? "10" : "1"
 
         this.containerDiv.innerHTML = `
   <style>
 @keyframes markerDropIn {
-  0% {
-    transform: translateY(-25px) scale(${markerScale});
-    opacity: 0;
+    0% {
+      transform: translateY(-25px) scale(1);
+      opacity: 0;
+    }
+    60% {
+      transform: translateY(5px) scale(1);
+      opacity: 1;
+    }
+    80% {
+      transform: translateY(-3px) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(0px) scale(1);
+      opacity: 1;
+    }
   }
-  60% {
-    transform: translateY(5px) scale(${markerScale});
-    opacity: 1;
-  }
-  80% {
-    transform: translateY(-3px) scale(${markerScale});
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(0px) scale(${markerScale});
-    opacity: 1;
-  }
-}
 </style>
 <div class="btc-marker" style="
-  position: relative;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: #FED56B;
-  border: 1px solid #C5792D;
-  box-shadow: 0 0 0 1px #F4C14F;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: markerDropIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) ${this.animationDelay}ms both;
-  transition: transform 0.2s ease;
-">
-  <img src="/images/bitcoin-logo.png" alt="Bitcoin" style="
-    width: 38px;
-    height: 38px;
-    filter: drop-shadow(0px -1px 1px rgba(255, 255, 255, 0.4));
-  ">
-  <div class="btc-badge" style="
-    position: absolute;
-    bottom: -12px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: white;
-    color: black;
-    padding: 2px 8px;
-    font-size: 12px;
-    font-weight: bold;
-    border-radius: 16px;
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #FED56B;
     border: 1px solid #C5792D;
-    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
-    opacity: ${badgeOpacity};
-    transition: opacity 0.2s ease;
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-    min-width: 28px;
-    text-align: center;
-    z-index: 2;
-  ">${rewardText}</div>
-</div>
+    box-shadow: ${markerShadow};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: scale(${markerScale});
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+    z-index: ${zIndex};
+    ${this.animationDelay === 0 ? "" : `animation: markerDropIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) ${this.animationDelay}ms both;`}
+  ">
+    <img src="/images/bitcoin-logo.png" alt="Bitcoin" style="
+      width: 38px;
+      height: 38px;
+      filter: drop-shadow(0px -1px 1px rgba(255, 255, 255, 0.4));
+    ">
+    <div class="btc-badge" style="
+      position: absolute;
+      bottom: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: white;
+      color: black;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: bold;
+      border-radius: 16px;
+      border: 1px solid #C5792D;
+      box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
+      opacity: ${badgeOpacity};
+      transition: opacity 0.2s ease;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      min-width: 28px;
+      text-align: center;
+      z-index: 2;
+    ">${rewardText}</div>
+  </div>
 `
-        console.log(`Marker ${this.markerId} content updated with drop-in animation`)
+        console.log(`Marker ${this.markerId} content updated with selection state: ${this.isSelected}`)
       }
     }
   }
@@ -817,14 +823,15 @@ export function MapView({
 
   // Update marker styles when selectedPost changes
   useEffect(() => {
-    if (mapInstance && mapInitialized && PostMarkerClassRef.current) {
+    if (mapInstance && mapInitialized && Object.keys(markersRef.current).length > 0) {
       console.log("Updating marker selection states due to selectedPost change")
-      // Update marker selection states
+      // Update marker selection states without recreating markers
       Object.entries(markersRef.current).forEach(([id, marker]) => {
-        marker.setSelected(selectedPost && id === selectedPost.id)
+        const isSelected = selectedPost && id === selectedPost.id
+        marker.setSelected(isSelected)
       })
     }
-  }, [selectedPost])
+  }, [selectedPost, mapInstance, mapInitialized])
 
   // Clean up markers when component unmounts
   useEffect(() => {
