@@ -191,21 +191,10 @@ export function CameraCapture({ onCapture, onBack }: { onCapture: (imageSrc: str
                   type="button"
                   size="lg"
                   onClick={takePhoto}
-                  className="rounded-full w-16 h-16 p-0 bg-green-500 hover:bg-green-600 shadow-lg"
+                  className="rounded-full w-16 h-16 p-0 bg-white hover:bg-gray-200 shadow-lg border-4 border-white/75"
+                  aria-label="Take Photo"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                  </svg>
+                  {/* SVG removed for iPhone style button */}
                   <span className="sr-only">Take Photo</span>
                 </Button>
               </div>
