@@ -1,180 +1,107 @@
-import type { Post } from "./types"
+export interface Post {
+  id: number
+  title: string
+  content: string
+  imageUrl: string
+  latitude: number
+  longitude: number
+}
 
 export const mockPosts: Post[] = [
   {
-    id: "1",
-    userId: "456", // Not the current user
-    title: "Trash on sidewalk",
-    description:
-      "There's a pile of trash on the sidewalk that needs to be cleaned up. It's blocking the path and creating an eyesore for the neighborhood.",
-    imageUrl: "https://images.unsplash.com/photo-1605600659873-d808a13e4d2a?q=80&w=600&auto=format&fit=crop",
-    location: "Downtown",
-    reward: 2000,
-    claimed: false,
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+    id: 1,
+    title: "Downtown Coffee Shop",
+    content: "Enjoy a latte at our cozy downtown location.",
+    imageUrl: "https://example.com/coffee1.jpg",
+    latitude: 37.7749,
+    longitude: -122.4194,
   },
   {
-    id: "2",
-    userId: "456",
-    title: "Graffiti on wall",
-    description:
-      "Someone has spray painted graffiti on the wall of the community center. It needs to be cleaned or painted over.",
-    imageUrl: "https://images.unsplash.com/photo-1585244759837-6b3ca8542be1?q=80&w=600&auto=format&fit=crop",
-    location: "Downtown",
-    reward: 3500,
-    claimed: true,
-    claimedBy: "123", // Current user
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 3), // 3 hours ago
+    id: 2,
+    title: "Downtown Art Gallery",
+    content: "Explore modern art in the heart of the city.",
+    imageUrl: "https://example.com/art1.jpg",
+    latitude: 37.7749,
+    longitude: -122.4194,
   },
   {
-    id: "3",
-    userId: "789",
-    title: "Overgrown weeds",
-    description: "The weeds in the community garden have grown out of control and need to be removed.",
-    imageUrl: "https://images.unsplash.com/photo-1635179205130-5a9f8721e4a5?q=80&w=600&auto=format&fit=crop",
-    location: "Central Park",
-    reward: 5000,
-    claimed: true,
-    claimedBy: "123", // Current user
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 5), // 5 hours ago
-    fixed: true,
-    fixedAt: new Date(Date.now() - 1000 * 60 * 60 * 4), // 4 hours ago
-    fixedImageUrl: "https://images.unsplash.com/photo-1590682300882-cbf8230f4042?q=80&w=600&auto=format&fit=crop",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+    id: 3,
+    title: "Central Park Picnic",
+    content: "Relax and enjoy a picnic in beautiful Central Park.",
+    imageUrl: "https://example.com/park1.jpg",
+    latitude: 37.7849,
+    longitude: -122.4094,
   },
   {
-    id: "4",
-    userId: "123", // Current user
-    title: "Broken bench",
-    description:
-      "The wooden bench in the park is broken and needs repair. Several boards are loose and it's unsafe to sit on.",
-    imageUrl: "https://images.unsplash.com/photo-1597261416757-c7a1429c3538?q=80&w=600&auto=format&fit=crop",
-    location: "Central Park",
-    reward: 4000,
-    claimed: true,
-    claimedBy: "789",
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 8), // 8 hours ago
-    fixed: true,
-    fixedAt: new Date(Date.now() - 1000 * 60 * 60 * 6), // 6 hours ago
-    fixedImageUrl: "https://images.unsplash.com/photo-1533697033956-ac1a8c2d9e3f?q=80&w=600&auto=format&fit=crop",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
+    id: 4,
+    title: "Central Park Concert",
+    content: "Attend a live music concert in Central Park.",
+    imageUrl: "https://example.com/concert1.jpg",
+    latitude: 37.7849,
+    longitude: -122.4094,
   },
   {
-    id: "5",
-    userId: "456",
-    title: "Pothole in road",
-    description:
-      "There's a large pothole in the middle of the road that's causing damage to vehicles. It needs to be filled.",
-    imageUrl: "https://images.unsplash.com/photo-1594789020554-458e84b5b8de?q=80&w=600&auto=format&fit=crop",
-    location: "Downtown",
-    reward: 6000,
-    claimed: false,
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 12), // 12 hours ago
+    id: 5,
+    title: "Downtown Restaurant",
+    content: "Dine at our upscale downtown restaurant.",
+    imageUrl: "https://example.com/restaurant1.jpg",
+    latitude: 37.7749,
+    longitude: -122.4194,
   },
   {
-    id: "6",
-    userId: "123", // Current user
-    title: "Fallen tree branch",
-    description: "A large tree branch has fallen and is blocking the sidewalk. It needs to be removed.",
-    imageUrl: "https://images.unsplash.com/photo-1517660029921-0cbea2f15f8f?q=80&w=600&auto=format&fit=crop",
-    location: "Ocean Beach",
-    reward: 3000,
-    claimed: true,
-    claimedBy: "456",
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 10), // 10 hours ago
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 36), // 1.5 days ago
+    id: 6,
+    title: "Ocean Beach Sunset",
+    content: "Watch the sunset at beautiful Ocean Beach.",
+    imageUrl: "https://example.com/beach1.jpg",
+    latitude: 37.7594,
+    longitude: -122.5107,
   },
   {
-    id: "7",
-    userId: "789",
-    title: "Broken street light",
-    description: "The street light at the corner is broken and not working at night. This is creating a safety hazard.",
-    imageUrl: "https://images.unsplash.com/photo-1611241443322-b5164ba3d672?q=80&w=600&auto=format&fit=crop",
-    location: "University Campus",
-    reward: 4500,
-    claimed: true,
-    claimedBy: "123", // Current user
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 72), // 3 days ago
-    fixed: true,
-    fixedAt: new Date(Date.now() - 1000 * 60 * 60 * 70), // Almost 3 days ago
-    fixedImageUrl: "https://images.unsplash.com/photo-1573481078935-b9605167e06b?q=80&w=600&auto=format&fit=crop",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 96), // 4 days ago
+    id: 7,
+    title: "University Campus Library",
+    content: "Study at the university campus library.",
+    imageUrl: "https://example.com/library1.jpg",
+    latitude: 37.8044,
+    longitude: -122.2712,
   },
   {
-    id: "8",
-    userId: "456",
-    title: "Overflowing trash can",
-    description: "The public trash can is overflowing and trash is spilling onto the ground. It needs to be emptied.",
-    imageUrl: "https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=600&auto=format&fit=crop",
-    location: "Shopping Mall",
-    reward: 1500,
-    claimed: false,
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4), // 4 hours ago
+    id: 8,
+    title: "Shopping Mall Grand Opening",
+    content: "Celebrate the grand opening of the new shopping mall.",
+    imageUrl: "https://example.com/mall1.jpg",
+    latitude: 37.7849,
+    longitude: -122.4394,
   },
   {
-    id: "9",
-    userId: "123", // Current user
-    title: "Damaged playground equipment",
-    description:
-      "The slide in the children's playground has a crack and is unsafe for use. It needs to be repaired or replaced.",
-    imageUrl: "https://images.unsplash.com/photo-1575783970733-1aaedde1db74?q=80&w=600&auto=format&fit=crop",
-    location: "Central Park",
-    reward: 7000,
-    claimed: false,
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+    id: 9,
+    title: "Central Park Jogging",
+    content: "Enjoy a morning jog in Central Park.",
+    imageUrl: "https://example.com/jogging1.jpg",
+    latitude: 37.7849,
+    longitude: -122.4094,
   },
   {
-    id: "10",
-    userId: "789",
-    title: "Clogged storm drain",
-    description:
-      "The storm drain is clogged with leaves and debris, causing water to pool on the street when it rains.",
-    imageUrl: "https://images.unsplash.com/photo-1584466977773-e625c37cdd50?q=80&w=600&auto=format&fit=crop",
-    location: "Downtown",
-    reward: 3200,
-    claimed: true,
-    claimedBy: "123", // Current user
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 120), // 5 days ago
-    fixed: true,
-    fixedAt: new Date(Date.now() - 1000 * 60 * 60 * 118), // Almost 5 days ago
-    fixedImageUrl: "https://images.unsplash.com/photo-1584466977773-e625c37cdd50?q=80&w=600&auto=format&fit=crop",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 144), // 6 days ago
+    id: 10,
+    title: "Downtown Theater",
+    content: "See a play at the downtown theater.",
+    imageUrl: "https://example.com/theater1.jpg",
+    latitude: 37.7749,
+    longitude: -122.4194,
   },
   {
-    id: "11",
-    userId: "456",
-    title: "Faded crosswalk lines",
-    description:
-      "The crosswalk lines at the intersection have faded and are barely visible. They need to be repainted for pedestrian safety.",
-    imageUrl: "https://images.unsplash.com/photo-1541447271487-09612b3f49f7?q=80&w=600&auto=format&fit=crop",
-    location: "University Campus",
-    reward: 5500,
-    claimed: false,
-    fixed: false,
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 18), // 18 hours ago
+    id: 11,
+    title: "University Campus Cafe",
+    content: "Grab a coffee at the university campus cafe.",
+    imageUrl: "https://example.com/cafe1.jpg",
+    latitude: 37.8044,
+    longitude: -122.2712,
   },
   {
-    id: "12",
-    userId: "789",
-    title: "Broken fence",
-    description:
-      "A section of the fence around the community garden is broken and needs to be fixed to keep animals out.",
-    imageUrl: "https://images.unsplash.com/photo-1621957837173-3a4b8c0a8734?q=80&w=600&auto=format&fit=crop",
-    location: "Central Park",
-    reward: 4200,
-    claimed: true,
-    claimedBy: "456",
-    claimedAt: new Date(Date.now() - 1000 * 60 * 60 * 50), // About 2 days ago
-    fixed: true,
-    fixedAt: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
-    fixedImageUrl: "https://images.unsplash.com/photo-1621957837173-3a4b8c0a8734?q=80&w=600&auto=format&fit=crop",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 72), // 3 days ago
+    id: 12,
+    title: "Central Park Yoga",
+    content: "Join a yoga session in Central Park.",
+    imageUrl: "https://example.com/yoga1.jpg",
+    latitude: 37.7849,
+    longitude: -122.4094,
   },
 ]

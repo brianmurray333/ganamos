@@ -82,7 +82,7 @@ export function MapModal({ isOpen, onClose, posts, centerPost }: MapModalProps) 
         }
 
         const script = document.createElement("script")
-        script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBB01qY-IIgvTwrwvmjLACpg2wzEOAr1q4&libraries=places`
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`
         script.async = true
         script.defer = true
 
@@ -507,7 +507,7 @@ export function MapModal({ isOpen, onClose, posts, centerPost }: MapModalProps) 
 
           {/* Airbnb-style Preview Card */}
           {selectedPost && (
-            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-80 max-w-[calc(100vw-2rem)]">
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[30rem] max-w-[calc(100vw-2rem)]">
               <div
                 className="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-xl transition-shadow relative"
                 onClick={handlePreviewCardClick}

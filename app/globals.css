@@ -169,3 +169,22 @@ body {
 .post-marker {
   z-index: 900;
 }
+
+/* Marker bounce-in animation */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.custom-marker {
+  animation: bounce-in 0.5s ease-out;
+}

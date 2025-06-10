@@ -1,5 +1,9 @@
 import { BitcoinLogoClient } from "./bitcoin-logo-client"
 
 export function BitcoinLogo() {
-  return <BitcoinLogoClient />
+  return (
+    <div className="scale-75">
+      <BitcoinLogoClient />
+    </div>
+  )
 }

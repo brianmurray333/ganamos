@@ -41,20 +41,14 @@ export default function Home() {
       <div className="container relative z-10 px-4 py-8 mx-auto">
         <LandingHero />
         <div className="flex flex-col items-center justify-center gap-4 mt-8">
-          <Button size="lg" className="w-full max-w-xs" asChild>
+          <Button size="lg" className="w-full max-w-xs bg-green-600 hover:bg-green-700 text-white" asChild>
+            <a href="/map" className="flex items-center justify-center gap-2">
+              <BitcoinLogo className="w-5 h-5" />
+              Earn Bitcoin
+            </a>
+          </Button>
+          <Button size="lg" variant="secondary" className="w-full max-w-xs" asChild>
             <a href="/auth/login">Log In</a>
-          </Button>
-          <Button size="lg" variant="outline" className="w-full max-w-xs" asChild>
-            <a href="/auth/register">Create Account</a>
-          </Button>
-          <Button
-            size="lg"
-            variant="secondary"
-            className="w-full max-w-xs flex items-center gap-2"
-            onClick={() => setShowDonationModal(true)}
-          >
-            <BitcoinLogo className="w-5 h-5" />
-            Donate Bitcoin
           </Button>
         </div>
       </div>

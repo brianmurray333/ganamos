@@ -1,81 +1,122 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
+import { MapView } from "@/components/map-view"
+import { LoadingSpinner } from "@/components/loading-spinner"
 import { useAuth } from "@/components/auth-provider"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { mockPosts } from "@/lib/mock-data"
-import type { Post } from "@/lib/types"
-import { MapView } from "@/components/map-view"
+import { getCurrentLocationWithName } from "@/lib/geocoding"
 
 export default function MapPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const { user, loading } = useAuth()
-  const [posts, setPosts] = useState<Post[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [posts, setPosts] = useState([])
+  const searchParams = useSearchParams()
+  const { user } = useAuth()
   const supabase = createBrowserSupabaseClient()
 
-  // Get center post ID from URL params if provided
-  const centerPostId = searchParams.get("centerPost")
-  const centerPost = posts.find((post) => post.id === centerPostId) || undefined
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number
+    longitude: number
+    name: string
+    cityBounds?: google.maps.LatLngBounds
+  } | null>(null)
+  const [locationError, setLocationError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.push("/auth/login")
-      return
-    }
+    const initializeMapData = async () => {
+      setIsLoading(true)
 
-    fetchPosts()
-  }, [user, loading, router])
+      try {
+        // First get user location
+        const location = await getCurrentLocationWithName()
+        if (location) {
+          setUserLocation({
+            latitude: location.latitude,
+            longitude: location.longitude,
+            name: location.name,
+          })
 
-  const fetchPosts = async () => {
-    setIsLoading(true)
-    try {
-      // Try to fetch from Supabase first
-      if (supabase) {
-        const { data, error } = await supabase
-          .from("posts")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .eq("fixed", false)
-          .neq("under_review", true)
+          // Get city bounds using Google Places API
+          if (typeof window !== "undefined" && window.google?.maps?.places) {
+            const service = new window.google.maps.places.PlacesService(document.createElement("div"))
+            const request = {
+              query: location.name,
+              fields: ["geometry"],
+            }
 
-        if (data && !error) {
-          setPosts(data)
-          setIsLoading(false)
-          return
+            service.textSearch(request, (results, status) => {
+              if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]?.geometry?.viewport) {
+                setUserLocation((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        cityBounds: results[0].geometry.viewport,
+                      }
+                    : null,
+                )
+              }
+            })
+          }
         }
+      } catch (error) {
+        console.error("Error getting user location:", error)
+        setLocationError("Could not get your location")
       }
 
-      // Fall back to mock data if Supabase fails
-      const filteredPosts = [...mockPosts].filter((post) => !post.fixed && !post.under_review)
-      setPosts(filteredPosts)
-    } catch (error) {
-      console.error("Error fetching posts:", error)
-      // Fall back to mock data
-      const filteredPosts = [...mockPosts].filter((post) => !post.fixed && !post.under_review)
-      setPosts(filteredPosts)
-    } finally {
-      setIsLoading(false)
+      // Then fetch posts
+      try {
+        if (supabase) {
+          const { data, error } = await supabase
+            .from("posts")
+            .select("*")
+            .eq("fixed", false)
+            .neq("under_review", true)
+            .order("created_at", { ascending: false })
+          if (error) {
+            console.error("Error fetching posts:", error)
+            setPosts([])
+          } else {
+            setPosts(data || [])
+          }
+        } else {
+          setPosts([])
+        }
+      } catch (error) {
+        console.error("Error in fetchPosts:", error)
+        setPosts([])
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }
 
-  const handleClose = () => {
-    router.back()
-  }
+    initializeMapData()
+  }, [supabase])
 
-  if (loading || !user) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
-        <div className="text-center">Loading...</div>
+        <LoadingSpinner size="lg" />
       </div>
     )
   }
 
   return (
-    <div className="h-screen w-screen">
-      <MapView posts={posts} centerPost={centerPost} onClose={handleClose} isLoading={isLoading} />
-    </div>
+    <MapView
+      posts={posts}
+      onClose={() => window.history.back()}
+      userLocation={userLocation}
+      cityName={userLocation?.name || null}
+      cityBounds={
+        userLocation?.cityBounds
+          ? {
+              north: userLocation.cityBounds.getNorthEast().lat(),
+              south: userLocation.cityBounds.getSouthWest().lat(),
+              east: userLocation.cityBounds.getNorthEast().lng(),
+              west: userLocation.cityBounds.getSouthWest().lng(),
+            }
+          : null
+      }
+    />
   )
 }

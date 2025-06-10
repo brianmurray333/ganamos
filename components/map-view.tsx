@@ -2,13 +2,29 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Loader2, X, RefreshCw, AlertCircle } from "lucide-react"
+import { X, RefreshCw, AlertCircle, Heart, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Post } from "@/lib/types"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
+import { useAuth } from "@/components/auth-provider"
+import { createBrowserSupabaseClient } from "@/lib/supabase"
+import { DonationModal } from "@/components/donation-modal"
 
+const containerStyle = {
+  width: "100%",
+  height: "calc(100vh - 4rem)",
+}
+
+const defaultCenter = {
+  lat: 37.7749,
+  lng: -122.4194,
+}
+
+const defaultZoom = 13
+
+// Update the MapViewProps interface to include userLocation
 interface MapViewProps {
   posts: Post[]
   centerPost?: Post // Optional post to center the map on
@@ -18,6 +34,22 @@ interface MapViewProps {
   isLoading?: boolean
   isModal?: boolean // Flag to indicate if map is in a modal
   initialSearchQuery?: string // Initial search query to populate the search bar
+  userLocation?: {
+    latitude: number
+    longitude: number
+    zoomType: string
+    name: string
+    bounds?: google.maps.LatLngBounds
+    lat: number
+    lng: number
+  } | null
+  cityName?: string | null
+  cityBounds?: {
+    north: number
+    south: number
+    east: number
+    west: number
+  } | null
 }
 
 // Declare google as a global type to avoid linting errors
@@ -27,6 +59,7 @@ declare global {
   }
 }
 
+// Update the function parameters to include userLocation
 export function MapView({
   posts,
   centerPost,
@@ -36,6 +69,9 @@ export function MapView({
   isLoading: externalLoading,
   isModal = false,
   initialSearchQuery = "",
+  userLocation,
+  cityName,
+  cityBounds,
 }: MapViewProps) {
   const router = useRouter()
   const mapRef = useRef<HTMLDivElement>(null)
@@ -43,7 +79,6 @@ export function MapView({
   const [locationError, setLocationError] = useState<string | null>(null)
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null)
   const [mapInitialized, setMapInitialized] = useState(false)
-  const [loadingStep, setLoadingStep] = useState<string>("Initializing...")
   const [selectedPost, setSelectedPost] = useState<Post | null>(centerPost || null)
   const markersRef = useRef<{ [key: string]: any }>({})
   const PostMarkerClassRef = useRef<any>(null)
@@ -53,12 +88,122 @@ export function MapView({
   const [showResults, setShowResults] = useState(false)
   const [autocompleteService, setAutocompleteService] = useState<google.maps.places.AutocompleteService | null>(null)
   const [placesService, setPlacesService] = useState<google.maps.places.PlacesService | null>(null)
+  const [mapCenter, setMapCenter] = useState(
+    userLocation ? { lat: userLocation.latitude, lng: userLocation.longitude } : defaultCenter,
+  )
+  const [zoom, setZoom] = useState(defaultZoom)
+  const { user } = useAuth()
+  const supabase = createBrowserSupabaseClient()
+  const googleMapRef = useRef<google.maps.Map | null>(null)
+  const [allPosts, setAllPosts] = useState<Post[]>(posts)
+  const [isDonationModalOpen, setIsDonationModalOpen] = useState(false)
+
+  const onLoad = useCallback(
+    (map: google.maps.Map) => {
+      googleMapRef.current = map
+      setMapInstance(map)
+
+      // If we have city bounds, fit the map to those bounds
+      if (cityBounds) {
+        const bounds = new google.maps.LatLngBounds(
+          { lat: cityBounds.south, lng: cityBounds.west },
+          { lat: cityBounds.north, lng: cityBounds.east },
+        )
+        map.fitBounds(bounds)
+      }
+      // Otherwise if we have user location, center on that
+      else if (userLocation) {
+        map.setCenter({ lat: userLocation.latitude, lng: userLocation.longitude })
+        map.setZoom(12)
+      }
+
+      // Set city name in search if available
+      if (cityName) {
+        setSearchQuery(cityName)
+      }
+    },
+    [userLocation, cityBounds, cityName],
+  )
+
+  const onUnmount = useCallback(() => {
+    setMapInstance(null)
+  }, [])
+
+  useEffect(() => {
+    const fetchPosts = async () => {
+      setIsLoading(true)
+      try {
+        if (supabase) {
+          const { data, error } = await supabase
+            .from("posts")
+            .select("*")
+            .eq("fixed", false)
+            .neq("under_review", true) // Add this line
+            .order("created_at", { ascending: false })
+          if (error) {
+            console.error("Error fetching posts:", error)
+            setAllPosts([])
+          } else {
+            setAllPosts(data || [])
+          }
+        } else {
+          setAllPosts([])
+        }
+      } catch (error) {
+        console.error("Error in fetchPosts:", error)
+        setAllPosts([])
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchPosts()
+  }, [supabase])
+
+  useEffect(() => {
+    if (mapInstance && userLocation) {
+      // If we have city bounds, fit the map to those bounds
+      if (cityBounds) {
+        const bounds = new google.maps.LatLngBounds(
+          { lat: cityBounds.south, lng: cityBounds.west },
+          { lat: cityBounds.north, lng: cityBounds.east },
+        )
+        mapInstance.fitBounds(bounds)
+      } else {
+        // Otherwise just center on user location
+        mapInstance.setCenter({ lat: userLocation.latitude, lng: userLocation.longitude })
+        mapInstance.setZoom(defaultZoom)
+      }
+    }
+  }, [mapInstance, userLocation, cityBounds])
+
+  const handleMarkerClick = (post: Post) => {
+    setSelectedPost(post)
+  }
+
+  const handleInfoWindowClose = () => {
+    setSelectedPost(null)
+  }
+
+  const handleViewPost = () => {
+    if (selectedPost) {
+      router.push(`/post/${selectedPost.id}`)
+    }
+  }
+
+  const handleNewPost = () => {
+    router.push("/post/new")
+  }
+
+  const handleDonationClick = () => {
+    setIsDonationModalOpen(true)
+  }
 
   // Debug log for posts prop
   console.log("MapView received posts:", posts)
 
   // Filter posts that have location data
-  const postsWithLocation = posts.filter(
+  const postsWithLocation = allPosts.filter(
     (post) => post.latitude && post.longitude && !isNaN(Number(post.latitude)) && !isNaN(Number(post.longitude)),
   )
 
@@ -93,7 +238,6 @@ export function MapView({
     console.log("Map view mounted, starting initialization...")
     setIsLoading(true)
     setLocationError(null)
-    setLoadingStep("Loading map library...")
 
     loadGoogleMaps()
   }, [mapInitialized])
@@ -104,7 +248,7 @@ export function MapView({
       console.log("Posts changed, updating markers...")
       addPostMarkers(mapInstance)
     }
-  }, [posts, mapInstance, mapInitialized])
+  }, [allPosts, mapInstance, mapInitialized])
 
   // Create PostMarker class after Google Maps is loaded
   const createPostMarkerClass = () => {
@@ -125,6 +269,7 @@ export function MapView({
       private onClick: (post: Post) => void
       private markerId: string
       private isClickable: boolean
+      private animationDelay: number
 
       constructor(
         post: Post,
@@ -132,11 +277,13 @@ export function MapView({
         isSelected: boolean,
         onClick: (post: Post) => void,
         isClickable = true,
+        animationDelay = 0,
       ) {
         super()
         this.post = post
         this.markerId = post.id
         this.isClickable = isClickable
+        this.animationDelay = animationDelay * 100 // 100ms stagger between markers
         console.log(`Creating marker for post ${post.id} at ${post.latitude},${post.longitude}`)
 
         this.position = new window.google.maps.LatLng(Number(post.latitude), Number(post.longitude))
@@ -184,12 +331,10 @@ export function MapView({
           return
         }
 
-        // Use overlayMouseTarget for clickable markers, overlayLayer for non-clickable
-        const targetPane = this.isClickable ? panes.overlayMouseTarget : panes.overlayLayer
+        // Use overlayMouseTarget for all markers to ensure visibility
+        const targetPane = panes.overlayMouseTarget
         targetPane.appendChild(this.containerDiv)
-        console.log(
-          `Marker ${this.markerId} added to DOM in ${this.isClickable ? "overlayMouseTarget" : "overlayLayer"}`,
-        )
+        console.log(`Marker ${this.markerId} added to DOM in overlayMouseTarget`)
       }
 
       // Called when the overlay's position should be drawn
@@ -205,9 +350,9 @@ export function MapView({
         const point = projection.fromLatLngToDivPixel(this.position)
         if (point) {
           console.log(`Positioning marker ${this.markerId} at pixel coordinates:`, point)
-          // Adjust positioning to center the marker
-          this.containerDiv.style.left = point.x - 50 + "px" // Center horizontally (100px width / 2)
-          this.containerDiv.style.top = point.y - 16 + "px" // Center vertically (32px height / 2)
+          // Adjust positioning to center the marker (44px width / 2 = 22px)
+          this.containerDiv.style.left = point.x - 22 + "px" // Center horizontally (44px / 2)
+          this.containerDiv.style.top = point.y - 22 + "px" // Center vertically (44px / 2)
 
           // Make sure the marker is visible
           this.containerDiv.style.display = "block"
@@ -247,46 +392,78 @@ export function MapView({
       // Update the marker's content based on selection state
       private updateContent() {
         const rewardText = this.formatSatsForPin(this.post.reward)
-        const backgroundColor = this.isSelected ? "#FEF3C7" : "#ffffff"
-        const borderColor = this.isSelected ? "#F7931A" : "#F7931A" // Always orange border
-        const boxShadow = this.isSelected ? "0 4px 8px rgba(0, 0, 0, 0.25)" : "0 2px 4px rgba(0, 0, 0, 0.2)" // Increased opacity by 10%
+        const markerScale = this.isSelected ? "1.15" : "1"
+        const markerShadow = this.isSelected
+          ? "0 0 20px rgba(254, 213, 107, 0.6), 0 4px 12px rgba(0, 0, 0, 0.15)"
+          : "0 2px 8px rgba(0, 0, 0, 0.1)"
+        const badgeOpacity = this.isSelected ? "1" : "0.95"
+        const zIndex = this.isSelected ? "10" : "1"
 
         this.containerDiv.innerHTML = `
-          <div style="
-            display: flex;
-            align-items: center;
-            background-color: ${backgroundColor};
-            border: 2px solid ${borderColor};
-            border-radius: 16px;
-            padding: 6px 12px;
-            box-shadow: ${boxShadow};
-            transition: all 0.2s ease;
-            min-width: 60px;
-            height: 32px;
-          ">
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 16px;
-              height: 16px;
-              margin-right: 6px;
-            ">
-              <span style="
-                color: #F7931A;
-                font-weight: bold;
-                font-size: 14px;
-              ">₿</span>
-            </div>
-            <span style="
-              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-              font-size: 14px;
-              font-weight: 500;
-              color: #333333;
-            ">${rewardText}</span>
-          </div>
-        `
-        console.log(`Marker ${this.markerId} content updated`)
+<style>
+@keyframes markerDropIn {
+ 0% {
+   transform: translateY(-25px) scale(${markerScale});
+   opacity: 0;
+ }
+ 60% {
+   transform: translateY(5px) scale(${markerScale});
+   opacity: 1;
+ }
+ 80% {
+   transform: translateY(-3px) scale(${markerScale});
+   opacity: 1;
+ }
+ 100% {
+   transform: translateY(0px) scale(${markerScale});
+   opacity: 1;
+ }
+}
+</style>
+<div class="btc-marker" style="
+ position: relative;
+ width: 44px;
+ height: 44px;
+ border-radius: 50%;
+ background: #FED56B;
+ border: 1px solid #C5792D;
+ box-shadow: ${markerShadow};
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ transform: scale(${markerScale});
+ transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+ z-index: ${zIndex};
+ animation: markerDropIn 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55) ${this.animationDelay}ms both;
+">
+ <img src="/images/bitcoin-logo.png" alt="Bitcoin" style="
+   width: 38px;
+   height: 38px;
+   filter: drop-shadow(0px -1px 1px rgba(255, 255, 255, 0.4));
+ ">
+ <div class="btc-badge" style="
+   position: absolute;
+   bottom: -12px;
+   left: 50%;
+   transform: translateX(-50%);
+   background: white;
+   color: black;
+   padding: 2px 8px;
+   font-size: 12px;
+   font-weight: bold;
+   border-radius: 16px;
+   border: 1px solid #C5792D;
+   box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
+   opacity: ${badgeOpacity};
+   transition: opacity 0.2s ease;
+   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+   min-width: 28px;
+   text-align: center;
+   z-index: 2;
+ ">${rewardText}</div>
+</div>
+`
+        console.log(`Marker ${this.markerId} content updated with selection state: ${this.isSelected}`)
       }
     }
   }
@@ -299,7 +476,7 @@ export function MapView({
       // Check if already loaded
       if (window.google && window.google.maps) {
         console.log("Google Maps already loaded")
-        setLoadingStep("Initializing map...")
+
         // Create PostMarker class
         PostMarkerClassRef.current = createPostMarkerClass()
         console.log("PostMarker class created:", !!PostMarkerClassRef.current)
@@ -309,7 +486,6 @@ export function MapView({
 
       // Load Google Maps JavaScript API
       console.log("Loading Google Maps JavaScript API...")
-      setLoadingStep("Loading map components...")
 
       await new Promise<void>((resolve, reject) => {
         // Check if script already exists
@@ -319,7 +495,7 @@ export function MapView({
         }
 
         const script = document.createElement("script")
-        script.src = `https://maps.googleapis.com/maps/api/js?key=AIzaSyBB01qY-IIgvTwrwvmjLACpg2wzEOAr1q4&libraries=places`
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`
         script.async = true
         script.defer = true
 
@@ -355,7 +531,7 @@ export function MapView({
       })
 
       console.log("Google Maps loaded, initializing map...")
-      setLoadingStep("Setting up map...")
+
       initializeMap()
     } catch (error) {
       console.error("Error loading Google Maps:", error)
@@ -389,7 +565,6 @@ export function MapView({
 
     try {
       console.log("Creating map instance...")
-      setLoadingStep("Creating map...")
 
       // Determine center location
       let defaultCenter = { lat: 37.7749, lng: -122.4194 } // Default fallback
@@ -450,6 +625,38 @@ export function MapView({
         console.log("Setting zoom to 15 for centerPost")
       }
 
+      // In the initializeMap function, after creating the map instance but before adding markers,
+      // add this code to handle user location:
+
+      // Handle user location if provided
+      if (userLocation) {
+        console.log("User location provided:", userLocation)
+
+        // Set the map center to user location
+        const userLatLng = {
+          lat: userLocation.latitude,
+          lng: userLocation.longitude,
+        }
+        map.setCenter(userLatLng)
+
+        // If city bounds are provided, use them for smart zooming
+        if (cityBounds) {
+          console.log("Fitting map to city bounds")
+          const bounds = new google.maps.LatLngBounds(
+            { lat: cityBounds.south, lng: cityBounds.west },
+            { lat: cityBounds.north, lng: cityBounds.east },
+          )
+          map.fitBounds(bounds)
+        } else {
+          map.setZoom(12) // City level zoom fallback
+        }
+
+        // Set city name in search bar if available
+        if (cityName) {
+          setSearchQuery(cityName)
+        }
+      }
+
       // Skip user location and go straight to adding post markers
       console.log("About to add post markers...")
       addPostMarkers(map)
@@ -506,7 +713,7 @@ export function MapView({
       console.log(`Creating marker ${index + 1} for post:`, post.id)
 
       try {
-        // Create a new marker for this post
+        // Create a new marker for this post with animation delay
         const marker = new PostMarkerClassRef.current(
           post,
           map,
@@ -524,6 +731,7 @@ export function MapView({
             }
           },
           markersClickable,
+          index, // Pass index for animation delay
         )
 
         // Store reference to marker
@@ -609,20 +817,21 @@ export function MapView({
     setLocationError(null)
     setMapInitialized(false)
     setMapInstance(null)
-    setLoadingStep("Retrying...")
+
     loadGoogleMaps()
   }
 
   // Update marker styles when selectedPost changes
   useEffect(() => {
-    if (mapInstance && mapInitialized && PostMarkerClassRef.current) {
+    if (mapInstance && mapInitialized && Object.keys(markersRef.current).length > 0) {
       console.log("Updating marker selection states due to selectedPost change")
-      // Update marker selection states
+      // Update marker selection states without recreating markers
       Object.entries(markersRef.current).forEach(([id, marker]) => {
-        marker.setSelected(selectedPost && id === selectedPost.id)
+        const isSelected = selectedPost && id === selectedPost.id
+        marker.setSelected(isSelected)
       })
     }
-  }, [selectedPost])
+  }, [selectedPost, mapInstance, mapInitialized])
 
   // Clean up markers when component unmounts
   useEffect(() => {
@@ -641,6 +850,14 @@ export function MapView({
   // Set container classes based on whether it's in a modal or not
   const containerClasses = isModal ? "h-full w-full relative" : "h-screen w-screen relative"
 
+  // Add this useEffect to handle cityName updates
+  useEffect(() => {
+    if (cityName && cityName !== searchQuery) {
+      setSearchQuery(cityName)
+      console.log("MapView: Updated searchQuery with cityName:", cityName)
+    }
+  }, [cityName, searchQuery])
+
   return (
     <div className={containerClasses}>
       {/* Close Button - Only show if not in modal */}
@@ -649,64 +866,89 @@ export function MapView({
           variant="outline"
           size="icon"
           onClick={onClose}
-          className="absolute top-4 right-4 z-50 h-8 w-8 rounded-full bg-white hover:bg-gray-50 shadow-lg border-gray-200 text-gray-600 hover:text-gray-800"
+          className="absolute top-4 right-4 z-50 h-12 w-12 rounded-full bg-white hover:bg-gray-50 shadow-lg border-gray-200 text-gray-600 hover:text-gray-800"
         >
-          <X className="h-4 w-4" />
+          <X className="h-5 w-5" />
         </Button>
       )}
 
-      {/* Search Bar - Adjust position if in modal */}
+      {/* Search Bar with Donation Button - Adjust position if in modal */}
       <div
         className={`absolute ${isModal ? "top-2" : "top-4"} left-1/2 transform -translate-x-1/2 z-50 w-80 max-w-[calc(100%-1rem)]`}
       >
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search here"
-            value={searchQuery}
-            onChange={(e) => handleSearchInput(e.target.value)}
-            onFocus={() => searchResults.length > 0 && setShowResults(true)}
-            className="w-full px-4 py-3 pr-10 rounded-full bg-white shadow-lg border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent caret-gray-900"
-          />
+        <div className="relative flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search here"
+              value={searchQuery}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              onFocus={() => searchResults.length > 0 && setShowResults(true)}
+              className="w-full px-4 py-3 pr-10 rounded-full bg-white shadow-lg border border-gray-200 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent caret-gray-900"
+            />
 
-          {/* Clear button */}
-          {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery("")
-                setSearchResults([])
-                setShowResults(false)
-              }}
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
-            >
-              <X className="w-3 h-3 text-gray-600" />
-            </button>
-          )}
+            {/* Clear button */}
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery("")
+                  setSearchResults([])
+                  setShowResults(false)
+                }}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors"
+              >
+                <X className="w-3 h-3 text-gray-600" />
+              </button>
+            )}
 
-          {/* Search Results Dropdown */}
-          {showResults && searchResults.length > 0 && (
-            <div className="absolute top-full mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto z-10">
-              {searchResults.map((result) => (
-                <button
-                  key={result.place_id}
-                  onClick={() => handlePlaceSelect(result.place_id, result.description)}
-                  className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 text-sm"
-                >
-                  <div className="font-medium text-gray-900">{result.structured_formatting.main_text}</div>
-                  <div className="text-gray-500 text-xs">{result.structured_formatting.secondary_text}</div>
-                </button>
-              ))}
-            </div>
-          )}
+            {/* Search Results Dropdown */}
+            {showResults && searchResults.length > 0 && (
+              <div className="absolute top-full mt-1 w-full bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto z-10">
+                {searchResults.map((result) => (
+                  <button
+                    key={result.place_id}
+                    onClick={() => handlePlaceSelect(result.place_id, result.description)}
+                    className="w-full px-4 py-3 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 text-sm"
+                  >
+                    <div className="font-medium text-gray-900">{result.structured_formatting.main_text}</div>
+                    <div className="text-gray-500 text-xs">{result.structured_formatting.secondary_text}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Donation Heart Button */}
+          <Button
+            onClick={handleDonationClick}
+            size="icon"
+            variant="outline"
+            className="h-12 w-12 rounded-full bg-white hover:bg-gray-50 shadow-lg border-gray-200 text-gray-600 hover:text-gray-800"
+          >
+            <Heart className="h-5 w-5 fill-pink-400 stroke-pink-600 stroke-2" />
+          </Button>
         </div>
       </div>
 
       {showLoading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-40">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-2" />
-            <span>{loadingStep}</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-40">
+          {/* Replicate LoadingSpinner structure */}
+          <div className="mb-4">
+            <svg
+              className="animate-spin h-10 w-10 text-primary"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
           </div>
+          <p className="text-lg font-medium text-center">Loading...</p>
         </div>
       )}
 
@@ -728,7 +970,7 @@ export function MapView({
 
       {/* Airbnb-style Preview Card - Only show if not in modal and post is selected */}
       {selectedPost && !isModal && (
-        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-80 max-w-[calc(100%-1rem)]">
+        <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[36rem] max-w-[calc(100%-1rem)]">
           <div
             className="bg-white rounded-xl shadow-lg p-3 cursor-pointer hover:shadow-xl transition-shadow relative"
             onClick={handlePreviewCardClick}
@@ -752,7 +994,7 @@ export function MapView({
                   {selectedPost.description || "No description available"}
                 </p>
                 <div className="flex items-center gap-1 mb-1">
-                  <span className="font-semibold text-orange-500">₿</span>
+                  <img src="/images/bitcoin-logo.png" alt="Bitcoin" className="w-4 h-4 object-contain" />
                   <span className="font-medium text-xs text-gray-700">{formatSatsValue(selectedPost.reward)}</span>
                 </div>
                 <div className="text-xs text-gray-500">{formatPostDate(selectedPost)}</div>
@@ -761,6 +1003,26 @@ export function MapView({
           </div>
         </div>
       )}
+
+      {/* New Issue Button - Always visible at bottom center */}
+      <div
+        className={`absolute bottom-4 left-1/2 transform -translate-x-1/2 z-40 transition-all duration-200 ${selectedPost && !isModal ? "translate-y-[-8rem]" : ""}`}
+      >
+        <Button
+          onClick={handleNewPost}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          New Issue
+        </Button>
+      </div>
+
+      {/* Donation Modal */}
+      <DonationModal
+        open={isDonationModalOpen}
+        onOpenChange={setIsDonationModalOpen}
+        preSelectedLocation={searchQuery || null}
+      />
     </div>
   )
 }

@@ -38,7 +38,7 @@ export interface Database {
       posts: {
         Row: {
           id: string
-          user_id: string
+          user_id: string | null
           title: string
           description: string
           image_url: string
@@ -71,10 +71,18 @@ export interface Database {
           original_reward: number | null
           total_boost_amount: number
           boost_applied: boolean
+          is_anonymous: boolean | null
+          funding_payment_request: string | null
+          funding_r_hash: string | null
+          funding_status: "pending" | "paid" | "expired" | null
+          // Fields for anonymous fix payouts
+          fixed_by_is_anonymous: boolean // << ADDED
+          anonymous_reward_paid_at: string | null // << ADDED (TIMESTAMPTZ in DB)
+          anonymous_reward_payment_hash: string | null // << ADDED (TEXT in DB)
         }
         Insert: {
           id?: string
-          user_id: string
+          user_id?: string | null
           title: string
           description: string
           image_url: string
@@ -107,10 +115,18 @@ export interface Database {
           original_reward?: number | null
           total_boost_amount?: number
           boost_applied?: boolean
+          is_anonymous?: boolean | null
+          funding_payment_request?: string | null
+          funding_r_hash?: string | null
+          funding_status?: "pending" | "paid" | "expired" | null
+          // Fields for anonymous fix payouts
+          fixed_by_is_anonymous?: boolean
+          anonymous_reward_paid_at?: string | null
+          anonymous_reward_payment_hash?: string | null
         }
         Update: {
           id?: string
-          user_id?: string
+          user_id?: string | null
           title?: string
           description?: string
           image_url?: string
@@ -143,6 +159,14 @@ export interface Database {
           original_reward?: number | null
           total_boost_amount?: number
           boost_applied?: boolean
+          is_anonymous?: boolean | null
+          funding_payment_request?: string | null
+          funding_r_hash?: string | null
+          funding_status?: "pending" | "paid" | "expired" | null
+          // Fields for anonymous fix payouts
+          fixed_by_is_anonymous?: boolean
+          anonymous_reward_paid_at?: string | null
+          anonymous_reward_payment_hash?: string | null
         }
       }
       groups: {

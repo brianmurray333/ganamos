@@ -7,14 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog"
+import { Dialog, DialogTrigger } from "@/components/ui/dialog"
 import { PostCard } from "@/components/post-card"
 import { useAuth } from "@/components/auth-provider"
 import { useNotifications } from "@/components/notifications-provider"
@@ -27,24 +20,23 @@ import { useToast } from "@/hooks/use-toast"
 import { AvatarSelector } from "@/components/avatar-selector"
 import { GroupsList } from "@/components/groups-list"
 import type { Post } from "@/lib/types"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
 import { AddConnectedAccountDialog } from "@/components/add-connected-account-dialog"
+import { AccountSwitcherDropdown } from "@/components/account-switcher-dropdown"
 
 type ActivityItem = {
   id: string
-  type: "post" | "fix" | "reward" | "fix_submitted" | "fix_review_needed"
-  postId: string
-  postTitle: string
+  type: "post" | "fix" | "reward" | "fix_submitted" | "fix_review_needed" | "donation"
+  postId?: string
+  postTitle?: string
   timestamp: Date
   amount?: number
   submitterName?: string
   submitterAvatar?: string
+  // Donation specific fields
+  donationId?: string
+  locationName?: string
+  donorName?: string
+  message?: string
 }
 
 export default function ProfilePage() {
@@ -84,12 +76,6 @@ export default function ProfilePage() {
   const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false)
   const ACTIVITIES_PER_PAGE = 10
   const [showAddAccountDialog, setShowAddAccountDialog] = useState(false)
-
-  // New state for account management
-  const [accountToManage, setAccountToManage] = useState<any>(null)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
 
   // Cache for posts data to avoid redundant processing
   const postsCache = useRef<Post[]>([])
@@ -219,6 +205,33 @@ export default function ProfilePage() {
     [user, supabase, session, activeUserId],
   )
 
+  // Fetch recent donations
+  const fetchDonations = useCallback(async () => {
+    if (!supabase) return { donations: [] }
+
+    try {
+      console.log("🔍 Fetching recent donations")
+
+      const { data, error } = await supabase
+        .from("donations")
+        .select("*, donation_pools(location_name)")
+        .in("status", ["pending", "completed"])
+        .order("created_at", { ascending: false })
+        .limit(20)
+
+      if (error) {
+        console.error("Error fetching donations:", error)
+        return { donations: [] }
+      }
+
+      console.log(`🔍 Found ${data.length} donations`)
+      return { donations: data }
+    } catch (error) {
+      console.error("Error in fetchDonations:", error)
+      return { donations: [] }
+    }
+  }, [supabase])
+
   // Process posts into different categories (posted, fixed, activities)
   const processPosts = useCallback(
     (posts: Post[], append = false) => {
@@ -257,11 +270,11 @@ export default function ProfilePage() {
 
   // Generate activities from posts with pagination
   const generateActivities = useCallback(
-    (posts: Post[], page: number) => {
-      if (!user || !posts) return
+    (posts: Post[], page: number, donations: any[] = []) => {
+      if (!user) return
 
       setIsActivityLoading(true)
-      console.log("🔍 Generating activities from posts")
+      console.log("🔍 Generating activities from posts and donations")
 
       // Use the active user ID (connected account or main account)
       const currentUserId = activeUserId || user.id
@@ -341,6 +354,21 @@ export default function ProfilePage() {
           })
         })
 
+      // Add donation activities
+      donations.forEach((donation) => {
+        const locationName = donation.donation_pools?.location_name || "a location"
+        userActivities.push({
+          id: `donation-${donation.id}`,
+          type: "donation",
+          donationId: donation.id,
+          locationName: locationName,
+          donorName: donation.donor_name || "Someone",
+          message: donation.message,
+          amount: donation.amount,
+          timestamp: new Date(donation.created_at || donation.completed_at),
+        })
+      })
+
       // Sort by timestamp (newest first)
       userActivities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
 
@@ -376,20 +404,23 @@ export default function ProfilePage() {
     setIsLoadingMore(true)
     const nextPage = activitiesPage + 1
 
-    // Use cached posts to generate more activities
-    if (postsCache.current.length > 0) {
-      generateActivities(postsCache.current, nextPage)
-      setIsLoadingMore(false)
-    } else {
-      // Fallback to fetching if cache is empty
-      fetchUserPosts().then(({ posts }) => {
-        if (posts) {
-          generateActivities(posts, nextPage)
-        }
+    // Fetch donations to include in the next page
+    fetchDonations().then(({ donations }) => {
+      // Use cached posts to generate more activities
+      if (postsCache.current.length > 0) {
+        generateActivities(postsCache.current, nextPage, donations)
         setIsLoadingMore(false)
-      })
-    }
-  }, [activitiesPage, fetchUserPosts, generateActivities, isLoadingMore])
+      } else {
+        // Fallback to fetching if cache is empty
+        fetchUserPosts().then(({ posts }) => {
+          if (posts) {
+            generateActivities(posts, nextPage, donations)
+          }
+          setIsLoadingMore(false)
+        })
+      }
+    })
+  }, [activitiesPage, fetchUserPosts, generateActivities, isLoadingMore, fetchDonations])
 
   // Add Load More Posts Function
   const handleLoadMorePosts = useCallback(async () => {
@@ -426,6 +457,9 @@ export default function ProfilePage() {
       // Fetch user posts immediately regardless of active tab
       const { posts, hasMore } = await fetchUserPosts(1)
 
+      // Fetch recent donations
+      const { donations } = await fetchDonations()
+
       if (posts.length > 0) {
         // Process posts into different categories
         processPosts(posts)
@@ -433,7 +467,7 @@ export default function ProfilePage() {
 
         // Generate initial activities if on activity tab
         if (activeTab === "activity") {
-          generateActivities(posts, 1)
+          generateActivities(posts, 1, donations)
         }
       } else {
         // Fallback to mock data
@@ -445,7 +479,7 @@ export default function ProfilePage() {
         processPosts(mockUserPosts)
 
         if (activeTab === "activity") {
-          generateActivities(mockUserPosts, 1)
+          generateActivities(mockUserPosts, 1, donations)
         }
       }
 
@@ -454,12 +488,17 @@ export default function ProfilePage() {
     }
 
     loadInitialData()
-
-    // Cleanup function
-    // return () => {
-    //   initialDataLoaded.current = false
-    // }
-  }, [user, loading, activeTab, fetchBitcoinPrice, fetchUserPosts, processPosts, generateActivities, activeUserId])
+  }, [
+    user,
+    loading,
+    activeTab,
+    fetchBitcoinPrice,
+    fetchUserPosts,
+    processPosts,
+    generateActivities,
+    activeUserId,
+    fetchDonations,
+  ])
 
   useEffect(() => {
     fetchConnectedAccounts()
@@ -495,123 +534,14 @@ export default function ProfilePage() {
 
       // If we're switching to activity tab and don't have activities yet
       if (value === "activity" && activities.length === 0 && postsCache.current.length > 0) {
-        generateActivities(postsCache.current, 1)
+        // Fetch donations when switching to activity tab
+        fetchDonations().then(({ donations }) => {
+          generateActivities(postsCache.current, 1, donations)
+        })
       }
     },
-    [activities.length, generateActivities],
+    [activities.length, generateActivities, fetchDonations],
   )
-
-  // Handle account management
-  const handleAccountAction = (account: any) => {
-    setAccountToManage(account)
-
-    // Check if it's a child account (email ends with @ganamos.app)
-    const isChildAccount = account.email?.endsWith("@ganamos.app")
-
-    if (isChildAccount) {
-      setShowDeleteDialog(true)
-    } else {
-      setShowDisconnectDialog(true)
-    }
-  }
-
-  // Handle disconnect account
-  const handleDisconnectAccount = async () => {
-    if (!accountToManage || !user) return
-
-    setIsProcessing(true)
-
-    try {
-      const response = await fetch("/api/disconnect-account", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          connectedAccountId: accountToManage.id,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to disconnect account")
-      }
-
-      // If currently viewing the disconnected account, switch back to main
-      if (isConnectedAccount && profile?.id === accountToManage.id) {
-        resetToMainAccount()
-      }
-
-      // Refresh the connected accounts list
-      fetchConnectedAccounts()
-
-      toast({
-        title: "Account disconnected",
-        description: `${accountToManage.name} has been disconnected from your account.`,
-      })
-
-      setShowDisconnectDialog(false)
-    } catch (error: any) {
-      console.error("Error disconnecting account:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to disconnect account. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
-  // Handle delete child account
-  const handleDeleteChildAccount = async () => {
-    if (!accountToManage || !user) return
-
-    setIsProcessing(true)
-
-    try {
-      const response = await fetch("/api/delete-child-account", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          childAccountId: accountToManage.id,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to delete child account")
-      }
-
-      // If currently viewing the deleted account, switch back to main
-      if (isConnectedAccount && profile?.id === accountToManage.id) {
-        resetToMainAccount()
-      }
-
-      // Refresh the connected accounts list
-      fetchConnectedAccounts()
-
-      toast({
-        title: "Account deleted",
-        description: `${accountToManage.name}'s account has been permanently deleted.`,
-      })
-
-      setShowDeleteDialog(false)
-    } catch (error: any) {
-      console.error("Error deleting child account:", error)
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete child account. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
-    }
-  }
 
   // Check if current profile is a child account
   const isChildAccount = profile?.email?.endsWith("@ganamos.app") || false
@@ -666,171 +596,38 @@ export default function ProfilePage() {
                 </div>
               </div>
               <div>
-                <h2 className="text-xl font-bold">{profile.name}</h2>
-                {!isChildAccount && <p className="text-sm text-muted-foreground">{profile.email}</p>}
+                <h2 className="text-2xl font-bold">
+                  {profile.name
+                    ? profile.name
+                        .split(" ")
+                        .map((part, index, array) =>
+                          index === array.length - 1 && array.length > 1 ? part.charAt(0) + "." : part,
+                        )
+                        .join(" ")
+                    : profile.name}
+                </h2>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <ThemeToggle />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-9 w-9 rounded-md">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <circle cx="12" cy="6" r="1" />
-                      <circle cx="12" cy="12" r="1" />
-                      <circle cx="12" cy="18" r="1" />
-                    </svg>
-                    <span className="sr-only">Open menu</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {/* Primary Account */}
-                  <DropdownMenuItem
-                    onClick={() => (!isConnectedAccount ? null : resetToMainAccount())}
-                    className={!isConnectedAccount ? "bg-muted" : "cursor-pointer"}
+              <ThemeToggle className="h-11 w-11" />
+              <AccountSwitcherDropdown>
+                <Button variant="outline" size="default" className="h-11 w-11 rounded-md">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center">
-                        <div className="w-6 h-6 mr-2 overflow-hidden rounded-full">
-                          <Image
-                            src={user?.user_metadata?.avatar_url || "/placeholder.svg?height=24&width=24"}
-                            alt={user?.user_metadata?.full_name || "Main Account"}
-                            width={24}
-                            height={24}
-                            className="object-cover"
-                          />
-                        </div>
-                        <span>{profile?.name || "Main Account"} (You)</span>
-                      </div>
-                      {!isConnectedAccount && (
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="16"
-                          height="16"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M20 6 9 17l-5-5" />
-                        </svg>
-                      )}
-                    </div>
-                  </DropdownMenuItem>
-
-                  {/* Connected Accounts */}
-                  {connectedAccounts.map((account) => (
-                    <DropdownMenuItem
-                      key={account.id}
-                      onClick={() =>
-                        isConnectedAccount && profile?.id === account.id ? null : switchToAccount(account.id)
-                      }
-                      className={isConnectedAccount && profile?.id === account.id ? "bg-muted" : "cursor-pointer"}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 mr-2 overflow-hidden rounded-full">
-                            <Image
-                              src={account.avatar_url || "/placeholder.svg?height=24&width=24"}
-                              alt={account.name}
-                              width={24}
-                              height={24}
-                              className="object-cover"
-                            />
-                          </div>
-                          <span>{account.name}</span>
-                        </div>
-                        <div className="flex items-center">
-                          {isConnectedAccount && profile?.id === account.id && (
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="mr-2"
-                            >
-                              <path d="M20 6 9 17l-5-5" />
-                            </svg>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleAccountAction(account)
-                            }}
-                          >
-                            ×
-                          </Button>
-                        </div>
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-
-                  <DropdownMenuSeparator />
-
-                  <DropdownMenuItem onClick={() => setShowAddAccountDialog(true)}>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mr-2"
-                    >
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <line x1="19" y1="8" x2="24" y2="13" />
-                      <line x1="24" y1="8" x2="19" y2="13" />
-                    </svg>
-                    Add Connected Account
-                  </DropdownMenuItem>
-
-                  <DropdownMenuSeparator />
-
-                  <DropdownMenuItem onClick={signOut}>
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="mr-2"
-                    >
-                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                      <polyline points="16,17 21,12 16,7" />
-                      <line x1="21" y1="12" x2="9" y2="12" />
-                    </svg>
-                    Log Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                  <span className="sr-only">Open menu</span>
+                </Button>
+              </AccountSwitcherDropdown>
             </div>
           </div>
 
@@ -1060,100 +857,6 @@ export default function ProfilePage() {
         onOpenChange={setShowAddAccountDialog}
         onAccountAdded={fetchConnectedAccounts}
       />
-
-      {/* Delete Child Account Dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="text-destructive">Delete Child Account</DialogTitle>
-            <DialogDescription>
-              This will permanently delete {accountToManage?.name}'s account and all their data. This action cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isProcessing}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteChildAccount} disabled={isProcessing}>
-              {isProcessing ? (
-                <div className="flex items-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Deleting...
-                </div>
-              ) : (
-                "Delete Account"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Disconnect Account Dialog */}
-      <Dialog open={showDisconnectDialog} onOpenChange={setShowDisconnectDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Disconnect Account</DialogTitle>
-            <DialogDescription>
-              This will remove {accountToManage?.name} from your connected accounts. They will still have their own
-              account.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => setShowDisconnectDialog(false)} disabled={isProcessing}>
-              Cancel
-            </Button>
-            <Button onClick={handleDisconnectAccount} disabled={isProcessing}>
-              {isProcessing ? (
-                <div className="flex items-center">
-                  <svg
-                    className="animate-spin -ml-1 mr-2 h-4 w-4"
-                    xmlns="http://www.w3.org/2000/svg"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    ></circle>
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    ></path>
-                  </svg>
-                  Disconnecting...
-                </div>
-              ) : (
-                "Disconnect Account"
-              )}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
@@ -1162,6 +865,10 @@ function ActivityCard({ activity }: { activity: ActivityItem }) {
   const router = useRouter()
 
   const handleClick = () => {
+    if (activity.type === "donation") {
+      // Donations don't have a detail page to navigate to
+      return
+    }
     router.push(`/post/${activity.postId}`)
   }
 
@@ -1181,7 +888,10 @@ function ActivityCard({ activity }: { activity: ActivityItem }) {
   }
 
   return (
-    <Card className="cursor-pointer hover:bg-muted/50 border dark:border-gray-800" onClick={handleClick}>
+    <Card
+      className={`hover:bg-muted/50 border dark:border-gray-800 ${activity.type !== "donation" ? "cursor-pointer" : ""}`}
+      onClick={handleClick}
+    >
       <CardContent className="p-4">
         <div className="flex items-start">
           <ActivityIcon type={activity.type} />
@@ -1189,12 +899,16 @@ function ActivityCard({ activity }: { activity: ActivityItem }) {
             <div className="flex items-start justify-between">
               <div>
                 <ActivityTitle activity={activity} />
-                <p className="text-sm text-muted-foreground">{activity.postTitle}</p>
+                {activity.type !== "donation" ? (
+                  <p className="text-sm text-muted-foreground">{activity.postTitle}</p>
+                ) : activity.message ? (
+                  <p className="text-sm text-muted-foreground">"{activity.message}"</p>
+                ) : null}
               </div>
               <div className="text-xs text-muted-foreground">{formatDate()}</div>
             </div>
 
-            {activity.type === "reward" && activity.amount && (
+            {(activity.type === "reward" || activity.type === "donation") && activity.amount && (
               <Badge
                 variant="outline"
                 className="mt-2 flex items-center gap-1 bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-800/30"
@@ -1208,7 +922,8 @@ function ActivityCard({ activity }: { activity: ActivityItem }) {
                     className="object-contain"
                   />
                 </div>
-                +{formatSatsValue(activity.amount)}
+                {activity.type === "reward" ? "+" : ""}
+                {formatSatsValue(activity.amount)}
               </Badge>
             )}
             {activity.type === "fix_review_needed" && (
@@ -1241,6 +956,12 @@ function ActivityTitle({ activity }: { activity: ActivityItem }) {
       return <p className="font-medium">You submitted a fix for review</p>
     case "fix_review_needed":
       return <p className="font-medium">{activity.submitterName || "Someone"} submitted a fix</p>
+    case "donation":
+      return (
+        <p className="font-medium">
+          {activity.donorName} donated to {activity.locationName}
+        </p>
+      )
     default:
       return <p className="font-medium">Activity</p>
   }
@@ -1334,6 +1055,14 @@ function ActivityIcon({ type }: { type: string }) {
             <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
             <circle cx="12" cy="13" r="3" />
           </svg>
+        </div>
+      )
+    case "donation":
+      return (
+        <div className="p-2 bg-green-100 rounded-full dark:bg-green-950/50">
+          <div className="w-4 h-4 relative">
+            <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={16} height={16} className="object-contain" />
+          </div>
         </div>
       )
     default:

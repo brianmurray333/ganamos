@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -9,10 +9,12 @@ import { QRCodeSVG } from "qrcode.react"
 import { LocationInput } from "@/components/location-input"
 import { MapView } from "@/components/map-view"
 import { Heart, Bitcoin, Copy, Eye, EyeOff } from "lucide-react"
+import { createBrowserSupabaseClient } from "@/lib/supabase"
 
 interface DonationModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  preSelectedLocation?: string | null
 }
 
 declare global {
@@ -21,8 +23,8 @@ declare global {
   }
 }
 
-export function DonationModal({ open, onOpenChange }: DonationModalProps) {
-  const [step, setStep] = useState<"location" | "map" | "invoice" | "success">("location")
+export function DonationModal({ open, onOpenChange, preSelectedLocation }: DonationModalProps) {
+  const [step, setStep] = useState<"location" | "map" | "invoice" | "success">(preSelectedLocation ? "map" : "location")
   const [locationName, setLocationName] = useState("")
   const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [selectedBounds, setSelectedBounds] = useState<google.maps.LatLngBounds | null>(null)
@@ -30,12 +32,57 @@ export function DonationModal({ open, onOpenChange }: DonationModalProps) {
   const [selectedAmount, setSelectedAmount] = useState<number>(0)
   const [isLoading, setIsLoading] = useState(false)
   const [showFullPaymentRequest, setShowFullPaymentRequest] = useState(false)
+  const [posts, setPosts] = useState<any[]>([])
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false)
 
   const donationAmounts = [
     { label: "1K sats", value: 1000 },
     { label: "10K sats", value: 10000 },
     { label: "100K sats", value: 100000 },
   ]
+
+  const fetchPosts = async () => {
+    setIsLoadingPosts(true)
+    try {
+      const supabase = createBrowserSupabaseClient()
+      const { data, error } = await supabase
+        .from("posts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .eq("fixed", false)
+        .neq("under_review", true)
+
+      if (error) {
+        console.error("Error fetching posts:", error)
+        // No mock data fallback - just use empty array
+        setPosts([])
+      } else {
+        setPosts(data || [])
+      }
+    } catch (error) {
+      console.error("Error fetching posts:", error)
+      // No mock data fallback - just use empty array
+      setPosts([])
+    } finally {
+      setIsLoadingPosts(false)
+    }
+  }
+
+  useEffect(() => {
+    if (open) {
+      fetchPosts()
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (preSelectedLocation && open) {
+      setLocationName(preSelectedLocation)
+      // For pre-selected locations, we'll use a default center point
+      // The actual city bounds will be handled by the map view
+      setSelectedLocation({ lat: 0, lng: 0 }) // Placeholder coordinates
+      setSelectedBounds(null)
+    }
+  }, [preSelectedLocation, open])
 
   const handleLocationChange = (value: string, placeDetails?: google.maps.places.PlaceResult) => {
     console.log("Location changed:", value, placeDetails)
@@ -97,9 +144,9 @@ export function DonationModal({ open, onOpenChange }: DonationModalProps) {
   }
 
   const resetForm = () => {
-    setStep("location")
-    setLocationName("")
-    setSelectedLocation(null)
+    setStep(preSelectedLocation ? "map" : "location")
+    setLocationName(preSelectedLocation || "")
+    setSelectedLocation(preSelectedLocation ? { lat: 0, lng: 0 } : null)
     setSelectedBounds(null)
     setPaymentRequest("")
     setSelectedAmount(0)
@@ -146,11 +193,11 @@ export function DonationModal({ open, onOpenChange }: DonationModalProps) {
             <div className="h-64 w-full rounded-lg overflow-hidden">
               {console.log("Rendering map with:", selectedLocation, "bounds:", selectedBounds)}
               <MapView
-                posts={[]}
+                posts={posts}
                 center={selectedLocation}
                 bounds={selectedBounds}
                 onClose={() => {}}
-                isLoading={false}
+                isLoading={isLoadingPosts}
                 isModal={true}
                 initialSearchQuery={locationName}
               />
