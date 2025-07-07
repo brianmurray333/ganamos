@@ -332,8 +332,7 @@ export function PostCard({ post }: { post: Post }) {
             {/* Bitcoin Map Marker with Sats Reward on the right */}
             <div style={{ position: "relative", width: "48px", height: "48px" }}>
             <div
-                className="marker-container cursor-pointer"
-              onClick={handleClick}
+                className="marker-container"
               style={{
                   width: "48px",
                   height: "48px",
@@ -373,7 +372,7 @@ export function PostCard({ post }: { post: Post }) {
                   minWidth: "24px",
                   textAlign: "center",
                   zIndex: 3,
-                  pointerEvents: "auto",
+                  pointerEvents: "none",
                   width: "max-content",
                 }}
               >
@@ -406,6 +405,10 @@ export function PostCard({ post }: { post: Post }) {
         .marker-container {
           position: relative;
           overflow: hidden;
+          pointer-events: none;
+        }
+        .marker-container img {
+          pointer-events: none;
         }
         .marker-container::before {
           content: '';
@@ -422,7 +425,7 @@ export function PostCard({ post }: { post: Post }) {
           );
           transform: rotate(0deg);
           animation: shine 2.5s infinite ease-in-out;
-          z-index: 2;
+          z-index: 1;
           pointer-events: none;
         }
         @keyframes shine {
