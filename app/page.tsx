@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth-provider"
 import { LandingHero } from "@/components/landing-hero"
 import { BackgroundImage } from "@/components/background-image"
 import { DonationModal } from "@/components/donation-modal"
+import { HeaderBar } from "@/components/header-bar"
 
 export default function HomePage() {
   const { user, loading, sessionLoaded } = useAuth()
@@ -42,6 +43,9 @@ export default function HomePage() {
     console.log("Showing landing page due to auth timeout")
     return (
       <div className="relative min-h-screen">
+        {/* Header Bar */}
+        <HeaderBar />
+        
         {/* Background Image */}
         <div className="fixed inset-0 z-0">
           <BackgroundImage />
@@ -87,6 +91,9 @@ export default function HomePage() {
   // Show landing page for unauthenticated users
   return (
     <div className="relative min-h-screen">
+      {/* Header Bar */}
+      <HeaderBar />
+      
       {/* Background Image */}
       <div className="fixed inset-0 z-0">
         <BackgroundImage />
