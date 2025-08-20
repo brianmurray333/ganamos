@@ -58,16 +58,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error || !data) {
         const { data: userData } = await supabase.auth.getUser()
+        
+        // For phone auth users, email might be null/undefined
+        const userEmail = userData.user?.email
+        const userPhone = userData.user?.phone
+        const userName = userData.user?.user_metadata?.full_name || 
+                        userData.user?.user_metadata?.name || 
+                        (userPhone ? `User ${userPhone.slice(-4)}` : "User")
+        
         const newProfile = {
           id: userId,
-          email: userData.user?.email || "",
-          name: userData.user?.user_metadata?.full_name || userData.user?.user_metadata?.name || "User",
+          email: userEmail || null, // Allow null for phone-only users
+          name: userName,
           avatar_url: userData.user?.user_metadata?.avatar_url || null,
           balance: 0, // Starting balance
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }
 
+        console.log("Creating new profile for user:", userId, newProfile)
+        
         const { data: createdProfile, error: createError } = await supabase
           .from("profiles")
           .insert(newProfile)
@@ -75,8 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single()
 
         if (createError) {
+          console.error("Error creating profile:", createError)
+          console.error("Profile data that failed:", newProfile)
           return null
         }
+        
+        console.log("Successfully created profile:", createdProfile)
 
         return createdProfile || newProfile
       }
