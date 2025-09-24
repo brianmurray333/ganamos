@@ -285,6 +285,15 @@ export async function checkPostFundingStatusAction(rHash: string): Promise<{
 /**
  * Creates the actual post in the database AFTER an anonymous user has funded it.
  */
+// This function already demonstrates how the posts table
+// handles anonymous job postings with all necessary fields:
+// - is_anonymous: true (marks as anonymous job)
+// - user_id: null (no specific user owner)  
+// - reward system (payment for completion)
+// - location data (job location)
+// - claiming/fixing workflow (job acceptance/completion)
+// - funding integration (payment escrow)
+
 export async function createFundedAnonymousPostAction(postDetails: {
   description: string
   reward: number
