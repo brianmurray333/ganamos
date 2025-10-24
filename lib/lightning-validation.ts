@@ -71,8 +71,10 @@ export function extractInvoiceAmount(invoice: string): number | null {
     // If no amount suffix is found, it's an amount-less invoice
     
     // Check if the invoice has an amount by looking for amount suffixes
-    const hasAmountSuffix = /[umnp]$/.test(withoutPrefix) || /[umnp][a-z0-9]/.test(withoutPrefix)
+    // The amount suffix appears after the amount digits
+    const hasAmountSuffix = /[umnp]/.test(withoutPrefix)
     console.log('[LIGHTNING DEBUG] Has amount suffix:', hasAmountSuffix)
+    console.log('[LIGHTNING DEBUG] Checking for amount suffixes in:', withoutPrefix.substring(0, 50) + '...')
     
     if (!hasAmountSuffix) {
       console.log('[LIGHTNING DEBUG] No amount suffix found - treating as amount-less invoice')
