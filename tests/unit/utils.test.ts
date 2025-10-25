@@ -21,7 +21,8 @@ describe('formatSatsValue', () => {
   })
 
   it('should handle edge cases and rounding', () => {
-    expect(formatSatsValue(999999)).toBe('1000.0k sats')
+    // For values >= 100k, rounds down to nearest thousand with no decimal
+    expect(formatSatsValue(999999)).toBe('999k sats')
     expect(formatSatsValue(1234567)).toBe('1.2M sats')
     expect(formatSatsValue(99900)).toBe('99.9k sats')
     expect(formatSatsValue(100000000)).toBe('100M sats')
