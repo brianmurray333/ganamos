@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -40,6 +40,9 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
   const [paymentDetected, setPaymentDetected] = useState(false)
 
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Memoize posts to prevent unnecessary MapView re-renders in modal
+  const memoizedPosts = useMemo(() => posts, [posts])
 
   const donationAmounts = [
     { label: "1K sats", value: 1000 },
@@ -256,7 +259,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
           <div className="space-y-4">
             <div className="h-64 w-full rounded-lg overflow-hidden">
               <MapView
-                posts={posts}
+                posts={memoizedPosts}
                 center={selectedLocation}
                 bounds={selectedBounds}
                 onClose={() => {}}

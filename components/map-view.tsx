@@ -209,9 +209,19 @@ function MapViewComponent({
 
   // Filter posts that have location data - memoized to prevent recalculation on every render
   const postsWithLocation = useMemo(() => {
-    return allPosts.filter(
-      (post) => post.latitude && post.longitude && !isNaN(Number(post.latitude)) && !isNaN(Number(post.longitude)),
-    )
+    // Guard against undefined or null
+    if (!allPosts || !Array.isArray(allPosts)) return []
+    
+    return allPosts.filter((post) => {
+      // Guard against null/undefined posts
+      if (!post) return false
+      
+      const lat = Number(post.latitude)
+      const lng = Number(post.longitude)
+      
+      // Check for valid coordinates (not NaN and not zero)
+      return !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0
+    })
   }, [allPosts])
 
   // Format date for preview card

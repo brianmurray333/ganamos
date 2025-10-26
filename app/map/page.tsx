@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { MapView } from "@/components/map-view"
 import { LoadingSpinner } from "@/components/loading-spinner"
@@ -14,6 +14,9 @@ export default function MapPage() {
   const searchParams = useSearchParams()
   const { user } = useAuth()
   const supabase = createBrowserSupabaseClient()
+
+  // Memoize posts to prevent unnecessary MapView re-renders
+  const memoizedPosts = useMemo(() => posts, [posts])
 
   const [userLocation, setUserLocation] = useState<{
     latitude: number
@@ -137,7 +140,7 @@ export default function MapPage() {
 
   return (
     <MapView
-      posts={posts}
+      posts={memoizedPosts}
       onClose={() => window.history.back()}
       userLocation={userLocation}
       cityName={userLocation?.name || null}

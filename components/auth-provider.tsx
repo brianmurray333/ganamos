@@ -460,6 +460,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const targetUserId = activeUserId || user.id
     console.log('🔔 Setting up profile real-time subscription for user:', targetUserId)
     
+    // Debounce timer to batch rapid profile updates
+    let debounceTimer: NodeJS.Timeout | null = null
+    let isMounted = true
+    
     const profileSubscription = supabase
       .channel(`profile-updates-${targetUserId}`)
       .on(
@@ -475,28 +479,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('🔔 Payload:', payload)
           console.log('🔔 New balance:', payload.new?.balance)
           
-          // Fetch fresh profile data
-          try {
-            const { data: freshProfile, error } = await supabase
-              .from("profiles")
-              .select("*")
-              .eq("id", targetUserId)
-              .single()
-            
-            if (freshProfile && !error) {
-              console.log('🔔 Successfully fetched fresh profile, updating state')
-              setProfile(freshProfile)
-              
-              // Also update main account profile if this is the main account
-              if (!activeUserId) {
-                setMainAccountProfile(freshProfile)
-              }
-            } else {
-              console.error('🔔 Error fetching fresh profile:', error)
-            }
-          } catch (err) {
-            console.error('🔔 Exception fetching fresh profile:', err)
+          // Clear any existing debounce timer
+          if (debounceTimer) {
+            clearTimeout(debounceTimer)
           }
+          
+          // Debounce profile updates to prevent rapid state changes
+          debounceTimer = setTimeout(async () => {
+            if (!isMounted) return
+            
+            // Fetch fresh profile data
+            try {
+              const { data: freshProfile, error } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", targetUserId)
+                .single()
+              
+              if (freshProfile && !error && isMounted) {
+                console.log('🔔 Successfully fetched fresh profile, updating state')
+                setProfile(freshProfile)
+                
+                // Also update main account profile if this is the main account
+                if (!activeUserId) {
+                  setMainAccountProfile(freshProfile)
+                }
+              } else if (error) {
+                console.error('🔔 Error fetching fresh profile:', error)
+              }
+            } catch (err) {
+              console.error('🔔 Exception fetching fresh profile:', err)
+            }
+          }, 500) // 500ms debounce to batch rapid updates
         },
       )
       .subscribe((status) => {
@@ -511,7 +525,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
     return () => {
+      isMounted = false
       console.log('🔔 Unsubscribing from profile updates')
+      if (debounceTimer) {
+        clearTimeout(debounceTimer)
+      }
       profileSubscription.unsubscribe()
     }
   }, [user, activeUserId, supabase])
