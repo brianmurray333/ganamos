@@ -18,40 +18,28 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({}),
 }))
 
+// Helper to create mock Supabase client (reusable for both client and server)
+const createMockSupabaseClient = () => ({
+  auth: {
+    getUser: vi.fn(),
+    signOut: vi.fn(),
+    signInWithPassword: vi.fn(),
+    signUp: vi.fn(),
+  },
+  from: vi.fn(() => ({
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    single: vi.fn(),
+  })),
+})
+
 // Mock Supabase client
 vi.mock('@/lib/supabase', () => ({
-  createClient: vi.fn(() => ({
-    auth: {
-      getUser: vi.fn(),
-      signOut: vi.fn(),
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn(),
-    })),
-  })),
-  createServerSupabaseClient: vi.fn(() => ({
-    auth: {
-      getUser: vi.fn(),
-      signOut: vi.fn(),
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn(),
-    })),
-  })),
+  createClient: vi.fn(() => createMockSupabaseClient()),
+  createServerSupabaseClient: vi.fn(() => createMockSupabaseClient()),
 }))
 
 // Mock email library
