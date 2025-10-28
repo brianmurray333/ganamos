@@ -431,6 +431,41 @@ export interface Database {
           created_at?: string
         }
       }
+      devices: {
+        Row: {
+          id: string
+          user_id: string
+          pairing_code: string
+          pet_name: string
+          pet_type: "cat" | "dog" | "rabbit" | "squirrel" | "turtle"
+          status: "paired" | "disconnected" | "offline"
+          last_seen_at: string | null
+          created_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          pairing_code: string
+          pet_name: string
+          pet_type: "cat" | "dog" | "rabbit" | "squirrel" | "turtle"
+          status?: "paired" | "disconnected" | "offline"
+          last_seen_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          pairing_code?: string
+          pet_name?: string
+          pet_type?: "cat" | "dog" | "rabbit" | "squirrel" | "turtle"
+          status?: "paired" | "disconnected" | "offline"
+          last_seen_at?: string | null
+          created_at?: string
+          updated_at?: string | null
+        }
+      }
     }
   }
 }
@@ -445,3 +480,4 @@ export type DonationPool = Database["public"]["Tables"]["donation_pools"]["Row"]
 export type Donation = Database["public"]["Tables"]["donations"]["Row"]
 export type PostBoost = Database["public"]["Tables"]["post_boosts"]["Row"]
 export type LocationHierarchy = Database["public"]["Tables"]["location_hierarchy"]["Row"]
+export type Device = Database["public"]["Tables"]["devices"]["Row"]
