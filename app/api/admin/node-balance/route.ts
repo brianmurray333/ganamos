@@ -10,6 +10,18 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest) {
   try {
+    // Verify the request has valid authorization
+    // Only authenticated admin requests (with CRON_SECRET) can access this endpoint
+    const authHeader = request.headers.get('authorization')
+    
+    if (process.env.CRON_SECRET) {
+      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        )
+      }
+    }
 
     // Get wallet balance from LND
     const result = await lndRequest("/v1/balance/channels")
