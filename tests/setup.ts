@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
+// Determine if we're running integration tests (by checking test file path)
+const isIntegrationTest = () => {
+  const testPath = expect.getState().testPath || ''
+  return testPath.includes('integration/')
+}
+
 // Mock Next.js router
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -18,25 +24,29 @@ vi.mock('next/navigation', () => ({
   useParams: () => ({}),
 }))
 
-// Mock Supabase client
-vi.mock('@/lib/supabase', () => ({
-  createClient: vi.fn(() => ({
-    auth: {
-      getUser: vi.fn(),
-      signOut: vi.fn(),
-      signInWithPassword: vi.fn(),
-      signUp: vi.fn(),
-    },
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      delete: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn(),
+// Conditionally mock Supabase client
+// For integration tests, use real Supabase connection
+// For unit tests, use mocked client
+if (!isIntegrationTest()) {
+  vi.mock('@/lib/supabase', () => ({
+    createClient: vi.fn(() => ({
+      auth: {
+        getUser: vi.fn(),
+        signOut: vi.fn(),
+        signInWithPassword: vi.fn(),
+        signUp: vi.fn(),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn(),
+      })),
     })),
-  })),
-}))
+  }))
+}
 
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

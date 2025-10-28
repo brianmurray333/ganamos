@@ -27,10 +27,12 @@ export async function POST(request: Request) {
     }
 
     const primaryUserId = session.user.id
+    console.log('[DEBUG] Primary User ID:', primaryUserId)
 
     // Generate a unique email for the child account
     const childId = uuidv4()
     const childEmail = `child-${childId}@ganamos.app`
+    console.log('[DEBUG] Child Email:', childEmail)
 
     // Create a random password (it won't be used for login)
     const password = uuidv4()
@@ -66,9 +68,11 @@ export async function POST(request: Request) {
       }
 
       childUserId = adminData.user.id
+      console.log('[DEBUG] Created new child user ID:', childUserId)
     } else {
       // User already exists, use the existing ID
       childUserId = existingUsers.users[0].id
+      console.log('[DEBUG] Using existing child user ID:', childUserId)
 
       // Update the user metadata to ensure it's current
       await adminSupabase.auth.admin.updateUserById(childUserId, {
@@ -89,9 +93,8 @@ export async function POST(request: Request) {
       .replace(/[^a-z0-9-]/g, '')
       .substring(0, 20) // Limit to 20 characters
 
-    // Use regular client with proper RLS policies
-    // Use upsert instead of insert to handle cases where the profile might already exist
-    const { error: profileError } = await supabase.from("profiles").upsert(
+    // Use admin client to create profile (bypasses RLS)
+    const { error: profileError } = await adminSupabase.from("profiles").upsert(
       {
         id: childUserId,
         name: username,
@@ -111,7 +114,7 @@ export async function POST(request: Request) {
     }
 
     // Check if connection already exists before creating it
-    const { data: existingConnection } = await supabase
+    const { data: existingConnection } = await adminSupabase
       .from("connected_accounts")
       .select("*")
       .eq("primary_user_id", primaryUserId)
@@ -119,8 +122,9 @@ export async function POST(request: Request) {
       .single()
 
     if (!existingConnection) {
-      // Create the connection between primary user and child account
-      const { error: connectionError } = await supabase.from("connected_accounts").insert({
+      console.log('[DEBUG] Creating connection - Primary:', primaryUserId, 'Child:', childUserId)
+      // Create the connection between primary user and child account using admin client
+      const { error: connectionError } = await adminSupabase.from("connected_accounts").insert({
         primary_user_id: primaryUserId,
         connected_user_id: childUserId,
         created_at: new Date().toISOString(),
