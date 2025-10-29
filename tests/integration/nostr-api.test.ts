@@ -24,54 +24,12 @@ describe('POST /api/nostr/publish-post', () => {
   })
 
   describe('Request Validation', () => {
-    it('should return 400 when title is missing', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
-      const response = await POST(request)
-      const data = await response.json()
-
-      expect(response.status).toBe(400)
-      expect(data.success).toBe(false)
-      expect(data.error).toBe('Missing required parameters')
-      expect(mockPostToNostr).not.toHaveBeenCalled()
-    })
-
-    it('should return 400 when description is missing', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          postId: 'test-post-id',
-        }),
-      })
-
-      const response = await POST(request)
-      const data = await response.json()
-
-      expect(response.status).toBe(400)
-      expect(data.success).toBe(false)
-      expect(data.error).toBe('Missing required parameters')
-      expect(mockPostToNostr).not.toHaveBeenCalled()
-    })
-
-    it('should return 400 when postId is missing', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-        }),
-      })
-
+    it.each([
+      { field: 'title', body: { description: 'Test description', postId: 'test-post-id' } },
+      { field: 'description', body: { title: 'Test Issue', postId: 'test-post-id' } },
+      { field: 'postId', body: { title: 'Test Issue', description: 'Test description' } },
+    ])('should return 400 when $field is missing', async ({ body }) => {
+      const request = createNostrPublishRequest(body)
       const response = await POST(request)
       const data = await response.json()
 
@@ -82,14 +40,7 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should return 400 when multiple required fields are missing', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'Via Regina',
-        }),
-      })
-
+      const request = createNostrPublishRequest({ location: 'Via Regina' })
       const response = await POST(request)
       const data = await response.json()
 
@@ -99,16 +50,7 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should accept request with only required fields', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -119,70 +61,23 @@ describe('POST /api/nostr/publish-post', () => {
 
   describe('Successful Publishing', () => {
     it('should call postToNostr with minimal required parameters', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       await POST(request)
 
       expect(mockPostToNostr).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        })
+        expect.objectContaining(minimalValidNostrPost)
       )
     })
 
     it('should call postToNostr with all optional parameters', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          location: 'Via Regina',
-          city: 'Como',
-          latitude: 45.8081,
-          longitude: 9.0852,
-          reward: 5000,
-          postId: 'test-post-id',
-          imageUrl: 'https://example.com/image.jpg',
-        }),
-      })
-
+      const request = createNostrPublishRequest(fullNostrPost)
       await POST(request)
 
-      expect(mockPostToNostr).toHaveBeenCalledWith({
-        title: 'Test Issue',
-        description: 'Test description',
-        location: 'Via Regina',
-        city: 'Como',
-        latitude: 45.8081,
-        longitude: 9.0852,
-        reward: 5000,
-        postId: 'test-post-id',
-        imageUrl: 'https://example.com/image.jpg',
-      })
+      expect(mockPostToNostr).toHaveBeenCalledWith(fullNostrPost)
     })
 
     it('should return 200 with success response', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -202,16 +97,7 @@ describe('POST /api/nostr/publish-post', () => {
         relaysFailed: 2,
       })
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -220,20 +106,14 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should handle undefined optional parameters', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-          location: undefined,
-          city: undefined,
-          latitude: undefined,
-          longitude: undefined,
-          reward: undefined,
-          imageUrl: undefined,
-        }),
+      const request = createNostrPublishRequest({
+        ...minimalValidNostrPost,
+        location: undefined,
+        city: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        reward: undefined,
+        imageUrl: undefined,
       })
 
       const response = await POST(request)
@@ -243,9 +123,7 @@ describe('POST /api/nostr/publish-post', () => {
       expect(data.success).toBe(true)
       expect(mockPostToNostr).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
+          ...minimalValidNostrPost,
           location: undefined,
           city: undefined,
           latitude: undefined,
@@ -259,21 +137,9 @@ describe('POST /api/nostr/publish-post', () => {
 
   describe('Publishing Failures', () => {
     it('should return 500 when postToNostr returns failure', async () => {
-      mockPostToNostr.mockResolvedValueOnce({
-        success: false,
-        error: 'All relays failed',
-      })
+      mockPostToNostr.mockResolvedValueOnce(createMockFailureResponse('All relays failed'))
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -285,16 +151,7 @@ describe('POST /api/nostr/publish-post', () => {
     it('should return 500 when postToNostr throws error', async () => {
       mockPostToNostr.mockRejectedValueOnce(new Error('Network error'))
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -304,21 +161,11 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should handle NOSTR_PRIVATE_KEY not configured error', async () => {
-      mockPostToNostr.mockResolvedValueOnce({
-        success: false,
-        error: 'NOSTR_PRIVATE_KEY not configured in environment variables',
-      })
+      mockPostToNostr.mockResolvedValueOnce(
+        createMockFailureResponse('NOSTR_PRIVATE_KEY not configured in environment variables')
+      )
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -335,16 +182,7 @@ describe('POST /api/nostr/publish-post', () => {
         relaysFailed: 5,
       })
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -355,14 +193,7 @@ describe('POST /api/nostr/publish-post', () => {
 
   describe('Error Response Format', () => {
     it('should return consistent error structure for validation errors', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-        }),
-      })
-
+      const request = createNostrPublishRequest({ title: 'Test Issue' })
       const response = await POST(request)
       const data = await response.json()
 
@@ -373,21 +204,9 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should return consistent error structure for publishing failures', async () => {
-      mockPostToNostr.mockResolvedValueOnce({
-        success: false,
-        error: 'Publishing failed',
-      })
+      mockPostToNostr.mockResolvedValueOnce(createMockFailureResponse('Publishing failed'))
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -397,16 +216,7 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should return consistent success structure', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-        }),
-      })
-
+      const request = createNostrPublishRequest(minimalValidNostrPost)
       const response = await POST(request)
       const data = await response.json()
 
@@ -421,39 +231,20 @@ describe('POST /api/nostr/publish-post', () => {
 
   describe('Parameter Forwarding', () => {
     it('should forward reward parameter correctly', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-          reward: 10000,
-        }),
-      })
-
+      const request = createNostrPublishRequest({ ...minimalValidNostrPost, reward: 10000 })
       await POST(request)
 
       expect(mockPostToNostr).toHaveBeenCalledWith(
-        expect.objectContaining({
-          reward: 10000,
-        })
+        expect.objectContaining({ reward: 10000 })
       )
     })
 
     it('should forward geolocation parameters correctly', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-          latitude: 45.8081,
-          longitude: 9.0852,
-        }),
+      const request = createNostrPublishRequest({
+        ...minimalValidNostrPost,
+        latitude: 45.8081,
+        longitude: 9.0852,
       })
-
       await POST(request)
 
       expect(mockPostToNostr).toHaveBeenCalledWith(
@@ -465,17 +256,10 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should forward imageUrl parameter correctly', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 'test-post-id',
-          imageUrl: 'https://storage.example.com/images/test.jpg',
-        }),
+      const request = createNostrPublishRequest({
+        ...minimalValidNostrPost,
+        imageUrl: 'https://storage.example.com/images/test.jpg',
       })
-
       await POST(request)
 
       expect(mockPostToNostr).toHaveBeenCalledWith(
@@ -488,12 +272,7 @@ describe('POST /api/nostr/publish-post', () => {
 
   describe('Edge Cases', () => {
     it('should handle malformed JSON request body', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'invalid json',
-      })
-
+      const request = createNostrPublishRequestRaw('invalid json')
       const response = await POST(request)
       const data = await response.json()
 
@@ -503,12 +282,7 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should handle empty request body', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      })
-
+      const request = createNostrPublishRequestRaw('{}')
       const response = await POST(request)
       const data = await response.json()
 
@@ -521,14 +295,10 @@ describe('POST /api/nostr/publish-post', () => {
       const longTitle = 'A'.repeat(1000)
       const longDescription = 'B'.repeat(5000)
 
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: longTitle,
-          description: longDescription,
-          postId: 'test-post-id',
-        }),
+      const request = createNostrPublishRequest({
+        title: longTitle,
+        description: longDescription,
+        postId: 'test-post-id',
       })
 
       const response = await POST(request)
@@ -545,14 +315,10 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should handle special characters in title and description', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test 🏙️ Issue with émojis & spëcial çhars',
-          description: 'Description with\nnewlines and\ttabs',
-          postId: 'test-post-id',
-        }),
+      const request = createNostrPublishRequest({
+        title: 'Test 🏙️ Issue with émojis & spëcial çhars',
+        description: 'Description with\nnewlines and\ttabs',
+        postId: 'test-post-id',
       })
 
       const response = await POST(request)
@@ -563,14 +329,10 @@ describe('POST /api/nostr/publish-post', () => {
     })
 
     it('should handle numeric postId', async () => {
-      const request = new Request('http://localhost:3457/api/nostr/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Test Issue',
-          description: 'Test description',
-          postId: 12345,
-        }),
+      const request = createNostrPublishRequest({
+        title: 'Test Issue',
+        description: 'Test description',
+        postId: 12345,
       })
 
       const response = await POST(request)

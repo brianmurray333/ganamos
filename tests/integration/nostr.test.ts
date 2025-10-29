@@ -13,12 +13,7 @@ describe('lib/nostr.ts - Nostr Integration', () => {
   describe('postToNostr()', () => {
     describe('Event Construction', () => {
       it('should create Kind 1 event with minimal required fields', async () => {
-        const result = await postToNostr({
-          title: 'Test Issue',
-          description: 'Test description',
-          reward: 1000,
-          postId: 'test-post-id',
-        })
+        const result = await postToNostr(createPostToNostrParams())
 
         expect(result.success).toBe(true)
         expect(result.eventId).toContain('mock-event-id')
@@ -27,17 +22,19 @@ describe('lib/nostr.ts - Nostr Integration', () => {
       })
 
       it('should create Kind 1 event with all optional fields', async () => {
-        const result = await postToNostr({
-          title: 'Test Issue with Location',
-          description: 'Test description with all fields',
-          location: 'Via Regina',
-          city: 'Como',
-          latitude: 45.8081,
-          longitude: 9.0852,
-          reward: 5000,
-          postId: 'test-post-id-full',
-          imageUrl: 'https://example.com/image.jpg',
-        })
+        const result = await postToNostr(
+          createPostToNostrParams({
+            title: 'Test Issue with Location',
+            description: 'Test description with all fields',
+            location: 'Via Regina',
+            city: 'Como',
+            latitude: 45.8081,
+            longitude: 9.0852,
+            reward: 5000,
+            postId: 'test-post-id-full',
+            imageUrl: 'https://example.com/image.jpg',
+          })
+        )
 
         expect(result.success).toBe(true)
         expect(result.eventId).toBeDefined()
@@ -45,13 +42,7 @@ describe('lib/nostr.ts - Nostr Integration', () => {
       })
 
       it('should format event content with city when provided', async () => {
-        await postToNostr({
-          title: 'Test Issue',
-          description: 'Test description',
-          city: 'Como',
-          reward: 1000,
-          postId: 'test-post-id',
-        })
+        await postToNostr(createPostToNostrParams({ city: 'Como' }))
 
         // Verify finalizeEvent was called with proper content structure
         expect(finalizeEvent).toHaveBeenCalledWith(
