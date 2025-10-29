@@ -20,6 +20,8 @@ import {
   setupLocalStorageMock,
   mockGeocodingResponse,
   mockGeocodingErrorResponse,
+  MOCK_SF_COORDS,
+  MOCK_OAKLAND_COORDS,
 } from '../mocks/google-maps'
 
 describe('geocoding.ts', () => {

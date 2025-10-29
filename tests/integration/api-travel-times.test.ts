@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { GET } from '@/app/api/travel-times/route'
-import { mockDistanceMatrixResponse, mockDistanceMatrixLongDurationResponse } from '../mocks/google-maps'
+import { 
+  mockDistanceMatrixResponse, 
+  mockDistanceMatrixLongDurationResponse,
+  MOCK_SF_COORDS,
+  MOCK_OAKLAND_COORDS,
+  MOCK_LA_COORDS,
+} from '../mocks/google-maps'
 
 describe('/api/travel-times endpoint', () => {
   const originalEnv = {
