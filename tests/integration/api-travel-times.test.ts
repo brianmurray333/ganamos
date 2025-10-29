@@ -10,6 +10,13 @@ import {
 } from '../mocks/google-maps'
 
 describe('/api/travel-times endpoint', () => {
+  // Helper function to format coordinates as query params
+  const formatCoords = (coords: { latitude: number; longitude: number }) => 
+    `${coords.latitude},${coords.longitude}`
+
+  const SF_TO_OAKLAND = `origin=${formatCoords(MOCK_SF_COORDS)}&destination=${formatCoords(MOCK_OAKLAND_COORDS)}`
+  const SF_TO_LA = `origin=${formatCoords(MOCK_SF_COORDS)}&destination=${formatCoords(MOCK_LA_COORDS)}`
+  
   const originalEnv = {
     GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
     NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
@@ -24,8 +31,8 @@ describe('/api/travel-times endpoint', () => {
       const urlString = typeof url === 'string' ? url : url.toString()
       
       if (urlString.includes('maps.googleapis.com/maps/api/distancematrix')) {
-        // Check for long distance
-        if (urlString.includes('34.0522') || urlString.includes('-118.2437')) {
+        // Check for long distance (LA coordinates)
+        if (urlString.includes(String(MOCK_LA_COORDS.latitude)) || urlString.includes(String(MOCK_LA_COORDS.longitude))) {
           return Promise.resolve({
             ok: true,
             json: async () => mockDistanceMatrixLongDurationResponse,
@@ -51,7 +58,7 @@ describe('/api/travel-times endpoint', () => {
   describe('successful responses', () => {
     it('should return travel times for valid origin and destination', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -64,7 +71,7 @@ describe('/api/travel-times endpoint', () => {
 
     it('should format duration as expected (minutes only)', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -76,7 +83,7 @@ describe('/api/travel-times endpoint', () => {
 
     it('should format duration with hours and minutes', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=34.0522,-118.2437'
+        `http://localhost:3457/api/travel-times?${SF_TO_LA}`
       )
       
       const response = await GET(request)
@@ -88,17 +95,17 @@ describe('/api/travel-times endpoint', () => {
 
     it('should call Distance Matrix API with correct parameters', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)
       
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('origins=37.7749,-122.4194'),
+        expect.stringContaining(`origins=${formatCoords(MOCK_SF_COORDS)}`),
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('destinations=37.8044,-122.2712'),
+        expect.stringContaining(`destinations=${formatCoords(MOCK_OAKLAND_COORDS)}`),
         expect.any(Object)
       )
       expect(global.fetch).toHaveBeenCalledWith(
@@ -113,7 +120,7 @@ describe('/api/travel-times endpoint', () => {
 
     it('should include API key in Distance Matrix request', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)
@@ -126,7 +133,7 @@ describe('/api/travel-times endpoint', () => {
 
     it('should fetch both walking and driving times in parallel', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)
@@ -139,7 +146,7 @@ describe('/api/travel-times endpoint', () => {
   describe('parameter validation', () => {
     it('should return null values when origin is missing', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?destination=37.8044,-122.2712'
+        'http://localhost:3457/api/travel-times?destination=${formatCoords(MOCK_OAKLAND_COORDS)}'
       )
       
       const response = await GET(request)
@@ -150,7 +157,7 @@ describe('/api/travel-times endpoint', () => {
 
     it('should return null values when destination is missing', async () => {
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194'
+        'http://localhost:3457/api/travel-times?origin=${formatCoords(MOCK_SF_COORDS)}'
       )
       
       const response = await GET(request)
@@ -175,7 +182,7 @@ describe('/api/travel-times endpoint', () => {
       delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -188,7 +195,7 @@ describe('/api/travel-times endpoint', () => {
       global.fetch = vi.fn().mockRejectedValue(new Error('API Error'))
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -207,7 +214,7 @@ describe('/api/travel-times endpoint', () => {
       })
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -223,7 +230,7 @@ describe('/api/travel-times endpoint', () => {
       } as Response)
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -258,7 +265,7 @@ describe('/api/travel-times endpoint', () => {
       process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = 'public-key'
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)
@@ -274,7 +281,7 @@ describe('/api/travel-times endpoint', () => {
       process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = 'public-key-fallback'
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)
@@ -305,7 +312,7 @@ describe('/api/travel-times endpoint', () => {
       } as Response)
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -332,7 +339,7 @@ describe('/api/travel-times endpoint', () => {
       } as Response)
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -359,7 +366,7 @@ describe('/api/travel-times endpoint', () => {
       } as Response)
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       const response = await GET(request)
@@ -386,7 +393,7 @@ describe('/api/travel-times endpoint', () => {
       })
       
       const request = new NextRequest(
-        'http://localhost:3457/api/travel-times?origin=37.7749,-122.4194&destination=37.8044,-122.2712'
+        `http://localhost:3457/api/travel-times?${SF_TO_OAKLAND}`
       )
       
       await GET(request)

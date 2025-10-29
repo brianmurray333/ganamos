@@ -49,7 +49,7 @@ describe('geocoding.ts', () => {
 
   describe('reverseGeocode', () => {
     it('should convert coordinates to human-readable location', async () => {
-      const result = await reverseGeocode(37.7749, -122.4194)
+      const result = await reverseGeocode(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       expect(result).toBe('San Francisco, CA')
       expect(global.fetch).toHaveBeenCalledWith(
@@ -87,7 +87,7 @@ describe('geocoding.ts', () => {
     })
 
     it('should extract city and state from geocoding response', async () => {
-      const result = await reverseGeocode(37.7749, -122.4194)
+      const result = await reverseGeocode(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       // Should extract "San Francisco, CA" from mock response
       expect(result).toContain('San Francisco')
@@ -102,7 +102,7 @@ describe('geocoding.ts', () => {
 
   describe('getStandardizedLocation', () => {
     it('should extract standardized location components', async () => {
-      const result = await getStandardizedLocation(37.7749, -122.4194)
+      const result = await getStandardizedLocation(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       expect(result).toEqual({
         locality: 'San Francisco',
@@ -116,7 +116,7 @@ describe('geocoding.ts', () => {
     it('should return null on API error', async () => {
       global.fetch = vi.fn().mockRejectedValueOnce(new Error('API Error'))
       
-      const result = await getStandardizedLocation(37.7749, -122.4194)
+      const result = await getStandardizedLocation(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       expect(result).toBeNull()
     })
@@ -131,7 +131,7 @@ describe('geocoding.ts', () => {
       delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
       
       // getStandardizedLocation catches the error and returns null
-      const result = await getStandardizedLocation(37.7749, -122.4194)
+      const result = await getStandardizedLocation(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       expect(result).toBeNull()
     })
@@ -160,7 +160,7 @@ describe('geocoding.ts', () => {
         }),
       } as Response)
       
-      const result = await getStandardizedLocation(37.7749, -122.4194)
+      const result = await getStandardizedLocation(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude)
       
       expect(result).toEqual({
         locality: 'San Francisco',
@@ -176,8 +176,7 @@ describe('geocoding.ts', () => {
       
       expect(result).toEqual({
         name: 'San Francisco, CA',
-        latitude: 37.7749,
-        longitude: -122.4194,
+        ...MOCK_SF_COORDS,
         locality: 'San Francisco',
         admin_area_1: 'California',
         admin_area_2: 'San Francisco County',
@@ -281,7 +280,7 @@ describe('geocoding.ts', () => {
     })
 
     it('should fetch travel times from API route', async () => {
-      const result = await getTravelTimes(37.7749, -122.4194, 37.8044, -122.2712)
+      const result = await getTravelTimes(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude, MOCK_OAKLAND_COORDS.latitude, MOCK_OAKLAND_COORDS.longitude)
       
       expect(result).toEqual({
         walking: '30min',
@@ -289,14 +288,14 @@ describe('geocoding.ts', () => {
       })
       
       expect(global.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/travel-times?origin=37.7749%2C-122.4194&destination=37.8044%2C-122.2712')
+        expect.stringContaining(`/api/travel-times?origin=${MOCK_SF_COORDS.latitude}%2C${MOCK_SF_COORDS.longitude}&destination=${MOCK_OAKLAND_COORDS.latitude}%2C${MOCK_OAKLAND_COORDS.longitude}`)
       )
     })
 
     it('should return null values on API error', async () => {
       global.fetch = vi.fn().mockRejectedValue(new Error('API Error'))
       
-      const result = await getTravelTimes(37.7749, -122.4194, 37.8044, -122.2712)
+      const result = await getTravelTimes(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude, MOCK_OAKLAND_COORDS.latitude, MOCK_OAKLAND_COORDS.longitude)
       
       expect(result).toEqual({
         walking: null,
@@ -305,7 +304,7 @@ describe('geocoding.ts', () => {
     })
 
     it('should encode coordinates properly in URL', async () => {
-      await getTravelTimes(37.7749, -122.4194, 37.8044, -122.2712)
+      await getTravelTimes(MOCK_SF_COORDS.latitude, MOCK_SF_COORDS.longitude, MOCK_OAKLAND_COORDS.latitude, MOCK_OAKLAND_COORDS.longitude)
       
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringMatching(/origin=37\.7749%2C-122\.4194/)
@@ -384,8 +383,7 @@ describe('geocoding.ts', () => {
     it('should save and retrieve cached location', () => {
       const location: LocationData = {
         name: 'San Francisco, CA',
-        latitude: 37.7749,
-        longitude: -122.4194,
+        ...MOCK_SF_COORDS,
         locality: 'San Francisco',
         admin_area_1: 'California',
         country: 'United States',
@@ -401,8 +399,7 @@ describe('geocoding.ts', () => {
     it('should expire cached location after 72 hours', () => {
       const location: LocationData = {
         name: 'San Francisco, CA',
-        latitude: 37.7749,
-        longitude: -122.4194,
+        ...MOCK_SF_COORDS,
       }
       
       saveCachedLocation(location)
@@ -429,8 +426,7 @@ describe('geocoding.ts', () => {
       // Save some data
       saveCachedLocation({
         name: 'Test Location',
-        latitude: 37.7749,
-        longitude: -122.4194,
+        ...MOCK_SF_COORDS,
       })
       saveLocationPermissionState({
         status: 'granted',
