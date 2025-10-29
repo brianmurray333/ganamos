@@ -4,6 +4,113 @@
  */
 
 /**
+ * Test user IDs for consistent testing
+ */
+export const TEST_USER_IDS = {
+  PRIMARY: 'test-user-primary-123',
+  CONNECTED_CHILD: 'test-user-child-456',
+  UNRELATED: 'test-user-unrelated-789',
+}
+
+/**
+ * Test profile data
+ */
+export const TEST_PROFILES = {
+  PRIMARY_USER: {
+    id: TEST_USER_IDS.PRIMARY,
+    email: 'primary@example.com',
+    name: 'Primary User',
+    username: 'primaryuser',
+    avatar_url: 'https://example.com/avatar1.jpg',
+    balance: 1000,
+    fixed_issues_count: 5,
+    created_at: new Date('2024-01-01').toISOString(),
+    updated_at: new Date('2024-01-01').toISOString(),
+  },
+  CHILD_USER: {
+    id: TEST_USER_IDS.CONNECTED_CHILD,
+    email: 'child@example.com',
+    name: 'Child User',
+    username: 'childuser',
+    avatar_url: 'https://example.com/avatar2.jpg',
+    balance: 500,
+    fixed_issues_count: 2,
+    created_at: new Date('2024-01-02').toISOString(),
+    updated_at: new Date('2024-01-02').toISOString(),
+  },
+  UNRELATED_USER: {
+    id: TEST_USER_IDS.UNRELATED,
+    email: 'unrelated@example.com',
+    name: 'Unrelated User',
+    username: 'unrelateduser',
+    avatar_url: 'https://example.com/avatar3.jpg',
+    balance: 750,
+    fixed_issues_count: 3,
+    created_at: new Date('2024-01-03').toISOString(),
+    updated_at: new Date('2024-01-03').toISOString(),
+  },
+}
+
+/**
+ * Test device data
+ */
+export const TEST_DEVICES = {
+  PRIMARY_USER_DEVICE: {
+    id: 'device-primary-001',
+    user_id: TEST_USER_IDS.PRIMARY,
+    pairing_code: 'ABC123',
+    pet_name: 'Primary Pet',
+    pet_type: 'dog',
+    status: 'active',
+    last_seen_at: new Date('2024-01-15').toISOString(),
+    created_at: new Date('2024-01-10').toISOString(),
+    updated_at: new Date('2024-01-15').toISOString(),
+  },
+  CHILD_USER_DEVICE: {
+    id: 'device-child-001',
+    user_id: TEST_USER_IDS.CONNECTED_CHILD,
+    pairing_code: 'XYZ789',
+    pet_name: 'Child Pet',
+    pet_type: 'cat',
+    status: 'active',
+    last_seen_at: new Date('2024-01-16').toISOString(),
+    created_at: new Date('2024-01-11').toISOString(),
+    updated_at: new Date('2024-01-16').toISOString(),
+  },
+}
+
+/**
+ * Test connected accounts data
+ */
+export const TEST_CONNECTED_ACCOUNTS = {
+  PRIMARY_TO_CHILD: {
+    id: 'connection-001',
+    primary_user_id: TEST_USER_IDS.PRIMARY,
+    connected_user_id: TEST_USER_IDS.CONNECTED_CHILD,
+    created_at: new Date('2024-01-05').toISOString(),
+    updated_at: new Date('2024-01-05').toISOString(),
+  },
+}
+
+/**
+ * Create a test device with optional overrides
+ */
+export function createDevice(overrides: Partial<typeof TEST_DEVICES.PRIMARY_USER_DEVICE> = {}) {
+  return {
+    id: `device-${Date.now()}`,
+    user_id: TEST_USER_IDS.PRIMARY,
+    pairing_code: `CODE${Math.random().toString(36).substring(7).toUpperCase()}`,
+    pet_name: 'Test Pet',
+    pet_type: 'dog',
+    status: 'active',
+    last_seen_at: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...overrides,
+  }
+}
+
+/**
  * Generate test request payload for /api/verify-fix endpoint
  */
 export function createVerifyFixRequest(overrides: {
