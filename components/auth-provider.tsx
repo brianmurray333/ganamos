@@ -30,6 +30,7 @@ type AuthContextType = {
   resetToMainAccount: () => Promise<void>
   connectedAccounts: Profile[]
   fetchConnectedAccounts: () => Promise<void>
+  mockLogin: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -714,6 +715,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Mock login for development/testing
+  const mockLogin = async () => {
+    try {
+      // Sign in with the test user credentials
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: 'test@ganamos.dev',
+        password: 'test123456',
+      })
+
+      if (error) {
+        toast({
+          title: "Mock Login Failed",
+          description: error.message || "Test user may not exist. Run: npm run create-test-user",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // The auth state change listener will handle setting the user/profile
+      toast({
+        title: "Mock Login Successful",
+        description: "Logged in as Test User",
+      })
+
+      router.push('/dashboard')
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to perform mock login",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -738,6 +773,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetToMainAccount,
         connectedAccounts,
         fetchConnectedAccounts,
+        mockLogin,
       }}
     >
       {children}
