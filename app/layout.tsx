@@ -11,6 +11,8 @@ import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: "Ganamos!",
   description: "Fix your community, earn Bitcoin",

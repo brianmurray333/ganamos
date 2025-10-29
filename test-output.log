@@ -1,0 +1,864 @@
+
+> motc-app@0.1.0 test
+> vitest run && playwright test
+
+
+ RUN  v3.2.4 /workspaces/ganamos
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Authentication > should return 401 when session is missing
+[Withdraw API] session: [1mnull[22m [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Authentication > should return 401 when session error occurs
+[Withdraw API] session: [1mnull[22m Error: Session error
+    at [90m/workspaces/ganamos/[39mtests/integration/api/wallet/withdraw.test.ts:159:16
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Input Validation > should return 400 when paymentRequest is missing
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Input Validation > should return 400 when amount is missing
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Input Validation > should return 400 when amount is zero
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Input Validation > should return 400 when amount is negative
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Input Validation > should return 400 when amount is NaN
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Balance Verification > should return 404 when user profile is not found
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Balance Verification > should return 400 when balance is insufficient
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Transaction Creation > should return 500 when transaction creation fails
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stderr | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Transaction Creation > should return 500 when transaction creation fails
+Error creating transaction: { message: [32m'Database error'[39m }
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should successfully process withdrawal with valid invoice and sufficient balance
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should successfully process withdrawal with valid invoice and sufficient balance
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should successfully process withdrawal with valid invoice and sufficient balance
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should return 500 and update transaction to failed when payment fails
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should return 500 and update transaction to failed when payment fails
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should return 500 and update transaction to failed when payment fails
+[Withdraw API] Payment result: {
+  "success": false,
+  "error": "Insufficient node balance",
+  "details": {
+    "code": "INSUFFICIENT_FUNDS"
+  }
+}
+[Withdraw API] Payment failed, updating transaction to failed
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle payment network timeout errors
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle payment network timeout errors
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle payment network timeout errors
+[Withdraw API] Payment result: {
+  "success": false,
+  "error": "Network timeout",
+  "details": {
+    "timeout": true
+  }
+}
+[Withdraw API] Payment failed, updating transaction to failed
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should not send email notification for ganamos.app email addresses
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should not send email notification for ganamos.app email addresses
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should not send email notification for ganamos.app email addresses
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle email notification failures gracefully
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle email notification failures gracefully
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle email notification failures gracefully
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+stderr | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Payment Processing > should handle email notification failures gracefully
+Error sending Bitcoin sent email: Error: Email service unavailable
+    at [90m/workspaces/ganamos/[39mtests/integration/api/wallet/withdraw.test.ts:558:57
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Error Handling > should return 500 with generic error message on unexpected errors
+Unexpected error in withdraw API: Error: Unexpected database error
+    at [90m/workspaces/ganamos/[39mtests/integration/api/wallet/withdraw.test.ts:590:9
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Error Handling > should handle JSON parsing errors
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stderr | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Error Handling > should handle JSON parsing errors
+Unexpected error in withdraw API: Error: Invalid JSON
+    at [90m/workspaces/ganamos/[39mtests/integration/api/wallet/withdraw.test.ts:610:41
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle amount-less invoices correctly
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle amount-less invoices correctly
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle amount-less invoices correctly
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle exact balance withdrawal
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle exact balance withdrawal
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle exact balance withdrawal
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle large withdrawal amounts
+[Withdraw API] session: {
+  user: { id: [32m'user-123'[39m },
+  access_token: [32m'mock-token'[39m,
+  token_type: [32m'bearer'[39m,
+  expires_in: [33m3600[39m,
+  expires_at: [33m1761752040109[39m,
+  refresh_token: [32m'mock-refresh-token'[39m
+} [1mnull[22m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle large withdrawal amounts
+[Withdraw API] About to pay invoice: lnbc1000n1pj9x7xmpp5abc123 amount: [33m1000000[39m
+
+stdout | tests/integration/api/wallet/withdraw.test.ts > POST /api/wallet/withdraw > Edge Cases > should handle large withdrawal amounts
+[Withdraw API] Payment result: {
+  "success": true,
+  "paymentHash": "payment-hash-abc123",
+  "data": {}
+}
+
+ ✓ tests/integration/api/wallet/withdraw.test.ts (20 tests) 95ms
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Accurate Data Retrieval > should use fallback query when RPC call fails
+Function call failed, trying direct query: Error: RPC function not found
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:66:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Accurate Data Retrieval > should return 503 when no price data is available
+No Bitcoin price found in database
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Accurate Data Retrieval > should return 503 when database returns null
+No Bitcoin price found in database
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Correct Data Transformation > should calculate age_minutes correctly in fallback path
+Function call failed, trying direct query: Error: RPC failed
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:149:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Correct Data Transformation > should set isStale to true for old data (> 60 minutes)
+Bitcoin price is stale: 90 minutes old
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > CORS Headers Configuration > should include CORS headers on error responses in development
+Error fetching Bitcoin price from database: { message: [32m'Database error'[39m }
+Error in Bitcoin price API: Error: Failed to fetch price from database
+    at Module.GET [90m(/workspaces/ganamos/[39mapp/api/bitcoin-price/route.ts:51:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:400:24
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+Error stack: Error: Failed to fetch price from database
+    at Module.GET (/workspaces/ganamos/app/api/bitcoin-price/route.ts:51:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /workspaces/ganamos/tests/integration/bitcoin-price.test.ts:400:24
+    at file:///workspaces/ganamos/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Supabase URL: Set
+Service Key: Set
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should return 500 on database error
+Error fetching Bitcoin price from database: { message: [32m'Connection timeout'[39m }
+Error in Bitcoin price API: Error: Failed to fetch price from database
+    at Module.GET [90m(/workspaces/ganamos/[39mapp/api/bitcoin-price/route.ts:51:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:416:24
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+Error stack: Error: Failed to fetch price from database
+    at Module.GET (/workspaces/ganamos/app/api/bitcoin-price/route.ts:51:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /workspaces/ganamos/tests/integration/bitcoin-price.test.ts:416:24
+    at file:///workspaces/ganamos/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Supabase URL: Set
+Service Key: Set
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should handle both RPC and fallback query failures
+Function call failed, trying direct query: Error: RPC failed
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:425:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should handle both RPC and fallback query failures
+Error fetching Bitcoin price from database: { message: [32m'Query failed'[39m }
+Error in Bitcoin price API: Error: Failed to fetch price from database
+    at Module.GET [90m(/workspaces/ganamos/[39mapp/api/bitcoin-price/route.ts:51:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:439:24
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+Error stack: Error: Failed to fetch price from database
+    at Module.GET (/workspaces/ganamos/app/api/bitcoin-price/route.ts:51:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /workspaces/ganamos/tests/integration/bitcoin-price.test.ts:439:24
+    at file:///workspaces/ganamos/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Supabase URL: Set
+Service Key: Set
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should include error stack trace in development mode
+Function call failed, trying direct query: Error: Test error
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:449:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should include error stack trace in development mode
+Error fetching Bitcoin price from database: { message: [32m'Query failed'[39m }
+Error in Bitcoin price API: Error: Failed to fetch price from database
+    at Module.GET [90m(/workspaces/ganamos/[39mapp/api/bitcoin-price/route.ts:51:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:463:24
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+Error stack: Error: Failed to fetch price from database
+    at Module.GET (/workspaces/ganamos/app/api/bitcoin-price/route.ts:51:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /workspaces/ganamos/tests/integration/bitcoin-price.test.ts:463:24
+    at file:///workspaces/ganamos/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Supabase URL: Set
+Service Key: Set
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should not include error stack trace in production mode
+Function call failed, trying direct query: Error: Test error
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:473:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/integration/bitcoin-price.test.ts > Bitcoin Price API Integration Tests > Error Handling and Edge Cases > should not include error stack trace in production mode
+Error fetching Bitcoin price from database: { message: [32m'Query failed'[39m }
+Error in Bitcoin price API: Error: Failed to fetch price from database
+    at Module.GET [90m(/workspaces/ganamos/[39mapp/api/bitcoin-price/route.ts:51:13[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90m/workspaces/ganamos/[39mtests/integration/bitcoin-price.test.ts:487:24
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:20
+Error stack: Error: Failed to fetch price from database
+    at Module.GET (/workspaces/ganamos/app/api/bitcoin-price/route.ts:51:13)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /workspaces/ganamos/tests/integration/bitcoin-price.test.ts:487:24
+    at file:///workspaces/ganamos/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20
+Supabase URL: Set
+Service Key: Set
+
+ ✓ tests/integration/bitcoin-price.test.ts (26 tests) 39ms
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should cache geocoding results
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should cache geocoding results
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should deduplicate concurrent requests for the same location
+Returning cached geocoding result for: 37.774900,-122.419400
+Returning cached geocoding result for: 37.774900,-122.419400
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should fallback to coordinates on API error
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should handle missing API key gracefully
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should extract city and state from geocoding response
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should round coordinates to 6 decimal places for cache key
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should round coordinates to 6 decimal places for cache key
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > getStandardizedLocation > should return null on API error
+Standardized geocoding failed: Error: API Error
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:148:52
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > getStandardizedLocation > should handle missing API key gracefully
+Standardized geocoding failed: Error: Google Maps API key not found
+    at getStandardizedLocation [90m(/workspaces/ganamos/[39mlib/geocoding.ts:223:13[90m)[39m
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:164:20
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should get current location with human-readable name
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should cache location data in localStorage
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should use cached location when available
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should use cached location when available
+Using cached location data
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should bypass cache when forceRefresh is true
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should bypass cache when forceRefresh is true
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should save permission state on success
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should fallback to coordinates if reverse geocoding fails
+Returning cached geocoding result for: 37.774900,-122.419400
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should fallback to coordinates if reverse geocoding fails
+Standardized geocoding failed: Error: Geocoding failed
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:321:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > getTravelTimes > should return null values on API error
+Error getting travel times: Error: API Error
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:362:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > Location Permission State Management > should handle corrupted localStorage data gracefully
+Error reading location permission state: SyntaxError: Unexpected token 'i', "invalid-json" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at getLocationPermissionState [90m(/workspaces/ganamos/[39mlib/geocoding.ts:51:26[90m)[39m
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:432:21
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+
+stderr | tests/unit/geocoding.test.ts > geocoding.ts > Location Caching > should handle corrupted cached location data
+Error reading cached location: SyntaxError: Unexpected token 'i', "invalid-json" is not valid JSON
+    at JSON.parse (<anonymous>)
+    at getCachedLocation [90m(/workspaces/ganamos/[39mlib/geocoding.ts:85:27[90m)[39m
+    at [90m/workspaces/ganamos/[39mtests/unit/geocoding.test.ts:488:22
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+
+stdout | tests/unit/geocoding.test.ts > geocoding.ts > Location Caching > should clear all location data
+Location permission and cached data cleared
+
+ ❯ tests/unit/geocoding.test.ts (34 tests | 9 failed) 120ms
+   ✓ geocoding.ts > reverseGeocode > should convert coordinates to human-readable location 4ms
+   × geocoding.ts > reverseGeocode > should cache geocoding results 6ms
+     → expected "spy" to be called 1 times, but got 0 times
+   × geocoding.ts > reverseGeocode > should deduplicate concurrent requests for the same location 2ms
+     → expected "spy" to be called 1 times, but got 0 times
+   × geocoding.ts > reverseGeocode > should fallback to coordinates on API error 3ms
+     → expected 'San Francisco, CA' to be '37.7749, -122.4194' // Object.is equality
+   ✓ geocoding.ts > reverseGeocode > should fallback to coordinates when API returns no results 1ms
+   × geocoding.ts > reverseGeocode > should handle missing API key gracefully 3ms
+     → promise resolved "'San Francisco, CA'" instead of rejecting
+   ✓ geocoding.ts > reverseGeocode > should extract city and state from geocoding response 1ms
+   × geocoding.ts > reverseGeocode > should round coordinates to 6 decimal places for cache key 2ms
+     → expected "spy" to be called 1 times, but got 0 times
+   ✓ geocoding.ts > getStandardizedLocation > should extract standardized location components 1ms
+   ✓ geocoding.ts > getStandardizedLocation > should return null on API error 1ms
+   ✓ geocoding.ts > getStandardizedLocation > should return null when API returns no results 1ms
+   × geocoding.ts > getStandardizedLocation > should handle missing API key gracefully 2ms
+     → promise resolved "null" instead of rejecting
+   ✓ geocoding.ts > getStandardizedLocation > should handle partial location data 1ms
+   ✓ geocoding.ts > getCurrentLocationWithName > should get current location with human-readable name 2ms
+   ✓ geocoding.ts > getCurrentLocationWithName > should cache location data in localStorage 65ms
+   ✓ geocoding.ts > getCurrentLocationWithName > should use cached location when available 3ms
+   ✓ geocoding.ts > getCurrentLocationWithName > should bypass cache when forceRefresh is true 3ms
+   ✓ geocoding.ts > getCurrentLocationWithName > should respect denied permission state 2ms
+   × geocoding.ts > getCurrentLocationWithName > should handle geolocation not supported 1ms
+     → Cannot redefine property: geolocation
+   ✓ geocoding.ts > getCurrentLocationWithName > should save permission state on success 2ms
+   × geocoding.ts > getCurrentLocationWithName > should save permission state on denial 1ms
+     → Cannot redefine property: geolocation
+   × geocoding.ts > getCurrentLocationWithName > should fallback to coordinates if reverse geocoding fails 3ms
+     → expected 'San Francisco, CA' to be '37.7749, -122.4194' // Object.is equality
+   ✓ geocoding.ts > getTravelTimes > should fetch travel times from API route 1ms
+   ✓ geocoding.ts > getTravelTimes > should return null values on API error 1ms
+   ✓ geocoding.ts > getTravelTimes > should encode coordinates properly in URL 1ms
+   ✓ geocoding.ts > Location Permission State Management > should return unknown status when no cached permission 1ms
+   ✓ geocoding.ts > Location Permission State Management > should save and retrieve permission state 1ms
+   ✓ geocoding.ts > Location Permission State Management > should expire permission state after 72 hours 1ms
+   ✓ geocoding.ts > Location Permission State Management > should handle corrupted localStorage data gracefully 1ms
+   ✓ geocoding.ts > Location Caching > should return null when no cached location 1ms
+   ✓ geocoding.ts > Location Caching > should save and retrieve cached location 1ms
+   ✓ geocoding.ts > Location Caching > should expire cached location after 72 hours 1ms
+   ✓ geocoding.ts > Location Caching > should handle corrupted cached location data 1ms
+   ✓ geocoding.ts > Location Caching > should clear all location data 1ms
+stderr | tests/integration/api-travel-times.test.ts > /api/travel-times endpoint > error handling > should return null values when API key is missing
+Google Maps API key not configured
+
+stderr | tests/integration/api-travel-times.test.ts > /api/travel-times endpoint > error handling > should handle Distance Matrix API errors gracefully
+Error fetching walking duration: Error: API Error
+    at [90m/workspaces/ganamos/[39mtests/integration/api-travel-times.test.ts:182:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+Error fetching driving duration: Error: API Error
+    at [90m/workspaces/ganamos/[39mtests/integration/api-travel-times.test.ts:182:48
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:155:11
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:752:26
+    at [90mfile:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///workspaces/ganamos/[39mnode_modules/[4m@vitest/runner[24m/dist/chunk-hooks.js:1729:8[90m)[39m
+
+ ❯ tests/integration/api-travel-times.test.ts (20 tests | 1 failed) 5182ms
+   ✓ /api/travel-times endpoint > successful responses > should return travel times for valid origin and destination 41ms
+   ✓ /api/travel-times endpoint > successful responses > should format duration as expected (minutes only) 2ms
+   ✓ /api/travel-times endpoint > successful responses > should format duration with hours and minutes 2ms
+   ✓ /api/travel-times endpoint > successful responses > should call Distance Matrix API with correct parameters 3ms
+   ✓ /api/travel-times endpoint > successful responses > should include API key in Distance Matrix request 2ms
+   ✓ /api/travel-times endpoint > successful responses > should fetch both walking and driving times in parallel 2ms
+   ✓ /api/travel-times endpoint > parameter validation > should return null values when origin is missing 2ms
+   ✓ /api/travel-times endpoint > parameter validation > should return null values when destination is missing 2ms
+   ✓ /api/travel-times endpoint > parameter validation > should return null values when both parameters are missing 2ms
+   ✓ /api/travel-times endpoint > error handling > should return null values when API key is missing 2ms
+   ✓ /api/travel-times endpoint > error handling > should handle Distance Matrix API errors gracefully 7ms
+   × /api/travel-times endpoint > error handling > should handle timeout errors 5001ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ✓ /api/travel-times endpoint > error handling > should handle malformed API responses 2ms
+   ✓ /api/travel-times endpoint > error handling > should handle ZERO_RESULTS status 1ms
+   ✓ /api/travel-times endpoint > API key fallback > should use GOOGLE_MAPS_API_KEY if available 1ms
+   ✓ /api/travel-times endpoint > API key fallback > should fallback to NEXT_PUBLIC_GOOGLE_MAPS_API_KEY 2ms
+   ✓ /api/travel-times endpoint > duration formatting > should format hours only 2ms
+   ✓ /api/travel-times endpoint > duration formatting > should format minutes only 1ms
+   ✓ /api/travel-times endpoint > duration formatting > should return 1min for very short durations 1ms
+   ✓ /api/travel-times endpoint > timeout mechanism > should use AbortController for timeout 103ms
+stderr | tests/integration/api-maps.test.ts > /api/maps endpoint > error handling > should handle missing API key gracefully
+Google Maps API key not found
+
+stderr | tests/integration/api-maps.test.ts > /api/maps endpoint > error handling > should return error logging JavaScript when API key is missing
+Google Maps API key not found
+
+stderr | tests/integration/api-maps.test.ts > /api/maps endpoint > error handling > should include CORS headers even on error
+Google Maps API key not found
+
+ ✓ tests/integration/api-maps.test.ts (19 tests) 15ms
+ ✓ tests/unit/utils.test.ts (4 tests) 3ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 10 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/api-travel-times.test.ts > /api/travel-times endpoint > error handling > should handle timeout errors
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/integration/api-travel-times.test.ts:195:5
+    193|     })
+    194| 
+    195|     it('should handle timeout errors', async () => {
+       |     ^
+    196|       // Mock fetch to simulate timeout
+    197|       global.fetch = vi.fn().mockImplementation(() => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should cache geocoding results
+AssertionError: expected "spy" to be called 1 times, but got 0 times
+ ❯ tests/unit/geocoding.test.ts:68:28
+     66|       
+     67|       // Fetch should only be called once
+     68|       expect(global.fetch).toHaveBeenCalledTimes(1)
+       |                            ^
+     69|     })
+     70| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should deduplicate concurrent requests for the same location
+AssertionError: expected "spy" to be called 1 times, but got 0 times
+ ❯ tests/unit/geocoding.test.ts:89:28
+     87|       
+     88|       // Fetch should only be called once despite 3 concurrent requests
+     89|       expect(global.fetch).toHaveBeenCalledTimes(1)
+       |                            ^
+     90|     })
+     91| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should fallback to coordinates on API error
+AssertionError: expected 'San Francisco, CA' to be '37.7749, -122.4194' // Object.is equality
+
+Expected: [32m"37.7749, -122.4194"[39m
+Received: [31m"San Francisco, CA"[39m
+
+ ❯ tests/unit/geocoding.test.ts:98:22
+     96|       const result = await reverseGeocode(37.7749, -122.4194)
+     97|       
+     98|       expect(result).toBe('37.7749, -122.4194')
+       |                      ^
+     99|     })
+    100| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should handle missing API key gracefully
+AssertionError: promise resolved "'San Francisco, CA'" instead of rejecting
+
+[32m- Expected:[39m 
+Error {
+  "message": "rejected promise",
+}
+
+[31m+ Received:[39m 
+"San Francisco, CA"
+
+ ❯ tests/unit/geocoding.test.ts:111:54
+    109|       delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    110|       
+    111|       await expect(reverseGeocode(37.7749, -122.4194)).rejects.toThrow(
+       |                                                      ^
+    112|         'Google Maps API key not found'
+    113|       )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > reverseGeocode > should round coordinates to 6 decimal places for cache key
+AssertionError: expected "spy" to be called 1 times, but got 0 times
+ ❯ tests/unit/geocoding.test.ts:130:28
+    128|       
+    129|       // Should only call fetch once due to cache key rounding
+    130|       expect(global.fetch).toHaveBeenCalledTimes(1)
+       |                            ^
+    131|     })
+    132|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > getStandardizedLocation > should handle missing API key gracefully
+AssertionError: promise resolved "null" instead of rejecting
+
+[32m- Expected:[39m 
+Error {
+  "message": "rejected promise",
+}
+
+[31m+ Received:[39m 
+null
+
+ ❯ tests/unit/geocoding.test.ts:164:63
+    162|       delete process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    163|       
+    164|       await expect(getStandardizedLocation(37.7749, -122.4194)).reject…
+       |                                                               ^
+    165|         'Google Maps API key not found'
+    166|       )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should handle geolocation not supported
+TypeError: Cannot redefine property: geolocation
+ ❯ tests/unit/geocoding.test.ts:270:14
+    268|       // Remove geolocation
+    269|       const originalGeolocation = navigator.geolocation
+    270|       Object.defineProperty(navigator, 'geolocation', {
+       |              ^
+    271|         value: undefined,
+    272|         configurable: true,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should save permission state on denial
+TypeError: Cannot redefine property: geolocation
+ ❯ tests/unit/geocoding.test.ts:296:14
+    294|     it('should save permission state on denial', async () => {
+    295|       // Mock geolocation to return permission denied
+    296|       Object.defineProperty(navigator, 'geolocation', {
+       |              ^
+    297|         value: {
+    298|           getCurrentPosition: vi.fn((success, error) => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/10]⎯
+
+ FAIL  tests/unit/geocoding.test.ts > geocoding.ts > getCurrentLocationWithName > should fallback to coordinates if reverse geocoding fails
+AssertionError: expected 'San Francisco, CA' to be '37.7749, -122.4194' // Object.is equality
+
+Expected: [32m"37.7749, -122.4194"[39m
+Received: [31m"San Francisco, CA"[39m
+
+ ❯ tests/unit/geocoding.test.ts:325:28
+    323|       const result = await getCurrentLocationWithName({ forceRefresh: …
+    324|       
+    325|       expect(result?.name).toBe('37.7749, -122.4194')
+       |                            ^
+    326|       expect(result?.latitude).toBe(37.7749)
+    327|       expect(result?.longitude).toBe(-122.4194)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/10]⎯
+
+
+ Test Files  2 failed | 4 passed (6)
+      Tests  10 failed | 113 passed (123)
+   Start at  14:33:58
+   Duration  13.21s (transform 448ms, setup 515ms, collect 1.51s, tests 5.45s, environment 3.12s, prepare 856ms)
+
