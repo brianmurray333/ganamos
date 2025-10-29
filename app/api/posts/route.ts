@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       // Parse request body to get job reward
       const body = await request.json()
       const { reward } = body
-      const jobReward = reward && typeof reward === 'number' ? Math.max(MIN_JOB_REWARD, reward) : DEFAULT_JOB_REWARD
+      const jobReward = typeof reward === 'number' ? Math.max(MIN_JOB_REWARD, reward) : DEFAULT_JOB_REWARD
       const totalCost = jobReward + API_ACCESS_FEE // Job reward + API fee
       
       return await issueL402Challenge(totalCost, jobReward)
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate expected payment (job reward + API fee)
-    const jobReward = reward && typeof reward === 'number' ? Math.max(MIN_JOB_REWARD, reward) : DEFAULT_JOB_REWARD
+    const jobReward = typeof reward === 'number' ? Math.max(MIN_JOB_REWARD, reward) : DEFAULT_JOB_REWARD
     const expectedTotalPayment = jobReward + API_ACCESS_FEE
 
     // Verify the payment amount matches the expected total
