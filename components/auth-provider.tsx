@@ -384,6 +384,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+
+      // Security check: Block test user login if POD_URL is not defined
+      if (session?.user?.email === 'test@ganamos.dev' && !process.env.NEXT_PUBLIC_POD_URL) {
+        console.warn('⚠️ Test user login blocked - POD_URL not defined');
+        await supabase.auth.signOut();
+        toast({
+          title: "Access Denied",
+          description: "Test user is only available in development environments",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setSession(session);
       setUser(session?.user || null);
       setSessionLoaded(true);
@@ -717,9 +730,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Mock login for development/testing
   const mockLogin = async () => {
+    // Security check: Only allow mock login if POD_URL is defined
+    if (!process.env.NEXT_PUBLIC_POD_URL) {
+      toast({
+        title: "Access Denied",
+        description: "Mock login is only available in development environments",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       // Sign in with the test user credentials
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: 'test@ganamos.dev',
         password: 'test123456',
       })
