@@ -66,3 +66,37 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
   unobserve: vi.fn(),
   disconnect: vi.fn(),
 }))
+
+// Mock nostr-tools library to prevent real WebSocket connections
+vi.mock('nostr-tools', () => ({
+  SimplePool: vi.fn().mockImplementation(() => ({
+    publish: vi.fn((relays: string[], event: any) => {
+      // Return array of promises, one per relay
+      // Default to all successful - tests can override this behavior
+      return relays.map(() => Promise.resolve())
+    }),
+    close: vi.fn(),
+  })),
+  finalizeEvent: vi.fn((template: any, secretKey: Uint8Array) => ({
+    ...template,
+    id: 'mock-event-id-' + Date.now(),
+    pubkey: 'mock-pubkey-' + Buffer.from(secretKey.slice(0, 8)).toString('hex'),
+    sig: 'mock-signature-' + Math.random().toString(36).substring(7),
+  })),
+  getPublicKey: vi.fn((secretKey: Uint8Array) => {
+    // Return deterministic public key based on secret key - use the secret key bytes as pubkey
+    return secretKey
+  }),
+  generateSecretKey: vi.fn(() => {
+    // Return random test secret key (32 bytes)
+    const key = new Uint8Array(32)
+    // Fill with random values to make each call unique
+    for (let i = 0; i < 32; i++) {
+      key[i] = Math.floor(Math.random() * 256)
+    }
+    return key
+  }),
+}))
+
+// Set test environment variables
+process.env.NOSTR_PRIVATE_KEY = '0000000000000000000000000000000000000000000000000000000000000000'
