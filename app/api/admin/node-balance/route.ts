@@ -10,6 +10,19 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest) {
   try {
+    // Security: Verify authorization token if CRON_SECRET is set
+    // Vercel Cron sends a special header that we can verify
+    // See: https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs
+    const authHeader = request.headers.get('authorization')
+    
+    if (process.env.CRON_SECRET) {
+      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        )
+      }
+    }
 
     // Get wallet balance from LND
     const result = await lndRequest("/v1/balance/channels")
