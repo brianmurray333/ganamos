@@ -28,3 +28,7 @@ next-env.d.ts
 
 # arduino hardware files (not needed for web deployment)
 /arduino-reference
+
+# tests
+mock-tests/
+test-results
