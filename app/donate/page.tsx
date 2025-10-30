@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { MapPin, Sprout, Loader2, MapPin as DropPin, CheckCircle } from "lucide-react"
+import { MapPin, Sprout, Loader2, MapPin as DropPin, CheckCircle, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -769,8 +769,19 @@ export default function DonatePage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col items-center">
+      {/* Close button in upper right */}
+      <div className="w-full max-w-md px-4 pt-4 flex justify-end">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => router.push("/map")}
+          className="rounded-full"
+        >
+          <X className="h-5 w-5" />
+        </Button>
+      </div>
       {/* Sprout icon at the top */}
-      <div className="w-full flex justify-center pt-8 pb-2">
+      <div className="w-full flex justify-center pb-2">
         <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center">
           <Sprout className="w-8 h-8 text-green-600" strokeWidth={1.5} />
         </div>
