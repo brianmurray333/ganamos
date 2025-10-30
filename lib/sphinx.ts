@@ -68,7 +68,7 @@ export async function postToSphinx(params: PostToSphinxParams) {
 
     // Format message similar to NOSTR format
     const locationText = city || location || 'Unknown location'
-    let content = `🏙️ New issue in ${locationText}!
+    const content = `🏙️ New issue in ${locationText}!
 
 ${title}
 
@@ -79,10 +79,7 @@ ${description}
 
 https://www.ganamos.earth/post/${postId}`
 
-    // Add image if available
-    if (imageUrl) {
-      content += `\n\n${imageUrl}`
-    }
+    // Note: Image URL removed as Sphinx doesn't render it properly
 
     console.log('[SPHINX] Sending POST request to Sphinx API')
 
