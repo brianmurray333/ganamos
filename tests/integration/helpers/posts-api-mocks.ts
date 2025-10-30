@@ -1,4 +1,183 @@
+/**
+ * Helper mocks for POST /api/posts integration tests
+ * Following the pattern from bitcoin-price-mocks.ts
+ */
+
 import { vi } from 'vitest'
+
+// Test constants matching production values
+export const TEST_CONSTANTS = {
+  API_ACCESS_FEE: 10,
+  MIN_JOB_REWARD: 0,
+  DEFAULT_JOB_REWARD: 1000,
+  L402_ROOT_KEY: 'test-root-key-for-hmac-signatures',
+  MACAROON_EXPIRY_HOURS: 1,
+}
+
+// Test data factories
+export const createTestPost = (overrides = {}) => ({
+  description: 'Test post description',
+  reward: 1000,
+  image_url: 'https://example.com/image.jpg',
+  location: 'Test Location',
+  latitude: 40.7128,
+  longitude: -74.0060,
+  city: 'Test City',
+  ...overrides,
+})
+
+export const createTestMacaroon = (overrides = {}) => ({
+  identifier: 'test-macaroon-id',
+  signature: 'test-signature-hex',
+  caveats: [
+    { condition: 'action', value: 'create_post' },
+    { condition: 'amount', value: '1010' }, // reward (1000) + API fee (10)
+    { condition: 'expires', value: String(Date.now() + 3600000) }, // 1 hour from now
+  ],
+  ...overrides,
+})
+
+export const createTestInvoice = (amount: number, overrides = {}) => ({
+  paymentRequest: `lnbc${amount}u1test-invoice-payment-request`,
+  rHash: 'test-r-hash-hex-64-chars',
+  addIndex: '12345',
+  ...overrides,
+})
+
+export const createTestL402Token = (overrides = {}) => ({
+  macaroon: 'test-macaroon-base64-encoded',
+  preimage: 'test-preimage-hex-64-chars',
+  ...overrides,
+})
+
+export const createTestPostResult = (overrides = {}) => ({
+  postId: 'test-post-uuid-1234-5678-90ab-cdef',
+  ...overrides,
+})
+
+// Mock L402 functions
+export const mockCreateL402Challenge = vi.fn(async (amount: number, reward: number) => ({
+  success: true,
+  macaroon: 'test-macaroon-base64',
+  invoice: createTestInvoice(amount).paymentRequest,
+  paymentHash: 'test-payment-hash-hex',
+  amount,
+  reward,
+}))
+
+export const mockVerifyL402Token = vi.fn(async (token: { macaroon: string; preimage: string }) => ({
+  success: true,
+  paymentHash: 'test-payment-hash-hex',
+  macaroon: createTestMacaroon(),
+}))
+
+export const mockVerifyL402TokenFailure = vi.fn(async () => ({
+  success: false,
+  error: 'Invalid L402 token',
+}))
+
+export const mockParseL402Header = vi.fn((authHeader: string) => {
+  if (!authHeader || !authHeader.startsWith('L402 ')) {
+    return null
+  }
+  const [macaroon, preimage] = authHeader.substring(5).split(':')
+  return { macaroon, preimage }
+})
+
+// Mock Lightning functions
+export const mockCreateInvoice = vi.fn(async (value: number, memo: string) => ({
+  success: true,
+  paymentRequest: `lnbc${value}u1test-invoice-${memo.substring(0, 10)}`,
+  rHash: 'test-r-hash-hex',
+  addIndex: '12345',
+}))
+
+export const mockCreateInvoiceFailure = vi.fn(async () => ({
+  success: false,
+  error: 'Failed to create invoice',
+  details: 'LND node unavailable',
+}))
+
+export const mockCheckInvoice = vi.fn(async (rHash: string) => ({
+  success: true,
+  settled: true,
+  amountPaid: 1010, // reward + API fee
+  state: 'SETTLED',
+  preimage: 'test-preimage-hex',
+}))
+
+export const mockCheckInvoiceUnpaid = vi.fn(async () => ({
+  success: true,
+  settled: false,
+  amountPaid: 0,
+  state: 'OPEN',
+  preimage: null,
+}))
+
+// Mock post creation function
+export const mockCreateFundedAnonymousPostAction = vi.fn(async (data: any) => ({
+  success: true,
+  postId: 'test-post-uuid-1234-5678-90ab-cdef',
+}))
+
+export const mockCreateFundedAnonymousPostActionFailure = vi.fn(async () => ({
+  success: false,
+  error: 'Database error: Failed to insert post',
+}))
+
+// Mock Supabase responses
+export const mockSupabaseInsertPost = vi.fn(() => ({
+  select: vi.fn().mockReturnThis(),
+  single: vi.fn().mockResolvedValue({
+    data: { id: 'test-post-uuid-1234-5678-90ab-cdef' },
+    error: null,
+  }),
+}))
+
+export const mockSupabaseInsertActivity = vi.fn(() => ({
+  select: vi.fn().mockReturnThis(),
+  single: vi.fn().mockResolvedValue({
+    data: { id: 'test-activity-uuid' },
+    error: null,
+  }),
+}))
+
+// Mock fetch for Nostr publishing (async/fire-and-forget)
+export const mockNostrFetch = vi.fn(() =>
+  Promise.resolve({
+    ok: true,
+    json: async () => ({
+      success: true,
+      eventId: 'test-nostr-event-id',
+      relaysPublished: 5,
+    }),
+  })
+)
+
+// Helper to setup all mocks for a test suite
+export const setupPostApiMocks = () => {
+  // Mock environment variables
+  vi.stubEnv('API_ACCESS_FEE', String(TEST_CONSTANTS.API_ACCESS_FEE))
+  vi.stubEnv('MIN_JOB_REWARD', String(TEST_CONSTANTS.MIN_JOB_REWARD))
+  vi.stubEnv('DEFAULT_JOB_REWARD', String(TEST_CONSTANTS.DEFAULT_JOB_REWARD))
+  vi.stubEnv('L402_ROOT_KEY', TEST_CONSTANTS.L402_ROOT_KEY)
+  vi.stubEnv('NODE_ENV', 'development') // For CORS testing
+
+  // Reset all mocks
+  mockCreateL402Challenge.mockClear()
+  mockVerifyL402Token.mockClear()
+  mockParseL402Header.mockClear()
+  mockCreateInvoice.mockClear()
+  mockCheckInvoice.mockClear()
+  mockCreateFundedAnonymousPostAction.mockClear()
+  mockNostrFetch.mockClear()
+}
+
+// Helper to restore all mocks
+export const teardownPostApiMocks = () => {
+  vi.unstubAllEnvs()
+  vi.clearAllMocks()
+}import { vi } from 'vitest'
 import type { L402Challenge, L402Token, Macaroon } from '@/lib/l402'
 
 /**

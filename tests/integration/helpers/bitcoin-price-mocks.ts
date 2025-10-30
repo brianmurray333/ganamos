@@ -136,3 +136,181 @@ export function expectNoCorsHeaders(response: Response) {
   expect(response.headers.get('Access-Control-Allow-Methods')).toBeNull()
   expect(response.headers.get('Access-Control-Allow-Headers')).toBeNull()
 }
+
+/**
+ * Helper to create mock DIA Data API response data
+ */
+export function createMockDiaApiResponse(overrides: {
+  Price?: number
+  Symbol?: string
+  Name?: string
+  Address?: string
+  Blockchain?: string
+  Time?: string
+} = {}) {
+  return {
+    Symbol: 'BTC',
+    Name: 'Bitcoin',
+    Address: '0x0000000000000000000000000000000000000000',
+    Blockchain: 'Bitcoin',
+    Price: 50000.00,
+    Time: new Date().toISOString(),
+    ...overrides,
+  }
+}
+
+/**
+ * Helper to mock successful DIA Data API fetch response
+ */
+export function mockFetchDiaApiSuccess(fetchMock: any, price: number = 50000.00) {
+  const mockResponse = createMockDiaApiResponse({ Price: price })
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => mockResponse,
+  })
+}
+
+/**
+ * Helper to mock DIA Data API fetch error response
+ */
+export function mockFetchDiaApiError(fetchMock: any, status: number = 500) {
+  fetchMock.mockResolvedValueOnce({
+    ok: false,
+    status,
+    json: async () => ({ error: 'API Error' }),
+  })
+}
+
+/**
+ * Helper to mock DIA Data API fetch with invalid price data
+ */
+export function mockFetchDiaApiInvalidData(fetchMock: any, invalidPrice: any) {
+  const mockResponse = createMockDiaApiResponse({ Price: invalidPrice })
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => mockResponse,
+  })
+}
+
+/**
+ * Helper to mock DIA Data API fetch rejection (network error)
+ */
+export function mockFetchDiaApiRejection(fetchMock: any, errorMessage: string = 'Network error') {
+  fetchMock.mockRejectedValueOnce(new Error(errorMessage))
+}
+
+/**
+ * Helper to create mock Supabase service client with insert/RPC capabilities
+ */
+export function createMockSupabaseServiceClient() {
+  const mockInsertChain = {
+    select: vi.fn().mockReturnThis(),
+    single: vi.fn(),
+  }
+
+  const mockClient = {
+    from: vi.fn(() => ({
+      insert: vi.fn(() => mockInsertChain),
+    })),
+    rpc: vi.fn(),
+  }
+
+  return { mockClient, mockInsertChain }
+}
+
+/**
+ * Helper to mock successful Supabase insert operation
+ */
+export function mockSupabaseInsertSuccess(
+  mockInsertChain: any,
+  insertedData: any = null
+) {
+  const defaultInsertedData = {
+    id: 1,
+    price: 50000.00,
+    currency: 'USD',
+    source: 'diadata.org',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }
+
+  mockInsertChain.single.mockResolvedValue({
+    data: insertedData || defaultInsertedData,
+    error: null,
+  })
+}
+
+/**
+ * Helper to mock failed Supabase insert operation
+ */
+export function mockSupabaseInsertError(
+  mockInsertChain: any,
+  errorMessage: string = 'Insert failed'
+) {
+  mockInsertChain.single.mockResolvedValue({
+    data: null,
+    error: { message: errorMessage },
+  })
+}
+
+/**
+ * Helper to mock successful cleanup RPC call
+ */
+export function mockCleanupRpcSuccess(mockClient: any, deletedCount: number = 5) {
+  mockClient.rpc.mockResolvedValue({
+    data: deletedCount,
+    error: null,
+  })
+}
+
+/**
+ * Helper to mock failed cleanup RPC call
+ */
+export function mockCleanupRpcError(mockClient: any, errorMessage: string = 'Cleanup failed') {
+  mockClient.rpc.mockResolvedValue({
+    data: null,
+    error: { message: errorMessage },
+  })
+}
+
+/**
+ * Helper to mock cleanup RPC rejection
+ */
+export function mockCleanupRpcRejection(mockClient: any, errorMessage: string = 'RPC not found') {
+  mockClient.rpc.mockRejectedValue(new Error(errorMessage))
+}
+
+/**
+ * Helper to verify fetch was called with DIA Data API URL
+ */
+export function expectFetchCalledWithDiaApi(fetchMock: any) {
+  expect(fetchMock).toHaveBeenCalledWith(
+    'https://api.diadata.org/v1/assetQuotation/Bitcoin/0x0000000000000000000000000000000000000000',
+    expect.objectContaining({
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+  )
+}
+
+/**
+ * Helper to verify Supabase insert was called with correct data
+ */
+export function expectInsertCalledWithPrice(mockClient: any, price: number) {
+  expect(mockClient.from).toHaveBeenCalledWith('bitcoin_prices')
+  const fromResult = mockClient.from.mock.results[0].value
+  expect(fromResult.insert).toHaveBeenCalledWith({
+    price,
+    currency: 'USD',
+    source: 'diadata.org',
+  })
+}
+
+/**
+ * Helper to verify cleanup RPC was called
+ */
+export function expectCleanupRpcCalled(mockClient: any) {
+  expect(mockClient.rpc).toHaveBeenCalledWith('cleanup_old_bitcoin_prices')
+}
