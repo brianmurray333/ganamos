@@ -1,5 +1,51 @@
 import { sendEmail } from './email'
 import { formatSatsValue } from './utils'
+import { createServerSupabaseClient } from './supabase'
+
+/**
+ * Get the current Bitcoin price in USD from the database
+ */
+async function getBitcoinPriceUSD(): Promise<number | null> {
+  try {
+    const supabase = createServerSupabaseClient()
+    
+    // Get the latest Bitcoin price from database
+    const { data, error } = await supabase
+      .from('bitcoin_prices')
+      .select('price')
+      .eq('currency', 'USD')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+    
+    if (error || !data) {
+      console.error('Error fetching Bitcoin price:', error)
+      return null
+    }
+    
+    return parseFloat(data.price)
+  } catch (error) {
+    console.error('Error getting Bitcoin price:', error)
+    return null
+  }
+}
+
+/**
+ * Convert satoshis to USD
+ */
+async function convertSatsToUSD(amountSats: number): Promise<string> {
+  const btcPrice = await getBitcoinPriceUSD()
+  
+  if (!btcPrice) {
+    return 'USD price unavailable'
+  }
+  
+  const btcAmount = amountSats / 100000000
+  const usdAmount = btcAmount * btcPrice
+  
+  // Format USD amount with 2 decimal places
+  return `$${usdAmount.toFixed(2)}`
+}
 
 /**
  * Send email notification when user receives Bitcoin
@@ -27,7 +73,7 @@ export async function sendBitcoinReceivedEmail(params: {
 
   // Format amount
   const formattedAmount = formatSatsValue(amountSats)
-  const btcAmount = (amountSats / 100000000).toFixed(8)
+  const usdAmount = await convertSatsToUSD(amountSats)
 
   // Get first name only
   const firstName = userName.split(' ')[0]
@@ -60,7 +106,7 @@ export async function sendBitcoinReceivedEmail(params: {
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .header {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           padding: 30px 20px;
           text-align: center;
         }
@@ -104,7 +150,7 @@ export async function sendBitcoinReceivedEmail(params: {
         }
         .cta-button {
           display: inline-block;
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           color: #ffffff !important;
           text-decoration: none;
           padding: 12px 30px;
@@ -122,7 +168,7 @@ export async function sendBitcoinReceivedEmail(params: {
           font-size: 14px;
         }
         .footer a {
-          color: #10b981;
+          color: #16a349;
           text-decoration: none;
         }
       </style>
@@ -141,16 +187,16 @@ export async function sendBitcoinReceivedEmail(params: {
           </p>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Amount</span>
-              <span class="detail-value">${btcAmount} BTC (${formattedAmount})</span>
+              <span class="detail-label">Amount: </span>
+              <span class="detail-value">${formattedAmount} (${usdAmount})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date</span>
+              <span class="detail-label">Date: </span>
               <span class="detail-value">${formattedDate}</span>
             </div>
             ${fromName ? `
             <div class="detail-row">
-              <span class="detail-label">From</span>
+              <span class="detail-label">From: </span>
               <span class="detail-value">${fromName}</span>
             </div>
             ` : ''}
@@ -202,7 +248,7 @@ export async function sendBitcoinSentEmail(params: {
 
   // Format amount
   const formattedAmount = formatSatsValue(amountSats)
-  const btcAmount = (amountSats / 100000000).toFixed(8)
+  const usdAmount = await convertSatsToUSD(amountSats)
 
   // Get first name only
   const firstName = userName.split(' ')[0]
@@ -235,7 +281,7 @@ export async function sendBitcoinSentEmail(params: {
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .header {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           padding: 30px 20px;
           text-align: center;
         }
@@ -279,7 +325,7 @@ export async function sendBitcoinSentEmail(params: {
         }
         .cta-button {
           display: inline-block;
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           color: #ffffff !important;
           text-decoration: none;
           padding: 12px 30px;
@@ -297,7 +343,7 @@ export async function sendBitcoinSentEmail(params: {
           font-size: 14px;
         }
         .footer a {
-          color: #10b981;
+          color: #16a349;
           text-decoration: none;
         }
       </style>
@@ -316,16 +362,16 @@ export async function sendBitcoinSentEmail(params: {
           </p>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Amount</span>
-              <span class="detail-value">${btcAmount} BTC (${formattedAmount})</span>
+              <span class="detail-label">Amount: </span>
+              <span class="detail-value">${formattedAmount} (${usdAmount})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date</span>
+              <span class="detail-label">Date: </span>
               <span class="detail-value">${formattedDate}</span>
             </div>
             ${toName ? `
             <div class="detail-row">
-              <span class="detail-label">To</span>
+              <span class="detail-label">To: </span>
               <span class="detail-value">${toName}</span>
             </div>
             ` : ''}
@@ -378,6 +424,7 @@ export async function sendIssueFixedEmail(params: {
 
   // Format reward
   const formattedReward = formatSatsValue(rewardAmount)
+  const usdReward = await convertSatsToUSD(rewardAmount)
 
   // Get first name only
   const firstName = userName.split(' ')[0]
@@ -405,7 +452,7 @@ export async function sendIssueFixedEmail(params: {
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .header {
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           padding: 30px 20px;
           text-align: center;
         }
@@ -424,7 +471,7 @@ export async function sendIssueFixedEmail(params: {
         }
         .issue-title {
           background-color: #f9fafb;
-          border-left: 4px solid #10b981;
+          border-left: 4px solid #16a349;
           padding: 15px;
           margin: 20px 0;
           font-weight: 600;
@@ -457,7 +504,7 @@ export async function sendIssueFixedEmail(params: {
         }
         .cta-button {
           display: inline-block;
-          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
           color: #ffffff !important;
           text-decoration: none;
           padding: 12px 30px;
@@ -475,7 +522,7 @@ export async function sendIssueFixedEmail(params: {
           font-size: 14px;
         }
         .footer a {
-          color: #10b981;
+          color: #16a349;
           text-decoration: none;
         }
       </style>
@@ -497,15 +544,15 @@ export async function sendIssueFixedEmail(params: {
           </div>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Fixed By</span>
+              <span class="detail-label">Fixed By: </span>
               <span class="detail-value">${fixerName}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Reward Paid</span>
-              <span class="detail-value">${formattedReward}</span>
+              <span class="detail-label">Reward Paid: </span>
+              <span class="detail-value">${formattedReward} (${usdReward})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date</span>
+              <span class="detail-label">Date: </span>
               <span class="detail-value">${formattedDate}</span>
             </div>
           </div>
