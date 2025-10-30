@@ -1,11 +1,65 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { Database } from '@/lib/database.types'
 import { v4 as uuidv4 } from 'uuid'
+import { vi } from 'vitest'
 
 /**
  * Test database utilities for integration tests
  * Provides Supabase client setup and cleanup helpers
  */
+
+/**
+ * Create a mock Supabase client for unit/integration tests
+ * Returns a chainable mock that simulates Supabase query builder pattern
+ */
+export function createMockSupabaseClient(overrides = {}) {
+  const mockClient: any = {
+    auth: {
+      getSession: vi.fn(),
+      getUser: vi.fn(),
+    },
+    from: vi.fn(() => mockClient),
+    select: vi.fn(() => mockClient),
+    insert: vi.fn(() => mockClient),
+    update: vi.fn(() => mockClient),
+    delete: vi.fn(() => mockClient),
+    eq: vi.fn(() => mockClient),
+    order: vi.fn(() => mockClient),
+    single: vi.fn(),
+    ...overrides,
+  }
+  return mockClient
+}
+
+/**
+ * Create a successful Supabase response
+ */
+export function createSuccessResponse<T>(data: T) {
+  return {
+    data,
+    error: null,
+  }
+}
+
+/**
+ * Create an error Supabase response
+ */
+export function createErrorResponse(message: string) {
+  return {
+    data: null,
+    error: { message },
+  }
+}
+
+/**
+ * Create a not found Supabase response
+ */
+export function createNotFoundResponse() {
+  return {
+    data: null,
+    error: null,
+  }
+}
 
 let testSupabaseClient: SupabaseClient<Database> | null = null
 // Track created test profiles and posts for cleanup
