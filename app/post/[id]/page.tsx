@@ -1103,7 +1103,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     <Button 
                       variant="ghost" 
                       size="icon" 
-                      onClick={() => router.back()} 
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        router.push("/dashboard")
+                      }}
                       className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
                     >
                       <svg
@@ -1168,7 +1171,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  onClick={() => router.back()} 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push("/dashboard")
+                  }}
                   className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
                 >
                   <svg
