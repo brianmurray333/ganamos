@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e:debug": "playwright test --debug",
+    "create-test-user": "tsx scripts/create-test-user.ts"
   },
   "dependencies": {
     "@googlemaps/google-maps-services-js": "latest",

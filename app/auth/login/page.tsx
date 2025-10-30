@@ -17,7 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [showEmailForm, setShowEmailForm] = useState(false)
-  const { signInWithGoogle, signInWithEmail } = useAuth()
+  const { signInWithGoogle, signInWithEmail, mockLogin } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -78,6 +78,16 @@ export default function LoginPage() {
         description: error?.message || "An unexpected error occurred. Please try again.",
         variant: "destructive",
       })
+      setIsLoading(false)
+    }
+  }
+
+  const handleMockLogin = async () => {
+    setIsLoading(true)
+    try {
+      await mockLogin()
+    } catch (error: any) {
+      console.error("Mock login error:", error)
       setIsLoading(false)
     }
   }
@@ -215,6 +225,30 @@ export default function LoginPage() {
                 >
                   Sign in with Phone
                 </Button>
+
+                {process.env.NEXT_PUBLIC_POD_URL && (
+                  <>
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-white/90 dark:bg-gray-900/90 px-2 text-muted-foreground">
+                          Development
+                        </span>
+                      </div>
+                    </div>
+
+                    <Button
+                      className="w-full h-14 px-10"
+                      variant="secondary"
+                      onClick={handleMockLogin}
+                      disabled={isLoading}
+                    >
+                      Mock Login (Test User)
+                    </Button>
+                  </>
+                )}
               </div>
             </>
           )}

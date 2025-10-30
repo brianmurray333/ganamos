@@ -30,6 +30,7 @@ type AuthContextType = {
   resetToMainAccount: () => Promise<void>
   connectedAccounts: Profile[]
   fetchConnectedAccounts: () => Promise<void>
+  mockLogin: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -383,6 +384,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
+
+      // Security check: Block test user login if POD_URL is not defined
+      if (session?.user?.email === 'test@ganamos.dev' && !process.env.NEXT_PUBLIC_POD_URL) {
+        console.warn('⚠️ Test user login blocked - POD_URL not defined');
+        await supabase.auth.signOut();
+        toast({
+          title: "Access Denied",
+          description: "Test user is only available in development environments",
+          variant: "destructive",
+        });
+        return;
+      }
+
       setSession(session);
       setUser(session?.user || null);
       setSessionLoaded(true);
@@ -714,6 +728,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Mock login for development/testing
+  const mockLogin = async () => {
+    // Security check: Only allow mock login if POD_URL is defined
+    if (!process.env.NEXT_PUBLIC_POD_URL) {
+      toast({
+        title: "Access Denied",
+        description: "Mock login is only available in development environments",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Sign in with the test user credentials
+      const { error } = await supabase.auth.signInWithPassword({
+        email: 'test@ganamos.dev',
+        password: 'test123456',
+      })
+
+      if (error) {
+        toast({
+          title: "Mock Login Failed",
+          description: error.message || "Test user may not exist. Run: npm run create-test-user",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // The auth state change listener will handle setting the user/profile
+      toast({
+        title: "Mock Login Successful",
+        description: "Logged in as Test User",
+      })
+
+      router.push('/dashboard')
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error?.message || "Failed to perform mock login",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -738,6 +796,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         resetToMainAccount,
         connectedAccounts,
         fetchConnectedAccounts,
+        mockLogin,
       }}
     >
       {children}
