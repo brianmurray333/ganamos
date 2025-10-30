@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { Database } from '@/lib/database.types'
+import { vi, expect } from 'vitest'
 
 /**
  * Test Helper Utilities for Child Account Integration Tests
@@ -11,6 +12,98 @@ import { Database } from '@/lib/database.types'
  * - Factory functions for creating test data
  * - Mock session helpers for authentication tests
  */
+
+/**
+ * Setup test environment variables
+ * Returns a cleanup function to restore original environment
+ */
+export function setupTestEnv(envVars: Record<string, string> = {}): () => void {
+  const originalEnv = { ...process.env }
+  
+  // Set provided environment variables
+  Object.entries(envVars).forEach(([key, value]) => {
+    process.env[key] = value
+  })
+  
+  // Return cleanup function
+  return () => {
+    process.env = originalEnv
+  }
+}
+
+/**
+ * Create a mock Supabase client for unit tests
+ */
+export function createMockSupabaseClient(data: {
+  profiles?: any[]
+  transactions?: any[]
+  posts?: any[]
+} = {}) {
+  const mockFrom = (table: string) => {
+    const tableData = data[table as keyof typeof data] || []
+    
+    return {
+      select: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      delete: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+      in: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: tableData[0] || null, error: null }),
+      then: vi.fn((resolve) => resolve({ data: tableData, error: null }))
+    }
+  }
+  
+  return {
+    from: vi.fn(mockFrom),
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ 
+        data: { session: null }, 
+        error: null 
+      })
+    }
+  }
+}
+
+/**
+ * Create a mock Next.js request object
+ * Usage: createMockRequest('GET') or createMockRequest('GET', { cronSecret: 'value' })
+ */
+export function createMockRequest(
+  method: string = 'GET',
+  options: {
+    cronSecret?: string
+    headers?: Record<string, string>
+    body?: any
+    url?: string
+  } = {}
+) {
+  const headers = new Headers(options.headers || {})
+  
+  // Add cron secret if provided
+  if (options.cronSecret) {
+    headers.set('authorization', `Bearer ${options.cronSecret}`)
+  }
+  
+  return new Request(options.url || 'http://localhost:3000', {
+    method,
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  })
+}
+
+/**
+ * Expect a Response object to have a specific status and return its JSON
+ * Usage: const json = await expectResponseJSON(response, 401)
+ */
+export async function expectResponseJSON(response: Response, expectedStatus: number) {
+  expect(response.status).toBe(expectedStatus)
+  return await response.json()
+}
 
 // Test environment validation
 export function validateTestEnvironment() {
