@@ -47,6 +47,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-center gap-4 mt-8">
             <a
               href="/map"
+              data-testid="navigate-to-map"
               className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-base font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-14 rounded-md px-10 w-full max-w-xs bg-green-600 hover:bg-green-700 text-white"
             >
               <div className="scale-75">
@@ -98,6 +99,7 @@ export default function HomePage() {
         <div className="flex flex-col items-center justify-center gap-4 mt-8">
           <a
             href="/map"
+            data-testid="navigate-to-map"
             className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-base font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-14 rounded-md px-10 w-full max-w-xs bg-green-600 hover:bg-green-700 text-white"
           >
             <div className="scale-75">

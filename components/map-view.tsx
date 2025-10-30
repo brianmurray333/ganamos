@@ -1060,7 +1060,7 @@ function MapViewComponent({
         </div>
       )}
 
-      <div ref={mapRef} className="h-full w-full" style={{ minHeight: 'calc(100vh - 4rem)', paddingBottom: '4rem' }} />
+      <div ref={mapRef} className="h-full w-full" style={{ minHeight: 'calc(100vh - 4rem)', paddingBottom: '4rem' }} data-testid="map-container" />
 
       {/* Airbnb-style Preview Card - Only show if not in modal and post is selected */}
       {selectedPost && !isModal && (
