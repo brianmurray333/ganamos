@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { POST } from "@/app/api/child-account/route";
+import {
+  MOCK_PARENT_USER_ID,
+  MOCK_CHILD_USER_ID,
+  MOCK_CHILD_EMAIL,
+  createMockSupabaseClient,
+  mockSessionSuccess,
+  mockAdminListUsers,
+  expectAdminUserCreatedWith,
+} from "./helpers/child-account-mocks";
 
 /**
  * Integration Tests for POST /api/child-account Endpoint
@@ -38,104 +47,76 @@ import { v4 as uuidv4 } from "uuid";
 describe("POST /api/child-account Integration Tests", () => {
   let mockSupabaseClient: any;
   let mockAdminClient: any;
-  const testParentUserId = "parent-user-123";
-  const testChildUserId = "child-user-456";
-  const testChildEmail = "child-test-uuid@ganamos.app";
 
   beforeEach(() => {
     vi.clearAllMocks();
 
-    // Mock regular Supabase client (with RLS)
-    mockSupabaseClient = {
-      auth: {
-        getSession: vi.fn(),
-      },
-      from: vi.fn(),
-    };
-
-    // Mock admin Supabase client (service role)
-    mockAdminClient = {
-      auth: {
-        admin: {
-          createUser: vi.fn(),
-          listUsers: vi.fn(),
-          updateUserById: vi.fn(),
-        },
-      },
-    };
+    // Create mock clients using helper
+    mockSupabaseClient = createMockSupabaseClient();
+    mockAdminClient = createMockSupabaseClient();
 
     vi.mocked(createRouteHandlerClient).mockReturnValue(mockSupabaseClient);
     vi.mocked(createServerSupabaseClient).mockReturnValue(mockAdminClient);
     (vi.mocked(uuidv4) as any).mockReturnValueOnce("test-uuid").mockReturnValueOnce("test-password");
   });
 
+  // Helper function to setup successful child account creation mocks
+  const setupSuccessfulMocks = (username: string, avatarUrl: string, usernameSlug: string = "test-child-alice") => {
+    mockSessionSuccess(mockSupabaseClient);
+    mockAdminListUsers(mockAdminClient, []);
+    mockAdminClient.auth.admin.createUser.mockResolvedValue({
+      data: {
+        user: {
+          id: MOCK_CHILD_USER_ID,
+          email: MOCK_CHILD_EMAIL,
+        },
+      },
+      error: null,
+    });
+
+    mockSupabaseClient.from.mockImplementation((table: string) => {
+      if (table === "profiles") {
+        return {
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: {
+                  id: MOCK_CHILD_USER_ID,
+                  name: username,
+                  username: usernameSlug,
+                  email: MOCK_CHILD_EMAIL,
+                  avatar_url: avatarUrl,
+                  balance: 0,
+                },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "connected_accounts") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnThis(),
+            single: vi.fn().mockResolvedValue({
+              data: null,
+              error: null,
+            }),
+          }),
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }
+      return {};
+    });
+  };
+
   describe("Happy Path: Successful Child Account Creation", () => {
     it("should create a complete child account with all 5 workflow steps", async () => {
       // Arrange
       const username = "Test Child Alice";
       const avatarUrl = "https://example.com/alice.png";
-
-      // Mock session
-      mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: testParentUserId },
-          },
-        },
-      });
-
-      // Mock admin client - no existing users
-      mockAdminClient.auth.admin.listUsers.mockResolvedValue({
-        data: { users: [] },
-      });
-
-      // Mock admin client - create user
-      mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: {
-          user: {
-            id: testChildUserId,
-            email: testChildEmail,
-          },
-        },
-        error: null,
-      });
-
-      // Mock profile upsert
-      mockSupabaseClient.from.mockImplementation((table: string) => {
-        if (table === "profiles") {
-          return {
-            upsert: vi.fn().mockResolvedValue({ error: null }),
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                single: vi.fn().mockResolvedValue({
-                  data: {
-                    id: testChildUserId,
-                    name: username,
-                    username: "test-child-alice",
-                    email: testChildEmail,
-                    avatar_url: avatarUrl,
-                    balance: 0,
-                  },
-                  error: null,
-                }),
-              }),
-            }),
-          };
-        }
-        if (table === "connected_accounts") {
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnThis(),
-              single: vi.fn().mockResolvedValue({
-                data: null,
-                error: null,
-              }),
-            }),
-            insert: vi.fn().mockResolvedValue({ error: null }),
-          };
-        }
-        return {};
-      });
+      setupSuccessfulMocks(username, avatarUrl);
 
       // Act
       const request = new Request("http://localhost:3000/api/child-account", {
@@ -151,23 +132,17 @@ describe("POST /api/child-account Integration Tests", () => {
       expect(data.success).toBe(true);
       expect(data.message).toBe("Child account created successfully");
       expect(data.profile).toBeDefined();
-      expect(data.profile.id).toBe(testChildUserId);
-      expect(data.profile.email).toBe(testChildEmail);
+      expect(data.profile.id).toBe(MOCK_CHILD_USER_ID);
+      expect(data.profile.email).toBe(MOCK_CHILD_EMAIL);
       expect(data.profile.balance).toBe(0);
 
       // Verify auth user was created with correct metadata
-      expect(mockAdminClient.auth.admin.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          email: testChildEmail,
-          email_confirm: true,
-          user_metadata: expect.objectContaining({
-            name: username,
-            avatar_url: avatarUrl,
-            is_child_account: true,
-            primary_user_id: testParentUserId,
-          }),
-        })
-      );
+      expectAdminUserCreatedWith(mockAdminClient, MOCK_CHILD_EMAIL, {
+        name: username,
+        avatar_url: avatarUrl,
+        is_child_account: true,
+        primary_user_id: MOCK_PARENT_USER_ID,
+      });
     });
 
     it("should generate a valid UUID-based email following the pattern child-{uuid}@ganamos.app", async () => {
@@ -176,7 +151,7 @@ describe("POST /api/child-account Integration Tests", () => {
       const avatarUrl = "https://example.com/avatar.png";
 
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -186,8 +161,8 @@ describe("POST /api/child-account Integration Tests", () => {
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
         data: {
           user: {
-            id: testChildUserId,
-            email: testChildEmail,
+            id: MOCK_CHILD_USER_ID,
+            email: MOCK_CHILD_EMAIL,
           },
         },
         error: null,
@@ -200,7 +175,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { email: testChildEmail },
+                  data: { email: MOCK_CHILD_EMAIL },
                   error: null,
                 }),
               }),
@@ -251,7 +226,7 @@ describe("POST /api/child-account Integration Tests", () => {
 
       for (const testCase of testCases) {
         mockSupabaseClient.auth.getSession.mockResolvedValue({
-          data: { session: { user: { id: testParentUserId } } },
+          data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
         });
 
         mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -259,7 +234,7 @@ describe("POST /api/child-account Integration Tests", () => {
         });
 
         mockAdminClient.auth.admin.createUser.mockResolvedValue({
-          data: { user: { id: testChildUserId, email: testChildEmail } },
+          data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
           error: null,
         });
 
@@ -311,7 +286,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should initialize child account balance to 0", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -319,7 +294,7 @@ describe("POST /api/child-account Integration Tests", () => {
       });
 
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: testChildUserId, email: testChildEmail } },
+        data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
         error: null,
       });
 
@@ -368,7 +343,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should create connected_accounts relationship linking parent and child", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -376,7 +351,7 @@ describe("POST /api/child-account Integration Tests", () => {
       });
 
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: testChildUserId, email: testChildEmail } },
+        data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
         error: null,
       });
 
@@ -388,7 +363,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: testChildUserId },
+                  data: { id: MOCK_CHILD_USER_ID },
                   error: null,
                 }),
               }),
@@ -418,8 +393,8 @@ describe("POST /api/child-account Integration Tests", () => {
       // Assert
       expect(mockInsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          primary_user_id: testParentUserId,
-          connected_user_id: testChildUserId,
+          primary_user_id: MOCK_PARENT_USER_ID,
+          connected_user_id: MOCK_CHILD_USER_ID,
         })
       );
     });
@@ -429,18 +404,18 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should handle existing user gracefully (uses upsert for profile)", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       // Mock existing user
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
         data: {
-          users: [{ id: testChildUserId, email: testChildEmail }],
+          users: [{ id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL }],
         },
       });
 
       mockAdminClient.auth.admin.updateUserById.mockResolvedValue({
-        data: { user: { id: testChildUserId } },
+        data: { user: { id: MOCK_CHILD_USER_ID } },
         error: null,
       });
 
@@ -452,7 +427,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: testChildUserId },
+                  data: { id: MOCK_CHILD_USER_ID },
                   error: null,
                 }),
               }),
@@ -483,7 +458,7 @@ describe("POST /api/child-account Integration Tests", () => {
       expect(response.status).toBe(200);
       expect(mockUpsert).toHaveBeenCalled();
       expect(mockAdminClient.auth.admin.updateUserById).toHaveBeenCalledWith(
-        testChildUserId,
+        MOCK_CHILD_USER_ID,
         expect.objectContaining({
           user_metadata: expect.objectContaining({
             is_child_account: true,
@@ -495,7 +470,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should not create duplicate connected_accounts relationships", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -503,7 +478,7 @@ describe("POST /api/child-account Integration Tests", () => {
       });
 
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: testChildUserId, email: testChildEmail } },
+        data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
         error: null,
       });
 
@@ -515,7 +490,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: testChildUserId },
+                  data: { id: MOCK_CHILD_USER_ID },
                   error: null,
                 }),
               }),
@@ -529,8 +504,8 @@ describe("POST /api/child-account Integration Tests", () => {
               single: vi.fn().mockResolvedValue({
                 // Existing connection found
                 data: {
-                  primary_user_id: testParentUserId,
-                  connected_user_id: testChildUserId,
+                  primary_user_id: MOCK_PARENT_USER_ID,
+                  connected_user_id: MOCK_CHILD_USER_ID,
                 },
               }),
             }),
@@ -607,7 +582,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should handle auth user creation failures gracefully", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -640,7 +615,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should set is_child_account metadata flag to true", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -648,7 +623,7 @@ describe("POST /api/child-account Integration Tests", () => {
       });
 
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: testChildUserId, email: testChildEmail } },
+        data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
         error: null,
       });
 
@@ -659,7 +634,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: testChildUserId },
+                  data: { id: MOCK_CHILD_USER_ID },
                   error: null,
                 }),
               }),
@@ -699,7 +674,7 @@ describe("POST /api/child-account Integration Tests", () => {
     it("should set primary_user_id metadata to parent user ID", async () => {
       // Arrange
       mockSupabaseClient.auth.getSession.mockResolvedValue({
-        data: { session: { user: { id: testParentUserId } } },
+        data: { session: { user: { id: MOCK_PARENT_USER_ID } } },
       });
 
       mockAdminClient.auth.admin.listUsers.mockResolvedValue({
@@ -707,7 +682,7 @@ describe("POST /api/child-account Integration Tests", () => {
       });
 
       mockAdminClient.auth.admin.createUser.mockResolvedValue({
-        data: { user: { id: testChildUserId, email: testChildEmail } },
+        data: { user: { id: MOCK_CHILD_USER_ID, email: MOCK_CHILD_EMAIL } },
         error: null,
       });
 
@@ -718,7 +693,7 @@ describe("POST /api/child-account Integration Tests", () => {
             select: vi.fn().mockReturnValue({
               eq: vi.fn().mockReturnValue({
                 single: vi.fn().mockResolvedValue({
-                  data: { id: testChildUserId },
+                  data: { id: MOCK_CHILD_USER_ID },
                   error: null,
                 }),
               }),
@@ -749,7 +724,7 @@ describe("POST /api/child-account Integration Tests", () => {
       expect(mockAdminClient.auth.admin.createUser).toHaveBeenCalledWith(
         expect.objectContaining({
           user_metadata: expect.objectContaining({
-            primary_user_id: testParentUserId,
+            primary_user_id: MOCK_PARENT_USER_ID,
           }),
         })
       );
