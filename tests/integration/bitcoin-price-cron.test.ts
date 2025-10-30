@@ -17,6 +17,7 @@ import {
   expectDatabaseInsertCalled,
   expectDIAApiCalled,
   expectCleanupCalled,
+  TEST_CRON_SECRET,
 } from './helpers/bitcoin-price-cron-mocks'
 
 // Mock Supabase client
@@ -42,7 +43,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
   describe('Authentication & Authorization', () => {
     it('should return 200 when CRON_SECRET is valid', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiSuccess(50000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
       mockCleanupSuccess(mockSupabaseClient)
@@ -89,7 +90,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
   describe('External API Integration', () => {
     it('should successfully fetch price from DIA Data API and insert to database', async () => {
       const testPrice = 52000.75
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(testPrice)
       const insertedRecord = mockDatabaseInsertSuccess(mockSupabaseClient, {
@@ -118,7 +119,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should return 500 when external API returns non-200 status', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiError(503)
 
       const response = await GET(mockRequest)
@@ -130,7 +131,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should return 500 when external API throws network error', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiNetworkFailure('Connection timeout')
 
       const response = await GET(mockRequest)
@@ -142,7 +143,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should validate price data type and return 500 for invalid types', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiInvalidData(null) // Price is null
 
       const response = await GET(mockRequest)
@@ -154,7 +155,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should reject non-numeric price values', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiInvalidData('50000') // Price is string instead of number
 
       const response = await GET(mockRequest)
@@ -166,7 +167,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should reject undefined price values', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiInvalidData(undefined)
 
       const response = await GET(mockRequest)
@@ -179,7 +180,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
   describe('Database Operations', () => {
     it('should insert price with correct currency and source', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const testPrice = 48500.25
       
       mockDIAApiSuccess(testPrice)
@@ -208,7 +209,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should return 500 when database insertion fails', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       mockDatabaseInsertError(mockSupabaseClient, 'Database connection failed')
@@ -223,7 +224,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
     it('should return 500 when Supabase URL is missing', async () => {
       delete process.env.NEXT_PUBLIC_SUPABASE_URL
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
 
@@ -236,7 +237,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
     it('should return 500 when service role key is missing', async () => {
       delete process.env.SUPABASE_SERVICE_ROLE_KEY
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
 
@@ -248,7 +249,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should call cleanup function after successful insertion', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
@@ -260,7 +261,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should not fail request when cleanup function fails', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
@@ -275,7 +276,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should handle cleanup function returning zero deleted records', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
@@ -291,7 +292,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
   describe('Response Validation', () => {
     it('should return complete success response structure', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const testPrice = 50000.00
       const testTimestamp = '2024-01-15T12:00:00Z'
       
@@ -318,7 +319,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should return error response with details on failure', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiNetworkFailure('Network timeout')
 
       const response = await GET(mockRequest)
@@ -331,7 +332,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should preserve timestamp format from database', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const isoTimestamp = '2024-01-15T10:30:45.123Z'
       
       mockDIAApiSuccess(50000)
@@ -353,7 +354,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should return numeric price value in response', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const testPrice = 52345.67
       
       mockDIAApiSuccess(testPrice)
@@ -376,7 +377,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
   describe('Edge Cases and Data Consistency', () => {
     it('should handle very high Bitcoin prices correctly', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const highPrice = 150000.99
       
       mockDIAApiSuccess(highPrice)
@@ -397,7 +398,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should handle very low Bitcoin prices correctly', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const lowPrice = 0.01
       
       mockDIAApiSuccess(lowPrice)
@@ -418,7 +419,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should reject zero price values', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiInvalidData(0)
 
       const response = await GET(mockRequest)
@@ -433,7 +434,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     // which allows negative numbers through. This should be fixed in a separate PR
     // to add explicit validation: `if (!btcPrice || typeof btcPrice !== 'number' || btcPrice <= 0)`
     it.skip('should reject negative price values', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       mockDIAApiInvalidData(-1000)
 
       const response = await GET(mockRequest)
@@ -444,7 +445,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should maintain decimal precision for financial calculations', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       const precisePrice = 50123.456789
       
       mockDIAApiSuccess(precisePrice)
@@ -464,7 +465,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should consistently use USD currency', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       const mockQueryBuilder = {
@@ -494,7 +495,7 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
     })
 
     it('should consistently attribute source to diadata.org', async () => {
-      const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
+      const mockRequest = createMockRequestWithAuth(TEST_CRON_SECRET)
       
       mockDIAApiSuccess(50000)
       const mockQueryBuilder = {

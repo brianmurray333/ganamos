@@ -1,6 +1,13 @@
 import { vi } from 'vitest'
 
 /**
+ * Test environment constants
+ */
+export const TEST_CRON_SECRET = 'test-cron-secret-12345'
+export const TEST_SUPABASE_URL = 'https://test.supabase.co'
+export const TEST_SERVICE_ROLE_KEY = 'test-service-key'
+
+/**
  * Helper to create mock DIA Data API response
  */
 export function createMockDIAResponse(price: number = 50000.00) {
@@ -154,9 +161,9 @@ export function setupTestEnvironment(overrides: {
   SUPABASE_SERVICE_ROLE_KEY?: string
 } = {}) {
   const defaults = {
-    CRON_SECRET: 'test-cron-secret-12345',
-    NEXT_PUBLIC_SUPABASE_URL: 'https://test.supabase.co',
-    SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
+    CRON_SECRET: TEST_CRON_SECRET,
+    NEXT_PUBLIC_SUPABASE_URL: TEST_SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: TEST_SERVICE_ROLE_KEY,
   }
 
   const env = { ...defaults, ...overrides }
