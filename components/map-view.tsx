@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { X, RefreshCw, AlertCircle, Heart, Plus, Clock } from "lucide-react"
+import { X, RefreshCw, AlertCircle, Heart, Plus, Clock, Gift } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Post } from "@/lib/types"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
@@ -975,7 +975,7 @@ function MapViewComponent({
 
   return (
     <div className={containerClasses}>
-      {/* Search Bar with Donation Button - Adjust position if in modal - Fade in after map loads */}
+      {/* Search Bar with Gift Button - Adjust position if in modal - Fade in after map loads */}
       <div
         className={`absolute ${isModal ? "top-2" : "top-4"} left-1/2 transform -translate-x-1/2 z-50 w-80 max-w-[calc(100%-1rem)] transition-opacity duration-300 ${mapLoaded ? 'opacity-100' : 'opacity-0'}`}
       >
@@ -1021,6 +1021,15 @@ function MapViewComponent({
               </div>
             )}
           </div>
+          
+          {/* Gift Icon - Navigate to Donate */}
+          <button
+            onClick={() => router.push('/donate')}
+            className="w-12 h-12 rounded-full bg-white shadow-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition-colors flex-shrink-0"
+            aria-label="Donate"
+          >
+            <Gift className="w-5 h-5 text-primary" />
+          </button>
         </div>
       </div>
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Home, User, Map, Sprout, Plus } from "lucide-react"
+import { Home, User, Map, Wallet, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useNotifications } from "@/components/notifications-provider"
 import { getCurrentLocationWithName } from "@/lib/geocoding"
@@ -111,18 +111,18 @@ export function BottomNav() {
             </button>
           </div>
 
-          {/* Donate icon */}
+          {/* Wallet icon */}
           <Link
-            href="/donate"
+            href="/wallet"
             className={cn(
               "flex items-center justify-center rounded-xl transition-colors",
-              isActive("/donate") && "text-primary dark:text-primary"
+              isActive("/wallet") && "text-primary dark:text-primary"
             )}
           >
-            <Sprout
+            <Wallet
               className={cn(
                 "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors hover:stroke-emerald-500",
-                isActive("/donate") && "text-primary dark:text-primary",
+                isActive("/wallet") && "text-primary dark:text-primary",
               )}
             />
           </Link>
