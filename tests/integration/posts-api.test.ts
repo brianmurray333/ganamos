@@ -78,6 +78,162 @@ describe('POST /api/posts Integration Tests', () => {
     vi.restoreAllMocks()
   })
 
+  describe('GET /api/posts - API Documentation', () => {
+    it('should return API documentation without authentication', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data).toHaveProperty('message')
+      expect(data.message).toBe('Posts API endpoint')
+    })
+
+    it('should return endpoint descriptions in documentation', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data).toHaveProperty('endpoints')
+      expect(data.endpoints).toHaveProperty('POST /api/posts')
+      expect(data.endpoints).toHaveProperty('GET /api/posts')
+      expect(data.endpoints['POST /api/posts']).toContain('L402 payment')
+      expect(data.endpoints['GET /api/posts']).toContain('free')
+    })
+
+    it('should return accurate L402 payment information', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data).toHaveProperty('l402_info')
+      expect(data.l402_info).toHaveProperty('api_fee', '10 sats (fixed)')
+      expect(data.l402_info).toHaveProperty('job_reward')
+      expect(data.l402_info.job_reward).toContain('minimum: 0 sats')
+      expect(data.l402_info.job_reward).toContain('default: 1000 sats')
+      expect(data.l402_info).toHaveProperty('total_cost')
+      expect(data.l402_info.total_cost).toContain('Job reward + 10 sats API fee')
+      expect(data.l402_info).toHaveProperty('currency', 'satoshis')
+      expect(data.l402_info).toHaveProperty('documentation')
+    })
+
+    it('should include L402 documentation link', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info.documentation).toBe('https://docs.lightning.engineering/the-lightning-network/l402')
+    })
+
+    it('should include CORS headers in development mode', async () => {
+      process.env.NODE_ENV = 'development'
+      
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+
+      expectCorsHeadersPresent(response)
+    })
+
+    it('should not include CORS headers in production mode', async () => {
+      process.env.NODE_ENV = 'production'
+      
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+      expect(response.headers.get('Access-Control-Allow-Methods')).toBeNull()
+      expect(response.headers.get('Access-Control-Allow-Headers')).toBeNull()
+    })
+
+    it('should not require any authentication headers', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      // Request without any auth headers
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data).toHaveProperty('message')
+      expect(data).toHaveProperty('endpoints')
+      expect(data).toHaveProperty('l402_info')
+    })
+
+    it('should return consistent response structure across multiple calls', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request1 = { method: 'GET', headers: new Headers() } as any
+      const request2 = { method: 'GET', headers: new Headers() } as any
+
+      const [response1, response2] = await Promise.all([
+        GET(request1),
+        GET(request2),
+      ])
+
+      const [data1, data2] = await Promise.all([
+        response1.json(),
+        response2.json(),
+      ])
+
+      expect(response1.status).toBe(200)
+      expect(response2.status).toBe(200)
+      expect(data1).toEqual(data2)
+    })
+
+    it('should include content-type application/json header', async () => {
+      const { GET } = await import('@/app/api/posts/route')
+      
+      const request = {
+        method: 'GET',
+        headers: new Headers(),
+      } as any
+
+      const response = await GET(request)
+
+      expect(response.headers.get('content-type')).toContain('application/json')
+    })
+  })
+
   describe('L402 Payment Challenge Flow', () => {
     it('should issue 402 challenge when no Authorization header is provided', async () => {
       const mockPostData = createMockPostData({ reward: 1000 })
