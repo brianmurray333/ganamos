@@ -187,16 +187,16 @@ export async function sendBitcoinReceivedEmail(params: {
           </p>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Amount: </span>
+              <span class="detail-label">Amount:</span>
               <span class="detail-value">${formattedAmount} (${usdAmount})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date: </span>
+              <span class="detail-label">Date:</span>
               <span class="detail-value">${formattedDate}</span>
             </div>
             ${fromName ? `
             <div class="detail-row">
-              <span class="detail-label">From: </span>
+              <span class="detail-label">From:</span>
               <span class="detail-value">${fromName}</span>
             </div>
             ` : ''}
@@ -362,16 +362,16 @@ export async function sendBitcoinSentEmail(params: {
           </p>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Amount: </span>
+              <span class="detail-label">Amount:</span>
               <span class="detail-value">${formattedAmount} (${usdAmount})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date: </span>
+              <span class="detail-label">Date:</span>
               <span class="detail-value">${formattedDate}</span>
             </div>
             ${toName ? `
             <div class="detail-row">
-              <span class="detail-label">To: </span>
+              <span class="detail-label">To:</span>
               <span class="detail-value">${toName}</span>
             </div>
             ` : ''}
@@ -469,6 +469,10 @@ export async function sendIssueFixedEmail(params: {
           font-size: 16px;
           margin-bottom: 20px;
         }
+        p {
+          font-size: 16px;
+          margin-bottom: 20px;
+        }
         .issue-title {
           background-color: #f9fafb;
           border-left: 4px solid #16a349;
@@ -544,15 +548,15 @@ export async function sendIssueFixedEmail(params: {
           </div>
           <div class="details">
             <div class="detail-row">
-              <span class="detail-label">Fixed By: </span>
+              <span class="detail-label">Fixed By:</span>
               <span class="detail-value">${fixerName}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Reward Paid: </span>
+              <span class="detail-label">Reward Paid:</span>
               <span class="detail-value">${formattedReward} (${usdReward})</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">Date: </span>
+              <span class="detail-label">Date:</span>
               <span class="detail-value">${formattedDate}</span>
             </div>
           </div>
