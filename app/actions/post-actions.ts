@@ -368,6 +368,26 @@ export async function createFundedAnonymousPostAction(postDetails: {
         console.error('[NOSTR] Error publishing anonymous post to Nostr:', error)
         // Don't fail the post creation if Nostr publishing fails
       })
+      
+      // Publish to Sphinx asynchronously (anonymous posts are always public, so publish to Sphinx)
+      fetch(`${appUrl}/api/sphinx/publish-post`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: postDetails.description.substring(0, 50),
+          description: postDetails.description,
+          location: postDetails.location,
+          city: postDetails.city,
+          latitude: postDetails.latitude,
+          longitude: postDetails.longitude,
+          reward: postDetails.reward,
+          postId: data.id,
+          imageUrl: postDetails.image_url
+        })
+      }).catch(error => {
+        console.error('[SPHINX] Error publishing anonymous post to Sphinx:', error)
+        // Don't fail the post creation if Sphinx publishing fails
+      })
     }
 
     return { success: true, postId: data.id }

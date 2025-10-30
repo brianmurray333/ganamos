@@ -682,8 +682,37 @@ export default function NewPostPage() {
             console.error('[NOSTR] Error publishing to Nostr:', error)
             // Don't fail the post creation if Nostr publishing fails
           })
+        
+        // Publish to Sphinx asynchronously (only for public posts, not group posts)
+        fetch('/api/sphinx/publish-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: description.substring(0, 50),
+            description,
+            location: currentLocation?.name,
+            city: currentLocation?.displayName || currentLocation?.name,
+            latitude: currentLocation?.lat,
+            longitude: currentLocation?.lng,
+            reward,
+            postId,
+            imageUrl: finalImageUrl
+          })
+        }).then(response => response.json())
+          .then(result => {
+            if (result.success) {
+              console.log('[SPHINX] Post published to Sphinx tribe')
+            } else {
+              console.error('[SPHINX] Failed to publish to Sphinx:', result.error)
+            }
+          })
+          .catch(error => {
+            console.error('[SPHINX] Error publishing to Sphinx:', error)
+            // Don't fail the post creation if Sphinx publishing fails
+          })
       } else {
         console.log('[NOSTR] Skipping Nostr publish for group post (group_id:', selectedGroupId, ')')
+        console.log('[SPHINX] Skipping Sphinx publish for group post (group_id:', selectedGroupId, ')')
       }
 
       const successToast = toast({
