@@ -234,10 +234,14 @@ async function performBalanceAudit(): Promise<{
 
     // Calculate balance from transactions
     const calculatedBalance = transactions?.reduce((sum, tx) => {
-      if (tx.type === 'deposit' || tx.type === 'internal') {
+      if (tx.type === 'deposit') {
         return sum + tx.amount
       } else if (tx.type === 'withdrawal') {
         return sum - tx.amount
+      } else if (tx.type === 'internal') {
+        // Internal transactions can be positive (incoming) or negative (outgoing)
+        // The amount already has the correct sign, so just add it
+        return sum + tx.amount
       }
       return sum
     }, 0) || 0
