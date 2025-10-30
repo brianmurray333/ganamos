@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import { 
+  createVerifyFixRequest,
+  createAIResponse
+} from '@/tests/utils/fixtures'
+import {
+  createMockGroqSDK,
+  mockHighConfidenceResponse,
+  mockLowConfidenceResponse,
+  mockMediumConfidenceResponse,
+  mockAIServiceFailure,
+  mockMalformedResponse
+} from '@/tests/utils/mocks'
 
 // Mock Groq SDK
 vi.mock('groq-sdk', () => {
