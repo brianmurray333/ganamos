@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { POST } from '@/app/api/posts/route'
+import { POST, GET } from '@/app/api/posts/route'
 import { NextRequest } from 'next/server'
 import {
   createMockPostData,
@@ -22,6 +22,10 @@ import {
   createL402AuthHeader,
   expectPostActionCalled,
   expectL402ChallengeCalled,
+  createMockGetRequest,
+  getApiDocumentation,
+  expectApiDocumentationResponse,
+  expectDocumentationMatchesConstants,
 } from './helpers/posts-api-mocks'
 
 // Mock all external dependencies
@@ -827,6 +831,284 @@ describe('POST /api/posts Integration Tests', () => {
         funding_r_hash: paymentHash,
         funding_payment_request: '',
       })
+    })
+  })
+})
+
+describe('GET /api/posts Integration Tests', () => {
+  const originalNodeEnv = process.env.NODE_ENV
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    process.env.NODE_ENV = 'production'
+  })
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv
+    vi.restoreAllMocks()
+  })
+
+  // Helper to create mock GET request
+  function createMockGetRequest(): NextRequest {
+    return {
+      method: 'GET',
+      headers: new Headers(),
+    } as any
+  }
+
+  describe('API Documentation Response', () => {
+    it('should return 200 status with API documentation', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data).toHaveProperty('message', 'Posts API endpoint')
+      expect(data).toHaveProperty('endpoints')
+      expect(data).toHaveProperty('l402_info')
+    })
+
+    it('should list available endpoints', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.endpoints).toEqual({
+        'POST /api/posts': 'Create a new post (requires L402 payment)',
+        'GET /api/posts': 'List posts (free)'
+      })
+    })
+
+    it('should include L402 configuration details', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info).toEqual({
+        api_fee: '10 sats (fixed)',
+        job_reward: 'Variable (minimum: 0 sats, default: 1000 sats)',
+        total_cost: 'Job reward + 10 sats API fee',
+        currency: 'satoshis',
+        documentation: 'https://docs.lightning.engineering/the-lightning-network/l402'
+      })
+    })
+
+    it('should return valid JSON structure', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data).toMatchObject({
+        message: expect.any(String),
+        endpoints: expect.any(Object),
+        l402_info: expect.objectContaining({
+          api_fee: expect.any(String),
+          job_reward: expect.any(String),
+          total_cost: expect.any(String),
+          currency: expect.any(String),
+          documentation: expect.any(String),
+        })
+      })
+    })
+  })
+
+  describe('Authentication Requirements', () => {
+    it('should not require Authorization header for GET requests', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('WWW-Authenticate')).toBeNull()
+    })
+
+    it('should return documentation even with invalid Authorization header', async () => {
+      const headers = new Headers()
+      headers.set('Authorization', 'Bearer invalid-token')
+      
+      const request = {
+        method: 'GET',
+        headers,
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data).toHaveProperty('message', 'Posts API endpoint')
+    })
+
+    it('should return documentation with valid L402 token present', async () => {
+      const mockToken = createMockL402Token()
+      const headers = new Headers()
+      headers.set('Authorization', createL402AuthHeader(mockToken))
+      
+      const request = {
+        method: 'GET',
+        headers,
+      } as any
+
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data).toHaveProperty('message', 'Posts API endpoint')
+      
+      // Verify L402 verification was not called for GET
+      expect(l402.verifyL402Token).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('CORS Headers', () => {
+    it('should include CORS headers in development mode', async () => {
+      process.env.NODE_ENV = 'development'
+
+      const request = createMockGetRequest()
+      const response = await GET(request)
+
+      expectCorsHeadersPresent(response)
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
+      expect(response.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, OPTIONS')
+      expect(response.headers.get('Access-Control-Allow-Headers')).toBe('Content-Type, Authorization')
+    })
+
+    it('should not include CORS headers in production mode', async () => {
+      process.env.NODE_ENV = 'production'
+
+      const request = createMockGetRequest()
+      const response = await GET(request)
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+      expect(response.headers.get('Access-Control-Allow-Methods')).toBeNull()
+      expect(response.headers.get('Access-Control-Allow-Headers')).toBeNull()
+    })
+
+    it('should handle different NODE_ENV values correctly', async () => {
+      const testEnvs = ['development', 'test', 'staging', 'production']
+
+      for (const env of testEnvs) {
+        process.env.NODE_ENV = env
+        const request = createMockGetRequest()
+        const response = await GET(request)
+
+        expect(response.status).toBe(200)
+        
+        if (env === 'development') {
+          expectCorsHeadersPresent(response)
+        } else {
+          expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
+        }
+      }
+    })
+  })
+
+  describe('Response Content Type', () => {
+    it('should return JSON content type', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+
+      const contentType = response.headers.get('Content-Type')
+      expect(contentType).toContain('application/json')
+    })
+
+    it('should return parseable JSON body', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+
+      // Should not throw when parsing
+      const data = await response.json()
+      expect(data).toBeDefined()
+      expect(typeof data).toBe('object')
+    })
+  })
+
+  describe('Error Handling', () => {
+    it('should handle GET request errors gracefully', async () => {
+      // Create a request that will cause an error
+      const request = {
+        method: 'GET',
+        headers: null as any, // Invalid headers
+      } as any
+
+      const response = await GET(request)
+
+      // Should still return a response (error handling should catch it)
+      expect(response).toBeDefined()
+    })
+  })
+
+  describe('Integration Tests', () => {
+    it('should provide consistent API information across multiple GET requests', async () => {
+      const request1 = createMockGetRequest()
+      const request2 = createMockGetRequest()
+
+      const response1 = await GET(request1)
+      const response2 = await GET(request2)
+
+      const data1 = await response1.json()
+      const data2 = await response2.json()
+
+      expect(data1).toEqual(data2)
+      expect(data1.l402_info.api_fee).toBe(data2.l402_info.api_fee)
+    })
+
+    it('should not trigger any database operations', async () => {
+      const request = createMockGetRequest()
+      await GET(request)
+
+      // GET should not call any post-creation actions
+      expect(postActions.createFundedAnonymousPostAction).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger Lightning Network operations', async () => {
+      const request = createMockGetRequest()
+      await GET(request)
+
+      // GET should not create invoices or check payments
+      expect(lightning.createInvoice).not.toHaveBeenCalled()
+      expect(lightning.checkInvoice).not.toHaveBeenCalled()
+    })
+
+    it('should not trigger L402 challenge creation', async () => {
+      const request = createMockGetRequest()
+      await GET(request)
+
+      // GET should not create L402 challenges
+      expect(l402.createL402Challenge).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Documentation Content Accuracy', () => {
+    it('should accurately reflect API_ACCESS_FEE constant', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info.api_fee).toBe(`${API_ACCESS_FEE} sats (fixed)`)
+    })
+
+    it('should accurately reflect MIN_JOB_REWARD constant', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info.job_reward).toContain(`minimum: ${MIN_JOB_REWARD} sats`)
+    })
+
+    it('should accurately reflect DEFAULT_JOB_REWARD constant', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info.job_reward).toContain(`default: ${DEFAULT_JOB_REWARD} sats`)
+    })
+
+    it('should include correct L402 documentation link', async () => {
+      const request = createMockGetRequest()
+      const response = await GET(request)
+      const data = await response.json()
+
+      expect(data.l402_info.documentation).toBe('https://docs.lightning.engineering/the-lightning-network/l402')
     })
   })
 })
