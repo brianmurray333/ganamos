@@ -274,7 +274,10 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
 
   describe('Network and Communication Errors', () => {
     it('should handle network timeout errors', async () => {
-      mockLndNetworkTimeout(vi.mocked(lndRequest))
+      vi.mocked(lndRequest).mockResolvedValue({
+        success: false,
+        error: 'Network timeout after 30000ms',
+      })
 
       const request = createNodeBalanceRequest()
       const response = await GET(request)
@@ -287,8 +290,7 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
     it('should handle connection refused errors', async () => {
       vi.mocked(lndRequest).mockResolvedValue({
         success: false,
-        error: 'Failed to communicate with Lightning node',
-        details: 'ECONNREFUSED',
+        error: 'ECONNREFUSED',
       })
 
       const request = createNodeBalanceRequest()
@@ -386,9 +388,10 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
       const data = await response.json()
 
       expect(response.status).toBe(200)
-      expect(data.balances.channel_balance).toBeNaN()
-      expect(data.balances.pending_balance).toBeNaN()
-      expect(data.balances.onchain_balance).toBeNaN()
+      // parseInt on invalid strings returns NaN, which becomes null in JSON
+      expect(Number.isNaN(data.balances.channel_balance) || data.balances.channel_balance === null).toBe(true)
+      expect(Number.isNaN(data.balances.pending_balance) || data.balances.pending_balance === null).toBe(true)
+      expect(Number.isNaN(data.balances.onchain_balance) || data.balances.onchain_balance === null).toBe(true)
     })
 
     it('should handle negative balance values', async () => {
