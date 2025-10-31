@@ -31,6 +31,8 @@ export function formatTimeAgo(date: Date): string {
   const formatted = formatDistanceToNow(date, { addSuffix: true })
   return formatted
     .replace(/about /g, "") // Remove "about"
-    .replace(/ hours?/g, " hrs") // Replace "hour" or "hours" with "hrs"
-    .replace(/ minutes?/g, " mins") // Replace "minute" or "minutes" with "mins"
+    .replace(/ hours/g, " hrs") // Replace "hours" with "hrs"
+    .replace(/ hour/g, " hr") // Replace "hour" with "hr"
+    .replace(/ minutes/g, " mins") // Replace "minutes" with "mins"
+    .replace(/ minute/g, " min") // Replace "minute" with "min"
 }
