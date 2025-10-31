@@ -15,6 +15,7 @@ export function createMockGroqSDK(options: {
   failureMessage?: string
   malformed?: boolean
   missingReasoning?: boolean
+  rawResponse?: string
 } = {}) {
   const {
     confidence = 8,
@@ -23,11 +24,15 @@ export function createMockGroqSDK(options: {
     failureMessage = 'AI service unavailable',
     malformed = false,
     missingReasoning = false,
+    rawResponse,
   } = options
 
   let responseContent: string
 
-  if (malformed) {
+  // If rawResponse is provided, use it directly
+  if (rawResponse !== undefined) {
+    responseContent = rawResponse
+  } else if (malformed) {
     responseContent = 'This is a malformed response without proper formatting'
   } else if (missingReasoning) {
     responseContent = `CONFIDENCE: ${confidence}\nSome text but no REASONING label`
