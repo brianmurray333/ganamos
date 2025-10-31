@@ -18,39 +18,81 @@ import { Skeleton } from "@/components/ui/skeleton"
 function TransactionHistory() {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [page, setPage] = useState(0)
   const { user, profile, activeUserId } = useAuth()
+  const observerTarget = useRef<HTMLDivElement>(null)
+  const TRANSACTIONS_PER_PAGE = 10
 
-  useEffect(() => {
-    async function fetchTransactions() {
-      if (!user || !profile) return
+  const fetchTransactions = useCallback(async (pageNum: number, append: boolean = false) => {
+    if (!user || !profile) return
 
-      const supabase = createBrowserSupabaseClient()
-      
-      // Fetch transactions for the current wallet owner (could be main user or active child account)
-      const walletUserId = activeUserId || user.id
+    const supabase = createBrowserSupabaseClient()
+    
+    // Fetch transactions for the current wallet owner (could be main user or active child account)
+    const walletUserId = activeUserId || user.id
+    const offset = pageNum * TRANSACTIONS_PER_PAGE
 
-      try {
-        const { data, error } = await supabase
-          .from("transactions")
-          .select("*")
-          .eq("user_id", walletUserId)
-          .order("created_at", { ascending: false })
-          .limit(10)
+    try {
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", walletUserId)
+        .order("created_at", { ascending: false })
+        .range(offset, offset + TRANSACTIONS_PER_PAGE - 1)
 
-        if (error) {
-          console.error("Error fetching transactions:", error)
+      if (error) {
+        console.error("Error fetching transactions:", error)
+      } else {
+        const newTransactions = data || []
+        if (append) {
+          setTransactions(prev => [...prev, ...newTransactions])
         } else {
-          setTransactions(data || [])
+          setTransactions(newTransactions)
         }
-      } catch (error) {
-        console.error("Failed to fetch transactions:", error)
-      } finally {
+        setHasMore(newTransactions.length === TRANSACTIONS_PER_PAGE)
+      }
+    } catch (error) {
+      console.error("Failed to fetch transactions:", error)
+    } finally {
+      if (append) {
+        setIsLoadingMore(false)
+      } else {
         setLoading(false)
       }
     }
-
-    fetchTransactions()
   }, [user, profile, activeUserId])
+
+  useEffect(() => {
+    fetchTransactions(0, false)
+  }, [fetchTransactions])
+
+  // Infinite scroll with IntersectionObserver
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading) {
+          setIsLoadingMore(true)
+          const nextPage = page + 1
+          setPage(nextPage)
+          fetchTransactions(nextPage, true)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [hasMore, isLoadingMore, loading, page, fetchTransactions])
 
   if (loading) {
     return (
@@ -131,6 +173,17 @@ function TransactionHistory() {
           </div>
         </div>
       ))}
+      {/* Intersection Observer target */}
+      {hasMore && <div ref={observerTarget} className="h-10" />}
+      {/* Loading indicator */}
+      {isLoadingMore && (
+        <div className="flex justify-center py-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Loading more...
+          </div>
+        </div>
+      )}
     </div>
   )
 }
