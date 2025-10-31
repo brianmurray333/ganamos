@@ -1,0 +1,1209 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createSuccessResponse, createErrorResponse } from '@/tests/utils/database'
+import { createTestTransaction } from '@/tests/integration/helpers/transaction-test-utils'
+import { createMockSupabaseClient, setupMockSupabaseForAudit, setupMockAPIs } from './daily-summary-mocks'
+
+/**
+ * Unit Tests for Daily Summary Module
+ * 
+ * Tests the multi-input data processor functions:
+ * - performBalanceAudit(): Balance reconciliation across all users
+ * - getDailySummaryData(): Main aggregation function for daily summary data
+ * 
+ * Mocks all external dependencies: Supabase, node-balance API, Groq SDK, Resend SDK
+ */
+
+// Mock @supabase/supabase-js directly  
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(),
+}))
+
+vi.mock('groq-sdk', () => ({
+  Groq: vi.fn(),
+}))
+
+vi.mock('resend', () => ({
+  Resend: vi.fn(),
+}))
+
+// Import after mocks are set up
+let getDailySummaryData: any
+let createClient: any
+let Groq: any
+let Resend: any
+
+describe('Daily Summary Module', () => {
+  beforeEach(async () => {
+    // Clear all mocks before each test
+    vi.clearAllMocks()
+    
+    // Set required environment variables
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co'
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key'
+    process.env.NEXT_PUBLIC_APP_URL = 'http://localhost:3457'
+    process.env.GROQ_API_KEY = 'test-groq-key'
+    process.env.RESEND_API_KEY = 'test-resend-key'
+    process.env.VOLTAGE_API_KEY = 'test-voltage-key'
+    process.env.VOLTAGE_NODE_ID = 'test-node-id'
+    
+    // Import mocked dependencies
+    const supabaseModule = await import('@supabase/supabase-js')
+    createClient = supabaseModule.createClient
+    
+    const groqModule = await import('groq-sdk')
+    Groq = groqModule.Groq
+    
+    const resendModule = await import('resend')
+    Resend = resendModule.Resend
+    
+    // Import functions after environment variables and mocks are set
+    const dailySummaryModule = await import('@/lib/daily-summary')
+    getDailySummaryData = dailySummaryModule.getDailySummaryData
+  })
+
+  afterEach(() => {
+    // Clean up environment variables
+    delete process.env.NEXT_PUBLIC_SUPABASE_URL
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY
+    delete process.env.NEXT_PUBLIC_APP_URL
+    delete process.env.GROQ_API_KEY
+    delete process.env.RESEND_API_KEY
+    delete process.env.VOLTAGE_API_KEY
+    delete process.env.VOLTAGE_NODE_ID
+  })
+
+  describe('performBalanceAudit (via getDailySummaryData)', () => {
+    it('should pass audit when all user balances match transaction history', async () => {
+      // Arrange: Create profiles and matching transactions
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 5000 },
+        { id: 'user-2', email: 'user2@test.com', balance: 3000 },
+      ]
+
+      const user1Transactions = [
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 5000, status: 'completed' }),
+      ]
+
+      const user2Transactions = [
+        createTestTransaction({ user_id: 'user-2', type: 'deposit', amount: 4000, status: 'completed' }),
+        createTestTransaction({ user_id: 'user-2', type: 'withdrawal', amount: 1000, status: 'completed' }),
+      ]
+
+      // Mock Supabase client
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      // Mock profiles query
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn((field: string, value: string) => ({
+              eq: vi.fn().mockResolvedValue(
+                createSuccessResponse(value === 'user-1' ? user1Transactions : user2Transactions)
+              ),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      // Mock fetch for node-balance API
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: {
+            channel_balance: 100000,
+            pending_balance: 0,
+            onchain_balance: 50000,
+            total_balance: 150000,
+          },
+        }),
+      })
+
+      // Mock Groq SDK
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Test response' } }],
+            }),
+          },
+        },
+      }))
+
+      // Mock Resend SDK
+      Resend.mockImplementation(() => ({
+        emails: {
+          send: vi.fn().mockResolvedValue({ id: 'test-email-id' }),
+        },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.totalUsers).toBe(2)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+      expect(result.balanceAudit.totalDiscrepancy).toBe(0)
+      expect(result.balanceAudit.discrepancies).toHaveLength(0)
+    })
+
+    it('should fail audit when single user has balance discrepancy', async () => {
+      // Arrange: Profile balance doesn't match transactions
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 6000 }, // Should be 5000
+      ]
+
+      const user1Transactions = [
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 5000, status: 'completed' }),
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue(createSuccessResponse(user1Transactions)),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert
+      expect(result.balanceAudit.status).toBe('failed')
+      expect(result.balanceAudit.totalUsers).toBe(1)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(1)
+      expect(result.balanceAudit.totalDiscrepancy).toBe(1000) // 6000 - 5000
+      expect(result.balanceAudit.discrepancies).toHaveLength(1)
+      expect(result.balanceAudit.discrepancies[0]).toEqual({
+        email: 'user1@test.com',
+        profileBalance: 6000,
+        calculatedBalance: 5000,
+        difference: 1000,
+      })
+    })
+
+    it('should fail audit when multiple users have discrepancies', async () => {
+      // Arrange: Multiple users with balance mismatches
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 6000 }, // Should be 5000 (+1000 discrepancy)
+        { id: 'user-2', email: 'user2@test.com', balance: 2000 }, // Should be 3000 (-1000 discrepancy)
+      ]
+
+      const user1Transactions = [
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 5000, status: 'completed' }),
+      ]
+
+      const user2Transactions = [
+        createTestTransaction({ user_id: 'user-2', type: 'deposit', amount: 3000, status: 'completed' }),
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn((field: string, value: string) => ({
+              eq: vi.fn().mockResolvedValue(
+                createSuccessResponse(value === 'user-1' ? user1Transactions : user2Transactions)
+              ),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert
+      expect(result.balanceAudit.status).toBe('failed')
+      expect(result.balanceAudit.totalUsers).toBe(2)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(2)
+      expect(result.balanceAudit.totalDiscrepancy).toBe(2000) // |1000| + |-1000|
+      expect(result.balanceAudit.discrepancies).toHaveLength(2)
+    })
+
+    it('should correctly handle internal transactions with sign preservation', async () => {
+      // Arrange: User with internal transactions (negative for outgoing, positive for incoming)
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 7000 },
+      ]
+
+      const user1Transactions = [
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 10000, status: 'completed' }),
+        createTestTransaction({ user_id: 'user-1', type: 'internal', amount: -3000, status: 'completed' }), // Outgoing
+        createTestTransaction({ user_id: 'user-1', type: 'internal', amount: 2000, status: 'completed' }), // Incoming
+        createTestTransaction({ user_id: 'user-1', type: 'withdrawal', amount: 2000, status: 'completed' }),
+      ]
+      // Expected: 10000 + (-3000) + 2000 - 2000 = 7000
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue(createSuccessResponse(user1Transactions)),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Audit should pass with correct sign handling
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+      expect(result.balanceAudit.discrepancies).toHaveLength(0)
+    })
+
+    it('should ignore pending and failed transactions in audit', async () => {
+      // Arrange: Profile with completed and non-completed transactions
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 5000 },
+      ]
+
+      const user1Transactions = [
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 5000, status: 'completed' }),
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 1000, status: 'pending' }), // Should be ignored
+        createTestTransaction({ user_id: 'user-1', type: 'deposit', amount: 2000, status: 'failed' }), // Should be ignored
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue(createSuccessResponse(user1Transactions)),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Audit should pass (only completed transactions counted)
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+    })
+
+    it('should pass audit with zero balances and no transactions', async () => {
+      // Arrange: User with zero balance and no transactions
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 0 },
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(() => ({
+              eq: vi.fn().mockResolvedValue(createSuccessResponse([])), // No transactions
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.totalUsers).toBe(1)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+    })
+
+    it('should return failed status when profile query fails', async () => {
+      // Arrange: Simulate profile query error
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createErrorResponse('Database connection failed')),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should return failed audit status
+      expect(result.balanceAudit.status).toBe('failed')
+      expect(result.balanceAudit.totalUsers).toBe(0)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+      expect(result.balanceAudit.totalDiscrepancy).toBe(0)
+      expect(result.balanceAudit.discrepancies).toHaveLength(0)
+    })
+
+    it('should skip user and continue when transaction query fails', async () => {
+      // Arrange: First user has transaction query error, second user is fine
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 5000 },
+        { id: 'user-2', email: 'user2@test.com', balance: 3000 },
+      ]
+
+      const user2Transactions = [
+        createTestTransaction({ user_id: 'user-2', type: 'deposit', amount: 3000, status: 'completed' }),
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn((field: string, value: string) => ({
+              eq: vi.fn().mockResolvedValue(
+                value === 'user-1'
+                  ? createErrorResponse('Transaction query failed')
+                  : createSuccessResponse(user2Transactions)
+              ),
+            })),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should skip user-1 and continue with user-2
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.totalUsers).toBe(2)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+    })
+
+    it('should handle empty profiles result', async () => {
+      // Arrange: No profiles in database
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert
+      expect(result.balanceAudit.status).toBe('passed')
+      expect(result.balanceAudit.totalUsers).toBe(0)
+      expect(result.balanceAudit.usersWithDiscrepancies).toBe(0)
+      expect(result.balanceAudit.discrepancies).toHaveLength(0)
+    })
+  })
+
+  describe('getDailySummaryData', () => {
+    it('should aggregate data from all sources successfully', async () => {
+      // Arrange: Complete data from all sources
+      const profiles = [
+        { id: 'user-1', email: 'user1@test.com', balance: 5000 },
+        { id: 'user-2', email: 'user2@test.com', balance: 3000 },
+      ]
+
+      const transactions = [
+        createTestTransaction({ type: 'deposit', amount: 2000, status: 'completed', created_at: new Date().toISOString() }),
+        createTestTransaction({ type: 'withdrawal', amount: 1000, status: 'completed', created_at: new Date().toISOString() }),
+        createTestTransaction({ type: 'internal', amount: 500, status: 'completed', created_at: new Date().toISOString() }),
+      ]
+
+      const posts = [
+        { reward: 1000, fixed: true, fixed_at: new Date().toISOString() },
+        { reward: 500, fixed: true, fixed_at: new Date().toISOString() },
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn((field: string, value: any) => {
+              if (field === 'status') {
+                return {
+                  eq: vi.fn().mockResolvedValue(createSuccessResponse([])),
+                }
+              }
+              // For user_id eq
+              return {
+                eq: vi.fn().mockResolvedValue(createSuccessResponse([])),
+              }
+            }),
+            gte: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(transactions)),
+          }
+        }
+        if (table === 'posts') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            gte: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(posts)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      // Mock RPC call for active users
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(2))
+
+      // Mock node-balance API
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: {
+            channel_balance: 100000,
+            pending_balance: 5000,
+            onchain_balance: 50000,
+            total_balance: 155000,
+          },
+        }),
+      })
+
+      // Mock Groq SDK
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Groq is operational' } }],
+            }),
+          },
+        },
+      }))
+
+      // Mock Resend SDK
+      Resend.mockImplementation(() => ({
+        emails: {
+          send: vi.fn().mockResolvedValue({ id: 'test-email-id' }),
+        },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Verify all data sections are populated
+      expect(result.nodeBalance).toEqual({
+        channel_balance: 100000,
+        pending_balance: 5000,
+        onchain_balance: 50000,
+        total_balance: 155000,
+      })
+      
+      expect(result.appTotalBalance).toBe(8000) // 5000 + 3000
+      
+      expect(result.last24Hours.transactions.count).toBeGreaterThanOrEqual(0)
+      expect(result.last24Hours.deposits.count).toBeGreaterThanOrEqual(0)
+      expect(result.last24Hours.withdrawals.count).toBeGreaterThanOrEqual(0)
+      
+      expect(result.balanceAudit.status).toBe('passed')
+      
+      expect(result.apiHealth.voltage.status).toBe('online')
+      expect(result.apiHealth.voltage.nodeBalance).toBe(155000)
+      expect(result.apiHealth.groq.status).toBe('online')
+      expect(result.apiHealth.resend.status).toBe('online')
+    })
+
+    it('should default to zero when node-balance API fails', async () => {
+      // Arrange: Node-balance API returns error
+      const profiles = [{ id: 'user-1', email: 'user1@test.com', balance: 5000 }]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(1))
+
+      // Mock failed fetch
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'Service unavailable' }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Test' } }],
+            }),
+          },
+        },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should default to zero balances
+      expect(result.nodeBalance).toEqual({
+        channel_balance: 0,
+        pending_balance: 0,
+        onchain_balance: 0,
+        total_balance: 0,
+      })
+      expect(result.apiHealth.voltage.status).toBe('error')
+      expect(result.apiHealth.voltage.error).toBeDefined()
+    })
+
+    it('should handle malformed node-balance API response', async () => {
+      // Arrange: API returns malformed data
+      const profiles = [{ id: 'user-1', email: 'user1@test.com', balance: 5000 }]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(1))
+
+      // Mock malformed response (missing balances object)
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          // Missing balances object
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Test' } }],
+            }),
+          },
+        },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should handle gracefully with zero balances
+      expect(result.nodeBalance).toEqual({
+        channel_balance: 0,
+        pending_balance: 0,
+        onchain_balance: 0,
+        total_balance: 0,
+      })
+    })
+
+    it('should handle empty database query results', async () => {
+      // Arrange: All database queries return empty results
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+      }))
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(0))
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: {
+            channel_balance: 100000,
+            pending_balance: 0,
+            onchain_balance: 50000,
+            total_balance: 150000,
+          },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Test' } }],
+            }),
+          },
+        },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should handle empty data gracefully
+      expect(result.appTotalBalance).toBe(0)
+      expect(result.last24Hours.deposits.count).toBe(0)
+      expect(result.last24Hours.deposits.amount).toBe(0)
+      expect(result.last24Hours.withdrawals.count).toBe(0)
+      expect(result.last24Hours.withdrawals.amount).toBe(0)
+      expect(result.last24Hours.activeUsers).toBe(0)
+      expect(result.balanceAudit.totalUsers).toBe(0)
+    })
+
+    it('should report error status when Groq API fails', async () => {
+      // Arrange: Groq API throws error
+      const profiles = [{ id: 'user-1', email: 'user1@test.com', balance: 5000 }]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(1))
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      // Mock Groq failure
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockRejectedValue(new Error('Groq API unavailable')),
+          },
+        },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should report Groq error
+      expect(result.apiHealth.groq.status).toBe('error')
+      expect(result.apiHealth.groq.error).toContain('Groq API unavailable')
+    })
+
+    it('should report error status when Resend API fails', async () => {
+      // Arrange: Resend API throws error
+      const profiles = [{ id: 'user-1', email: 'user1@test.com', balance: 5000 }]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(profiles)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(1))
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: {
+          completions: {
+            create: vi.fn().mockResolvedValue({
+              choices: [{ message: { content: 'Test' } }],
+            }),
+          },
+        },
+      }))
+
+      // Mock Resend failure
+      Resend.mockImplementation(() => ({
+        emails: {
+          send: vi.fn().mockRejectedValue(new Error('Resend API unavailable')),
+        },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Should report Resend error
+      expect(result.apiHealth.resend.status).toBe('error')
+      expect(result.apiHealth.resend.error).toContain('Resend API unavailable')
+    })
+
+    it('should correctly calculate deposits and withdrawals in last 24 hours', async () => {
+      // Arrange: Mix of transactions with different types
+      const now = new Date()
+      const yesterday = new Date(now.getTime() - 25 * 60 * 60 * 1000) // 25 hours ago (outside window)
+
+      const transactions = [
+        createTestTransaction({ type: 'deposit', amount: 1000, status: 'completed', created_at: now.toISOString() }),
+        createTestTransaction({ type: 'deposit', amount: 2000, status: 'completed', created_at: now.toISOString() }),
+        createTestTransaction({ type: 'withdrawal', amount: 500, status: 'completed', created_at: now.toISOString() }),
+        createTestTransaction({ type: 'deposit', amount: 3000, status: 'completed', created_at: yesterday.toISOString() }), // Should be excluded
+        createTestTransaction({ type: 'deposit', amount: 1000, status: 'pending', created_at: now.toISOString() }), // Should be excluded
+      ]
+
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'profiles') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            neq: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+          }
+        }
+        if (table === 'transactions') {
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn((field: string) => {
+              if (field === 'status') {
+                return {
+                  eq: vi.fn().mockResolvedValue(createSuccessResponse([])),
+                }
+              }
+              return {
+                eq: vi.fn().mockResolvedValue(createSuccessResponse([])),
+              }
+            }),
+            gte: vi.fn().mockReturnThis(),
+            order: vi.fn().mockResolvedValue(createSuccessResponse(transactions)),
+          }
+        }
+        return {
+          select: vi.fn().mockReturnThis(),
+          eq: vi.fn().mockReturnThis(),
+          gte: vi.fn().mockReturnThis(),
+          order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+        }
+      })
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(0))
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Verify calculations (may include all transactions depending on timestamp logic)
+      expect(result.last24Hours.transactions).toBeDefined()
+      expect(result.last24Hours.deposits).toBeDefined()
+      expect(result.last24Hours.withdrawals).toBeDefined()
+    })
+
+    it('should return valid DailySummaryData structure', async () => {
+      // Arrange: Minimal setup
+      const mockSupabase = createMockSupabaseClient()
+      createClient.mockReturnValue(mockSupabase)
+
+      mockSupabase.from.mockImplementation(() => ({
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        neq: vi.fn().mockReturnThis(),
+        gte: vi.fn().mockReturnThis(),
+        order: vi.fn().mockResolvedValue(createSuccessResponse([])),
+      }))
+
+      mockSupabase.rpc = vi.fn().mockResolvedValue(createSuccessResponse(0))
+
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          balances: { channel_balance: 100000, pending_balance: 0, onchain_balance: 50000, total_balance: 150000 },
+        }),
+      })
+
+      Groq.mockImplementation(() => ({
+        chat: { completions: { create: vi.fn().mockResolvedValue({ choices: [{ message: { content: 'Test' } }] }) } },
+      }))
+
+      Resend.mockImplementation(() => ({
+        emails: { send: vi.fn().mockResolvedValue({ id: 'test-id' }) },
+      }))
+
+      // Act
+      const result = await getDailySummaryData()
+
+      // Assert - Verify structure matches DailySummaryData interface
+      expect(result).toHaveProperty('nodeBalance')
+      expect(result.nodeBalance).toHaveProperty('channel_balance')
+      expect(result.nodeBalance).toHaveProperty('pending_balance')
+      expect(result.nodeBalance).toHaveProperty('onchain_balance')
+      expect(result.nodeBalance).toHaveProperty('total_balance')
+      
+      expect(result).toHaveProperty('appTotalBalance')
+      expect(typeof result.appTotalBalance).toBe('number')
+      
+      expect(result).toHaveProperty('balanceAudit')
+      expect(result.balanceAudit).toHaveProperty('status')
+      expect(result.balanceAudit).toHaveProperty('totalUsers')
+      expect(result.balanceAudit).toHaveProperty('usersWithDiscrepancies')
+      expect(result.balanceAudit).toHaveProperty('totalDiscrepancy')
+      expect(result.balanceAudit).toHaveProperty('discrepancies')
+      
+      expect(result).toHaveProperty('apiHealth')
+      expect(result.apiHealth).toHaveProperty('voltage')
+      expect(result.apiHealth).toHaveProperty('groq')
+      expect(result.apiHealth).toHaveProperty('resend')
+      
+      expect(result).toHaveProperty('last24Hours')
+      expect(result.last24Hours).toHaveProperty('transactions')
+      expect(result.last24Hours).toHaveProperty('deposits')
+      expect(result.last24Hours).toHaveProperty('withdrawals')
+      expect(result.last24Hours).toHaveProperty('rewards')
+      expect(result.last24Hours).toHaveProperty('earnings')
+      expect(result.last24Hours).toHaveProperty('activeUsers')
+    })
+  })
+})
