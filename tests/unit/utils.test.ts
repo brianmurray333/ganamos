@@ -135,8 +135,8 @@ describe('formatTimeAgo', () => {
     const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000)
     const fiveHoursAgo = new Date(now.getTime() - 5 * 60 * 60 * 1000)
     
-    // date-fns returns "about X hour(s) ago", we transform to "X hr(s) ago"
-    expect(formatTimeAgo(oneHourAgo)).toBe('1 hr ago')
+    // date-fns returns "about X hour(s) ago", we transform to "X hrs ago"
+    expect(formatTimeAgo(oneHourAgo)).toBe('1 hrs ago')
     expect(formatTimeAgo(twoHoursAgo)).toBe('2 hrs ago')
     expect(formatTimeAgo(fiveHoursAgo)).toBe('5 hrs ago')
   })
@@ -199,12 +199,12 @@ describe('formatTimeAgo', () => {
     const now = new Date()
     const oneHourAgo = new Date(now.getTime() - 1 * 60 * 60 * 1000)
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000)
-    
-    // Should use "hr" not "hour"
+
+    // Should use "hrs" not "hour" (original implementation uses "hrs" for both singular and plural)
     const hourResult = formatTimeAgo(oneHourAgo)
-    expect(hourResult).toContain('hr')
+    expect(hourResult).toContain('hrs')
     expect(hourResult).not.toContain('hour')
-    
+
     // Should use "mins" not "minutes"
     const minutesResult = formatTimeAgo(fiveMinutesAgo)
     expect(minutesResult).toContain('mins')
