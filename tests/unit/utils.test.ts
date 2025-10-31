@@ -72,6 +72,73 @@ describe('cn', () => {
       'my-4'
     )).toBe('shrink-0 bg-border h-[1px] w-full my-4')
   })
+
+  it('should handle nested arrays correctly', () => {
+    expect(cn(['px-2', ['py-4', 'bg-blue-500']])).toBe('px-2 py-4 bg-blue-500')
+    expect(cn(['flex', ['items-center', ['justify-between', 'gap-4']]])).toBe('flex items-center justify-between gap-4')
+    expect(cn([['px-2'], [['py-4']]])).toBe('px-2 py-4')
+  })
+
+  it('should filter out empty strings and whitespace-only strings', () => {
+    expect(cn('px-2', '', 'py-4')).toBe('px-2 py-4')
+    expect(cn('px-2', '   ', 'py-4')).toBe('px-2 py-4')
+    expect(cn('', '', '')).toBe('')
+    expect(cn('   ', '  ')).toBe('')
+    expect(cn('flex', '', 'items-center', '  ', 'gap-4')).toBe('flex items-center gap-4')
+  })
+
+  it('should handle boolean values as direct arguments', () => {
+    expect(cn('px-2', true, 'py-4')).toBe('px-2 py-4')
+    expect(cn('px-2', false, 'py-4')).toBe('px-2 py-4')
+    expect(cn(true, false, 'flex')).toBe('flex')
+    expect(cn('base', true && 'active', false && 'disabled')).toBe('base active')
+  })
+
+  it('should handle duplicate classes correctly', () => {
+    expect(cn('flex', 'flex')).toBe('flex')
+    expect(cn('px-2', 'py-4', 'px-2')).toBe('py-4 px-2')
+    expect(cn('text-sm', 'font-bold', 'text-sm')).toBe('font-bold text-sm')
+  })
+
+  it('should handle very long class strings', () => {
+    const longClassString = 'flex items-center justify-between gap-4 px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors duration-200'
+    expect(cn(longClassString)).toBe(longClassString)
+    expect(cn(longClassString, 'mt-4')).toBe(`${longClassString} mt-4`)
+  })
+
+  it('should handle mixed edge cases in single call', () => {
+    expect(cn(
+      'base',
+      '',
+      null,
+      undefined,
+      false,
+      true,
+      { 'active': true, 'disabled': false },
+      ['px-2', '', null, 'py-4'],
+      '  ',
+      'text-sm'
+    )).toBe('base active px-2 py-4 text-sm')
+  })
+
+  it('should maintain Tailwind class precedence with multiple conflicts', () => {
+    expect(cn('p-2', 'p-4', 'p-6')).toBe('p-6')
+    expect(cn('text-sm', 'text-base', 'text-lg', 'text-xl')).toBe('text-xl')
+    expect(cn('bg-red-500', 'bg-blue-500', 'bg-green-500')).toBe('bg-green-500')
+    expect(cn('rounded', 'rounded-md', 'rounded-lg', 'rounded-full')).toBe('rounded-full')
+  })
+
+  it('should handle responsive and state variant classes', () => {
+    expect(cn('px-2', 'md:px-4', 'lg:px-6')).toBe('px-2 md:px-4 lg:px-6')
+    expect(cn('hover:bg-blue-500', 'focus:bg-blue-600', 'active:bg-blue-700')).toBe('hover:bg-blue-500 focus:bg-blue-600 active:bg-blue-700')
+    expect(cn('text-gray-900', 'dark:text-white')).toBe('text-gray-900 dark:text-white')
+  })
+
+  it('should handle arbitrary values and custom properties', () => {
+    expect(cn('p-[10px]', 'w-[300px]')).toBe('p-[10px] w-[300px]')
+    expect(cn('bg-[#1da1f2]', 'text-[rgb(255,0,0)]')).toBe('bg-[#1da1f2] text-[rgb(255,0,0)]')
+    expect(cn('grid-cols-[1fr_2fr_1fr]')).toBe('grid-cols-[1fr_2fr_1fr]')
+  })
 })
 
 describe('formatSatsValue', () => {
