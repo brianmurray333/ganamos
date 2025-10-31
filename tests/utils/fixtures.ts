@@ -211,6 +211,14 @@ export function createTestPostData(userId: string, overrides: {
   image_url?: string
   location?: string
   reward?: number
+  ai_confidence_score?: number
+  ai_analysis?: string
+  under_review?: boolean
+  submitted_fix_image_url?: string | null
+  submitted_fix_by_id?: string | null
+  submitted_fix_by_name?: string | null
+  fixed?: boolean
+  fixed_by?: string | null
 } = {}) {
   const timestamp = Date.now()
   
@@ -221,5 +229,13 @@ export function createTestPostData(userId: string, overrides: {
     image_url: overrides.image_url || 'https://example.com/test-image.jpg',
     location: overrides.location || 'Test Location',
     reward: overrides.reward ?? 100,
+    ai_confidence_score: overrides.ai_confidence_score ?? undefined,
+    ai_analysis: overrides.ai_analysis ?? undefined,
+    under_review: overrides.under_review ?? false,
+    submitted_fix_image_url: overrides.submitted_fix_image_url ?? null,
+    submitted_fix_by_id: overrides.submitted_fix_by_id ?? null,
+    submitted_fix_by_name: overrides.submitted_fix_by_name ?? null,
+    fixed: overrides.fixed ?? false,
+    fixed_by: overrides.fixed_by ?? null,
   }
 }
