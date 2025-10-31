@@ -1,4 +1,4 @@
-import { vi } from 'vitest'
+import { vi, expect } from 'vitest'
 import type { L402Challenge, L402Token, Macaroon } from '@/lib/l402'
 
 /**
@@ -345,4 +345,60 @@ export function expectL402ChallengeCalled(
     expect.stringContaining(`Pay ${totalAmount} sats`),
     'ganamos-posts'
   )
+}
+
+/**
+ * Helper to create mock GET request for /api/posts
+ */
+export function createMockGetRequest(headers?: Headers) {
+  return {
+    method: 'GET',
+    headers: headers || new Headers(),
+  } as any
+}
+
+/**
+ * Helper to fetch and parse GET response
+ */
+export async function getApiDocumentation(request: any, getHandler: any) {
+  const response = await getHandler(request)
+  const data = await response.json()
+  return { response, data }
+}
+
+/**
+ * Helper to verify GET /api/posts documentation response structure
+ */
+export function expectApiDocumentationResponse(data: any) {
+  expect(data).toHaveProperty('message', 'Posts API endpoint')
+  expect(data).toHaveProperty('endpoints')
+  expect(data).toHaveProperty('l402_info')
+  
+  // Verify endpoints structure
+  expect(data.endpoints).toEqual({
+    'POST /api/posts': 'Create a new post (requires L402 payment)',
+    'GET /api/posts': 'List posts (free)'
+  })
+  
+  // Verify L402 info structure
+  expect(data.l402_info).toMatchObject({
+    api_fee: expect.stringContaining('sats'),
+    job_reward: expect.stringContaining('sats'),
+    total_cost: expect.stringContaining('sats'),
+    currency: 'satoshis',
+    documentation: expect.stringContaining('https://')
+  })
+}
+
+/**
+ * Helper to verify GET /api/posts documentation matches constants
+ */
+export function expectDocumentationMatchesConstants(
+  data: any,
+  constants: { API_ACCESS_FEE: number; MIN_JOB_REWARD: number; DEFAULT_JOB_REWARD: number }
+) {
+  expect(data.l402_info.api_fee).toBe(`${constants.API_ACCESS_FEE} sats (fixed)`)
+  expect(data.l402_info.job_reward).toContain(`minimum: ${constants.MIN_JOB_REWARD} sats`)
+  expect(data.l402_info.job_reward).toContain(`default: ${constants.DEFAULT_JOB_REWARD} sats`)
+  expect(data.l402_info.documentation).toBe('https://docs.lightning.engineering/the-lightning-network/l402')
 }
