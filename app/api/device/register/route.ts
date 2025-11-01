@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+import { cookies } from "next/headers"
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+
+// Force dynamic rendering
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createServerSupabaseClient()
+    const supabase = createRouteHandlerClient({ cookies })
 
     // Get the current user
     const {
@@ -87,6 +91,41 @@ export async function POST(request: NextRequest) {
         message: `${petName} has been reconnected!`,
         deviceId: existingDevice.id,
       })
+    }
+
+    // IMPORTANT: Enforce one device per user
+    // Check if user already has a device connected (different pairing code)
+    const { data: userDevices, error: userDevicesError } = await supabase
+      .from('devices')
+      .select('id, pairing_code, pet_name')
+      .eq('user_id', user.id)
+
+    if (userDevicesError) {
+      console.error('Error checking user devices:', userDevicesError)
+      return NextResponse.json(
+        { success: false, error: "Database error" },
+        { status: 500 }
+      )
+    }
+
+    // If user already has a device, delete it before pairing the new one
+    if (userDevices && userDevices.length > 0) {
+      console.log(`User already has ${userDevices.length} device(s). Removing before pairing new device.`)
+      
+      const { error: deleteError } = await supabase
+        .from('devices')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (deleteError) {
+        console.error('Error removing existing devices:', deleteError)
+        return NextResponse.json(
+          { success: false, error: "Failed to unpair existing device" },
+          { status: 500 }
+        )
+      }
+
+      console.log(`Successfully removed ${userDevices.length} existing device(s)`)
     }
 
     // Create new device
