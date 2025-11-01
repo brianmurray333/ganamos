@@ -10,6 +10,10 @@ import {
   mockSuccessfulNostrResponse,
   createMockFailureResponse,
   createSetupProfileRequest,
+  callPublishPostEndpoint,
+  callSetupProfileEndpoint,
+  assertErrorResponse,
+  assertPublishSuccessResponse,
 } from '../helpers/nostr-test-helpers'
 
 describe('POST /api/nostr/publish-post', () => {

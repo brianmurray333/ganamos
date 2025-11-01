@@ -3,6 +3,8 @@
  * Provides reusable utilities for creating requests and mock data
  */
 
+import { expect } from 'vitest'
+
 /**
  * Create a POST request for the Nostr publish-post API
  */
@@ -89,4 +91,56 @@ export function createSetupProfileRequest() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+/**
+ * Helper to call the publish-post endpoint and return parsed response
+ * Reduces boilerplate: request -> response -> data
+ */
+export async function callPublishPostEndpoint(
+  postHandler: (req: Request) => Promise<Response>,
+  body: Record<string, any>
+) {
+  const request = createNostrPublishRequest(body)
+  const response = await postHandler(request)
+  const data = await response.json()
+  return { response, data }
+}
+
+/**
+ * Helper to call the setup-profile endpoint and return parsed response
+ * Reduces boilerplate: request -> response -> data
+ */
+export async function callSetupProfileEndpoint(
+  postHandler: (req: Request) => Promise<Response>
+) {
+  const request = createSetupProfileRequest()
+  const response = await postHandler(request)
+  const data = await response.json()
+  return { response, data }
+}
+
+/**
+ * Assert error response structure
+ */
+export function assertErrorResponse(data: any, expectedStatus?: number, expectedError?: string) {
+  expect(data).toHaveProperty('success')
+  expect(data).toHaveProperty('error')
+  expect(data.success).toBe(false)
+  expect(typeof data.error).toBe('string')
+  if (expectedError) {
+    expect(data.error).toContain(expectedError)
+  }
+}
+
+/**
+ * Assert success response structure for publish-post
+ */
+export function assertPublishSuccessResponse(data: any) {
+  expect(data).toHaveProperty('success')
+  expect(data).toHaveProperty('eventId')
+  expect(data).toHaveProperty('relaysPublished')
+  expect(data.success).toBe(true)
+  expect(typeof data.eventId).toBe('string')
+  expect(typeof data.relaysPublished).toBe('number')
 }
