@@ -79,3 +79,14 @@ export const createPostToNostrParams = (overrides?: Record<string, any>) => ({
   postId: 'test-post-id',
   ...overrides,
 })
+
+/**
+ * Create a POST request for the Nostr setup-profile API
+ * (No body needed as profile data is hardcoded)
+ */
+export function createSetupProfileRequest() {
+  return new Request('http://localhost:3457/api/nostr/setup-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
