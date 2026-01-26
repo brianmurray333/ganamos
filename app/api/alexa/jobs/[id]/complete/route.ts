@@ -110,6 +110,14 @@ export async function POST(
       )
     }
     
+    // Check if job is still available
+    if (post.fixed || post.claimed || post.under_review || post.deleted_at) {
+      return NextResponse.json(
+        { success: false, error: 'Job has already been claimed or is under review' },
+        { status: 400 }
+      )
+    }
+    
     // Find the fixer by name or username in the group
     const fixerProfile = await findFixerInGroup(
       supabase,
