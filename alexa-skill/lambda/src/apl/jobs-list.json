@@ -1,0 +1,275 @@
+{
+  "type": "APL",
+  "version": "2024.1",
+  "settings": {},
+  "theme": "dark",
+  "import": [
+    {
+      "name": "alexa-layouts",
+      "version": "1.7.0"
+    }
+  ],
+  "resources": [
+    {
+      "description": "Colors",
+      "colors": {
+        "primaryColor": "#22c55e",
+        "accentColor": "#f59e0b",
+        "backgroundColor": "#0f172a",
+        "cardBackground": "#1e293b",
+        "textPrimary": "#ffffff",
+        "textSecondary": "#94a3b8"
+      }
+    },
+    {
+      "description": "Dimensions",
+      "dimensions": {
+        "cardPadding": "16dp",
+        "cardMargin": "12dp",
+        "iconSize": "48dp"
+      }
+    }
+  ],
+  "styles": {
+    "textStyleTitle": {
+      "values": [
+        {
+          "color": "@textPrimary",
+          "fontWeight": "bold",
+          "fontSize": "24dp"
+        }
+      ]
+    },
+    "textStyleBody": {
+      "values": [
+        {
+          "color": "@textPrimary",
+          "fontSize": "18dp"
+        }
+      ]
+    },
+    "textStyleReward": {
+      "values": [
+        {
+          "color": "@accentColor",
+          "fontWeight": "bold",
+          "fontSize": "20dp"
+        }
+      ]
+    },
+    "textStyleSecondary": {
+      "values": [
+        {
+          "color": "@textSecondary",
+          "fontSize": "14dp"
+        }
+      ]
+    }
+  },
+  "mainTemplate": {
+    "parameters": [
+      "payload"
+    ],
+    "items": [
+      {
+        "type": "Container",
+        "width": "100vw",
+        "height": "100vh",
+        "items": [
+          {
+            "type": "Container",
+            "width": "100%",
+            "height": "100%",
+            "direction": "column",
+            "items": [
+              {
+                "type": "Container",
+                "width": "100%",
+                "padding": "@cardPadding",
+                "backgroundColor": "@cardBackground",
+                "items": [
+                  {
+                    "type": "Container",
+                    "direction": "row",
+                    "alignItems": "center",
+                    "justifyContent": "spaceBetween",
+                    "items": [
+                      {
+                        "type": "Container",
+                        "direction": "row",
+                        "alignItems": "center",
+                        "items": [
+                          {
+                            "type": "Text",
+                            "text": "⚡",
+                            "fontSize": "28dp"
+                          },
+                          {
+                            "type": "Text",
+                            "text": "GANAMOS",
+                            "style": "textStyleTitle",
+                            "paddingLeft": "8dp"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Container",
+                        "direction": "row",
+                        "alignItems": "center",
+                        "items": [
+                          {
+                            "type": "Text",
+                            "text": "⚡",
+                            "fontSize": "18dp"
+                          },
+                          {
+                            "type": "Text",
+                            "text": "${payload.balance} sats",
+                            "style": "textStyleReward",
+                            "paddingLeft": "4dp"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "Text",
+                    "text": "${payload.groupName}",
+                    "style": "textStyleSecondary",
+                    "paddingTop": "4dp"
+                  }
+                ]
+              },
+              {
+                "type": "Container",
+                "width": "100%",
+                "height": "100%",
+                "grow": 1,
+                "paddingTop": "@cardMargin",
+                "items": [
+                  {
+                    "type": "Sequence",
+                    "width": "100%",
+                    "height": "100%",
+                    "scrollDirection": "vertical",
+                    "data": "${payload.jobs}",
+                    "numbered": true,
+                    "items": [
+                      {
+                        "type": "TouchWrapper",
+                        "width": "100%",
+                        "onPress": [
+                          {
+                            "type": "SendEvent",
+                            "arguments": [
+                              "selectJob",
+                              "${data.id}",
+                              "${data.title}"
+                            ]
+                          }
+                        ],
+                        "item": {
+                          "type": "Container",
+                          "width": "100%",
+                          "padding": "@cardPadding",
+                          "marginBottom": "@cardMargin",
+                          "marginLeft": "@cardMargin",
+                          "marginRight": "@cardMargin",
+                          "backgroundColor": "@cardBackground",
+                          "borderRadius": "12dp",
+                          "items": [
+                            {
+                              "type": "Container",
+                              "direction": "row",
+                              "alignItems": "center",
+                              "justifyContent": "spaceBetween",
+                              "items": [
+                                {
+                                  "type": "Container",
+                                  "grow": 1,
+                                  "items": [
+                                    {
+                                      "type": "Text",
+                                      "text": "${data.title}",
+                                      "style": "textStyleBody",
+                                      "maxLines": 2
+                                    },
+                                    {
+                                      "type": "Container",
+                                      "direction": "row",
+                                      "alignItems": "center",
+                                      "paddingTop": "8dp",
+                                      "items": [
+                                        {
+                                          "type": "Text",
+                                          "text": "⚡ ${data.reward} sats",
+                                          "style": "textStyleReward"
+                                        },
+                                        {
+                                          "type": "Text",
+                                          "text": " • ${data.createdBy}",
+                                          "style": "textStyleSecondary",
+                                          "paddingLeft": "8dp"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                },
+                                {
+                                  "type": "Container",
+                                  "width": "80dp",
+                                  "height": "40dp",
+                                  "backgroundColor": "@primaryColor",
+                                  "borderRadius": "8dp",
+                                  "alignItems": "center",
+                                  "justifyContent": "center",
+                                  "items": [
+                                    {
+                                      "type": "Text",
+                                      "text": "✓ Done",
+                                      "color": "white",
+                                      "fontSize": "14dp",
+                                      "fontWeight": "bold"
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "when": "${payload.jobs.length == 0}",
+                "type": "Container",
+                "width": "100%",
+                "height": "100%",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "items": [
+                  {
+                    "type": "Text",
+                    "text": "No open jobs",
+                    "style": "textStyleTitle",
+                    "opacity": 0.5
+                  },
+                  {
+                    "type": "Text",
+                    "text": "Say \"add a job\" to create one",
+                    "style": "textStyleSecondary",
+                    "paddingTop": "12dp"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+
+

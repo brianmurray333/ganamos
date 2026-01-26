@@ -1,0 +1,62 @@
+name: Security Penetration Tests
+
+on:
+  # Run on every push to main (after deploy)
+  push:
+    branches:
+      - main
+  # Run on PRs that touch security-sensitive files
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'supabase/migrations/**'
+      - 'app/api/wallet/**'
+      - 'lib/withdrawal-security.ts'
+      - 'components/auth-provider.tsx'
+      - 'middleware.ts'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  security-tests:
+    name: 🎭 Hacker Script
+    runs-on: ubuntu-latest
+    # Only run if we have the required secrets
+    if: ${{ vars.SECURITY_TESTS_ENABLED == 'true' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run Security Penetration Tests
+      run: npm run test:security
+      env:
+        NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+        HACKER_TEST_EMAIL: ${{ secrets.HACKER_TEST_EMAIL }}
+        HACKER_TEST_PASSWORD: ${{ secrets.HACKER_TEST_PASSWORD }}
+
+    - name: Alert on Failure
+      if: failure()
+      run: |
+        echo "🚨 SECURITY ALERT: Penetration tests failed!"
+        echo "One or more security controls may be compromised."
+        echo "Review the test output above for details."
+        exit 1
+
+    - name: Security Tests Passed
+      if: success()
+      run: |
+        echo "✅ All security penetration tests passed!"
+        echo "🛡️ Attack vectors are properly blocked."
+

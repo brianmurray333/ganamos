@@ -1,0 +1,13 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/daily-summary",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/update-bitcoin-price",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}
+

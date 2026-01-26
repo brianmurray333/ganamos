@@ -1,0 +1,158 @@
+name: E2E Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  playwright:
+    name: Playwright Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Supabase local instance
+        run: |
+          supabase stop --no-backup 2>/dev/null || true
+          supabase start
+          # Reset the database to ensure clean state with all migrations
+          supabase db reset
+          # Give services time to fully initialize
+          sleep 10
+          # Show status for debugging
+          echo "=== Supabase Status ==="
+          supabase status
+          echo "=== Docker Containers ==="
+          docker ps -a
+
+      - name: Get Supabase credentials
+        run: |
+          # Use the built-in env output format - more robust than parsing table output
+          # This outputs variables in KEY=value format that we can eval
+          eval "$(supabase status -o env)"
+          
+          # Debug: show what we got
+          echo "API_URL from supabase: $API_URL"
+          echo "ANON_KEY (first 20 chars): ${ANON_KEY:0:20}..."
+          
+          # Validate we got the required values
+          if [ -z "$API_URL" ]; then
+            echo "ERROR: Could not get API_URL from supabase status"
+            echo "Full env output:"
+            supabase status -o env
+            exit 1
+          fi
+          
+          # Replace 127.0.0.1 with localhost for browser compatibility
+          SUPABASE_URL=$(echo "$API_URL" | sed 's/127\.0\.0\.1/localhost/')
+          
+          # Export to GITHUB_ENV for subsequent steps
+          echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
+          echo "SUPABASE_ANON_KEY=$ANON_KEY" >> $GITHUB_ENV
+          echo "SUPABASE_SERVICE_KEY=$SERVICE_ROLE_KEY" >> $GITHUB_ENV
+          
+          echo "Credentials exported successfully"
+
+      - name: Wait for Supabase services to be ready
+        run: |
+          # Wait for the API to be healthy
+          MAX_RETRIES=60
+          RETRY_COUNT=0
+          until curl -sf "${{ env.SUPABASE_URL }}/rest/v1/" -H "apikey: ${{ env.SUPABASE_ANON_KEY }}" > /dev/null 2>&1 || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+            echo "Waiting for Supabase API... ($RETRY_COUNT/$MAX_RETRIES)"
+            sleep 2
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          done
+          
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "Supabase API failed to start"
+            echo "=== Docker logs for auth ==="
+            docker logs supabase_auth_ganamos 2>&1 | tail -50 || true
+            echo "=== Docker logs for rest ==="
+            docker logs supabase_rest_ganamos 2>&1 | tail -50 || true
+            exit 1
+          fi
+          echo "Supabase API is ready at ${{ env.SUPABASE_URL }}"
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Debug environment variables
+        run: |
+          echo "SUPABASE_URL from env: ${{ env.SUPABASE_URL }}"
+          echo "Will set NEXT_PUBLIC_POD_URL to: ${{ env.SUPABASE_URL }}"
+          echo "Config site_url:"
+          cat supabase/config.toml | grep -A 1 "site_url"
+
+      - name: Build application
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          SUPABASE_SECRET_API_KEY: ${{ env.SUPABASE_SERVICE_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'placeholder-maps-key' }}
+          NEXT_PUBLIC_POD_URL: ${{ env.SUPABASE_URL }}
+          USE_MOCKS: true
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'placeholder-groq-key' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || 'placeholder-resend-key' }}
+        run: npm run build
+
+      - name: Start application
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          SUPABASE_SECRET_API_KEY: ${{ env.SUPABASE_SERVICE_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'placeholder-maps-key' }}
+          NEXT_PUBLIC_POD_URL: ${{ env.SUPABASE_URL }}
+          USE_MOCKS: true
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY || 'placeholder-groq-key' }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY || 'placeholder-resend-key' }}
+        run: npm start -- -p 3457 &
+
+      - name: Wait for application to be ready
+        run: npx wait-on http://localhost:3457
+
+      - name: Run Playwright tests
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || 'placeholder-maps-key' }}
+          NEXT_PUBLIC_POD_URL: ${{ env.SUPABASE_URL }}
+          USE_MOCKS: true
+          CI: true
+        run: npx playwright test
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 30
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop --no-backup
