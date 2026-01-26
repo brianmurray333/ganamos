@@ -29,6 +29,8 @@ interface MockClientOptions {
   updateError?: any
   ownerProfileData?: any
   ownerProfileError?: any
+  rpcResult?: any
+  rpcError?: any
 }
 
 /**
@@ -41,7 +43,9 @@ function createCompleteMockClient(options: MockClientOptions = {}) {
     postError = null,
     updateError = null,
     ownerProfileData = null,
-    ownerProfileError = null
+    ownerProfileError = null,
+    rpcResult = { success: true, job_id: 'test-post-123', submitted_at: new Date().toISOString() },
+    rpcError = null
   } = options
 
   // Create mock for the update chain
@@ -98,6 +102,11 @@ function createCompleteMockClient(options: MockClientOptions = {}) {
         eq: vi.fn().mockReturnThis(),
         single: vi.fn().mockResolvedValue({ data: null, error: null })
       }
+    }),
+    // Mock the rpc call for atomic_claim_job
+    rpc: vi.fn().mockResolvedValue({
+      data: rpcResult,
+      error: rpcError
     })
   } as any
 }
@@ -189,28 +198,24 @@ describe('submitAnonymousFixForReviewAction', () => {
       expect(result.success).toBe(true)
       expect(result.error).toBeUndefined()
       
-      // Verify post fetch was called
-      expect(mockRegularClient.from).toHaveBeenCalledWith('posts')
-      const postsChain = mockRegularClient.from('posts')
-      expect(postsChain.select).toHaveBeenCalledWith('user_id, title, reward, group_id, image_url')
-      expect(postsChain.eq).toHaveBeenCalledWith('id', postId)
-      expect(postsChain.single).toHaveBeenCalled()
-      
-      // Verify post update was called
-      expect(postsChain.update).toHaveBeenCalledWith(
+      // Verify atomic claim was called with correct parameters
+      expect(mockRegularClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          under_review: true,
-          submitted_fix_by_id: null,
-          submitted_fix_by_name: 'Anonymous Fixer (Pending Review)',
-          submitted_fix_by_avatar: null,
-          submitted_fix_image_url: fixImageUrl,
-          submitted_fix_note: fixerNote,
-          ai_confidence_score: aiConfidence,
-          ai_analysis: aiAnalysis,
-          fixed: false,
-          fixed_by_is_anonymous: false
+          p_job_id: postId,
+          p_fixer_id: null,
+          p_fixer_name: 'Anonymous Fixer (Pending Review)',
+          p_fixer_avatar: null,
+          p_fix_note: fixerNote,
+          p_fix_image_url: fixImageUrl,
+          p_lightning_address: null,
+          p_ai_confidence: aiConfidence,
+          p_ai_analysis: aiAnalysis
         })
       )
+      
+      // Verify post data was fetched for email notifications
+      expect(mockRegularClient.from).toHaveBeenCalledWith('posts')
       
       // Verify email was sent
       expect(sendFixSubmittedForReviewEmail).toHaveBeenCalledWith({
@@ -226,15 +231,13 @@ describe('submitAnonymousFixForReviewAction', () => {
       })
     })
 
-    it('sets correct timestamp for submitted_fix_at', async () => {
+    it('calls atomic_claim_job RPC for atomic claiming', async () => {
       // ARRANGE
       const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
         postData: testPost
       })
       vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const beforeTimestamp = new Date().toISOString()
 
       // ACT
       await submitAnonymousFixForReviewAction(
@@ -245,18 +248,18 @@ describe('submitAnonymousFixForReviewAction', () => {
         'Analysis'
       )
 
-      const afterTimestamp = new Date().toISOString()
-
-      // ASSERT
-      const postsChain = mockClient.from('posts')
-      const updateCall = postsChain.update.mock.calls[0][0]
-      
-      expect(updateCall.submitted_fix_at).toBeDefined()
-      expect(new Date(updateCall.submitted_fix_at).getTime()).toBeGreaterThanOrEqual(
-        new Date(beforeTimestamp).getTime()
-      )
-      expect(new Date(updateCall.submitted_fix_at).getTime()).toBeLessThanOrEqual(
-        new Date(afterTimestamp).getTime()
+      // ASSERT - verify atomic RPC was called (timestamp is set by the database function)
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
+        expect.objectContaining({
+          p_job_id: 'test-post-123',
+          p_fixer_id: null,
+          p_fixer_name: 'Anonymous Fixer (Pending Review)',
+          p_fix_image_url: 'https://example.com/fix.jpg',
+          p_fix_note: 'Fixed',
+          p_ai_confidence: 6.0,
+          p_ai_analysis: 'Analysis'
+        })
       )
     })
 
@@ -280,13 +283,13 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_image_url: 'https://example.com/fix.jpg',
-          submitted_fix_note: null,
-          ai_confidence_score: null,
-          ai_analysis: null
+          p_fix_image_url: 'https://example.com/fix.jpg',
+          p_fix_note: null,
+          p_ai_confidence: null,
+          p_ai_analysis: null
         })
       )
     })
@@ -357,14 +360,11 @@ describe('submitAnonymousFixForReviewAction', () => {
   })
 
   describe('Priority 3: Database Operations', () => {
-    it('handles post not found error', async () => {
-      // ARRANGE
+    it('handles post not found error from atomic claim', async () => {
+      // ARRANGE - atomic claim returns "Job not found" error
       const mockClient = createCompleteMockClient({
         postData: null,
-        postError: {
-          message: 'Post not found',
-          code: 'PGRST116'
-        }
+        rpcResult: { success: false, error: 'Job not found' }
       })
       vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
 
@@ -383,12 +383,11 @@ describe('submitAnonymousFixForReviewAction', () => {
       expect(result.error).toBe('Post not found.')
     })
 
-    it('handles database update errors gracefully', async () => {
-      // ARRANGE
-      const testPost = createTestPost()
+    it('handles database RPC errors gracefully', async () => {
+      // ARRANGE - RPC call itself fails
       const mockClient = createCompleteMockClient({
-        postData: testPost,
-        updateError: {
+        postData: null,
+        rpcError: {
           message: 'Database connection failed',
           code: 'CONNECTION_ERROR'
         }
@@ -417,9 +416,8 @@ describe('submitAnonymousFixForReviewAction', () => {
         postError: null
       })
       
-      // Make single() throw an unexpected error
-      const postsChain = mockClient.from('posts')
-      postsChain.single.mockRejectedValueOnce(new Error('Unexpected database error'))
+      // Make rpc throw an unexpected error
+      mockClient.rpc.mockRejectedValueOnce(new Error('Unexpected database error'))
       
       vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
 
@@ -436,6 +434,29 @@ describe('submitAnonymousFixForReviewAction', () => {
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
       expect(result.error).toContain('Unexpected database error')
+    })
+
+    it('handles job already claimed error (race condition)', async () => {
+      // ARRANGE - atomic claim returns "already claimed" error
+      const mockClient = createCompleteMockClient({
+        postData: null,
+        rpcResult: { success: false, error: 'Job is no longer available', reason: 'already_claimed' }
+      })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+      // ACT
+      const result = await submitAnonymousFixForReviewAction(
+        'test-post-123',
+        'https://example.com/fix.jpg',
+        'Fixed',
+        6.0,
+        'Analysis'
+      )
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBeDefined()
+      expect(result.error).toBe('This job has already been claimed by someone else.')
     })
   })
 
@@ -606,10 +627,10 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_note: longNote
+          p_fix_note: longNote
         })
       )
     })
@@ -683,12 +704,12 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_image_url: specialUrl,
-          submitted_fix_note: specialNote,
-          ai_analysis: specialAnalysis
+          p_fix_image_url: specialUrl,
+          p_fix_note: specialNote,
+          p_ai_analysis: specialAnalysis
         })
       )
     })
@@ -716,11 +737,11 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_note: unicodeNote,
-          ai_analysis: unicodeAnalysis
+          p_fix_note: unicodeNote,
+          p_ai_analysis: unicodeAnalysis
         })
       )
     })
@@ -745,12 +766,12 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_note: '',
-          ai_confidence_score: 0,
-          ai_analysis: ''
+          p_fix_note: '',
+          p_ai_confidence: 0,
+          p_ai_analysis: ''
         })
       )
     })
@@ -775,18 +796,18 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(true)
       
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          submitted_fix_note: '   ',
-          ai_analysis: '\n\t  '
+          p_fix_note: '   ',
+          p_ai_analysis: '\n\t  '
         })
       )
     })
   })
 
   describe('Priority 6: Data Integrity', () => {
-    it('ensures all required post fields are set correctly', async () => {
+    it('ensures all required post fields are set correctly via atomic claim', async () => {
       // ARRANGE
       const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
@@ -803,21 +824,23 @@ describe('submitAnonymousFixForReviewAction', () => {
         'Analysis'
       )
 
-      // ASSERT
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      // ASSERT - atomic claim sets all these fields in the database function
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          under_review: true,
-          submitted_fix_by_id: null,
-          submitted_fix_by_name: 'Anonymous Fixer (Pending Review)',
-          submitted_fix_by_avatar: null,
-          fixed: false,
-          fixed_by_is_anonymous: false
+          p_job_id: 'test-post-123',
+          p_fixer_id: null,
+          p_fixer_name: 'Anonymous Fixer (Pending Review)',
+          p_fixer_avatar: null,
+          p_fix_image_url: 'https://example.com/fix.jpg',
+          p_fix_note: 'Fixed',
+          p_ai_confidence: 6.5,
+          p_ai_analysis: 'Analysis'
         })
       )
     })
 
-    it('does not prematurely mark post as fixed', async () => {
+    it('atomic claim function handles fixed status in database', async () => {
       // ARRANGE
       const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
@@ -834,17 +857,12 @@ describe('submitAnonymousFixForReviewAction', () => {
         'Analysis'
       )
 
-      // ASSERT
-      const postsChain = mockClient.from('posts')
-      const updateCall = postsChain.update.mock.calls[0][0]
-      
-      // Verify the post is NOT marked as fixed yet
-      expect(updateCall.fixed).toBe(false)
-      expect(updateCall.fixed_by_is_anonymous).toBe(false)
-      
-      // Verify fixed_by is not in the update (it should remain unchanged in DB)
-      expect(updateCall).not.toHaveProperty('fixed_by')
-      expect(updateCall).not.toHaveProperty('fixed_at')
+      // ASSERT - The atomic_claim_job function in the database sets:
+      // - under_review = true
+      // - fixed = false
+      // - fixed_by_is_anonymous = false
+      // We verify the RPC was called correctly
+      expect(mockClient.rpc).toHaveBeenCalledWith('atomic_claim_job', expect.any(Object))
     })
 
     it('uses admin client with service role key for owner profile lookup', async () => {
@@ -893,7 +911,7 @@ describe('submitAnonymousFixForReviewAction', () => {
   })
 
   describe('Priority 7: Business Logic', () => {
-    it('correctly identifies submission as anonymous with null submitted_fix_by_id', async () => {
+    it('correctly identifies submission as anonymous with null p_fixer_id', async () => {
       // ARRANGE
       const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
@@ -910,14 +928,15 @@ describe('submitAnonymousFixForReviewAction', () => {
         'Analysis'
       )
 
-      // ASSERT
-      const postsChain = mockClient.from('posts')
-      const updateCall = postsChain.update.mock.calls[0][0]
-      
-      // Verify anonymous indicators
-      expect(updateCall.submitted_fix_by_id).toBeNull()
-      expect(updateCall.submitted_fix_by_name).toBe('Anonymous Fixer (Pending Review)')
-      expect(updateCall.submitted_fix_by_avatar).toBeNull()
+      // ASSERT - verify anonymous indicators via RPC call
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
+        expect.objectContaining({
+          p_fixer_id: null,
+          p_fixer_name: 'Anonymous Fixer (Pending Review)',
+          p_fixer_avatar: null
+        })
+      )
     })
 
     it('preserves AI analysis data for manual review decision', async () => {
@@ -941,11 +960,11 @@ describe('submitAnonymousFixForReviewAction', () => {
       )
 
       // ASSERT
-      const postsChain = mockClient.from('posts')
-      expect(postsChain.update).toHaveBeenCalledWith(
+      expect(mockClient.rpc).toHaveBeenCalledWith(
+        'atomic_claim_job',
         expect.objectContaining({
-          ai_confidence_score: aiConfidence,
-          ai_analysis: aiAnalysis
+          p_ai_confidence: aiConfidence,
+          p_ai_analysis: aiAnalysis
         })
       )
     })
