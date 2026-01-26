@@ -1239,7 +1239,7 @@ function MapViewComponent({
 
       {/* 3D Globe View - Always rendered for preloading, hidden when not active */}
       <div 
-        className="absolute inset-0 z-0 transition-opacity duration-300"
+        className="absolute inset-0 transition-opacity duration-300"
         style={{ 
           opacity: viewMode === "globe" ? 1 : 0,
           visibility: viewMode === "globe" ? "visible" : "hidden",
