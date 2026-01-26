@@ -899,7 +899,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               postId: post.id,
               userId: post.submitted_fix_by_id,
               reward: post.reward || 0,
-              postTitle: post.title
+              postTitle: post.title,
+              isPostOwnerClosing: true, // Post owner is approving another user's fix
             })
 
             if (!rewardResult.success) {
