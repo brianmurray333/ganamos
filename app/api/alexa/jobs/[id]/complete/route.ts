@@ -76,7 +76,7 @@ export async function POST(
     
     const supabase = createServerSupabaseClient()
     
-    // Get the job details
+    // Get the job details (minimal fetch for initial validation)
     const { data: post, error: postError } = await supabase
       .from('posts')
       .select(`
@@ -89,7 +89,8 @@ export async function POST(
         fixed,
         claimed,
         deleted_at,
-        created_by
+        created_by,
+        under_review
       `)
       .eq('id', jobId)
       .single()
@@ -106,28 +107,6 @@ export async function POST(
       return NextResponse.json(
         { success: false, error: 'Job not in your selected group' },
         { status: 403 }
-      )
-    }
-    
-    // Check if job is already completed
-    if (post.fixed) {
-      return NextResponse.json(
-        { success: false, error: 'Job is already completed' },
-        { status: 400 }
-      )
-    }
-    
-    if (post.claimed) {
-      return NextResponse.json(
-        { success: false, error: 'Job has already been claimed' },
-        { status: 400 }
-      )
-    }
-    
-    if (post.deleted_at) {
-      return NextResponse.json(
-        { success: false, error: 'Job has been deleted' },
-        { status: 400 }
       )
     }
     
@@ -208,48 +187,63 @@ export async function POST(
       })
     } else {
       // User is neither the post owner nor a group admin - trigger the verification email flow
-      // This sends an email to the post owner (and group admins) to approve the fix
+      // Use atomic claim to prevent race conditions
       
-      // Get the post owner's info
-      const { data: ownerProfile, error: ownerError } = await supabase
+      const { data: claimResult, error: claimError } = await supabase.rpc(
+        'atomic_claim_job',
+        {
+          p_job_id: jobId,
+          p_fixer_id: fixerProfile.id,
+          p_fixer_name: fixerProfile.name,
+          p_fixer_avatar: fixerProfile.avatar_url,
+          p_fix_note: `Submitted via Alexa by ${fixerProfile.name}`,
+          p_fix_image_url: null,
+          p_lightning_address: null
+        }
+      )
+      
+      if (claimError) {
+        console.error('[Alexa Jobs Complete] Claim error:', claimError)
+        return NextResponse.json(
+          { success: false, error: 'Failed to claim job' },
+          { status: 500 }
+        )
+      }
+      
+      // Check if the atomic claim succeeded
+      if (!claimResult?.success) {
+        const errorMessage = claimResult?.error || 'Job is no longer available'
+        console.log(`[Alexa Jobs Complete] Claim failed: ${errorMessage}`)
+        
+        if (claimResult?.error === 'Job not found') {
+          return NextResponse.json(
+            { success: false, error: 'Job not found' },
+            { status: 404 }
+          )
+        }
+        
+        // Job was already claimed/fixed/under_review
+        return NextResponse.json(
+          { success: false, error: 'Job has already been claimed or is under review' },
+          { status: 400 }
+        )
+      }
+      
+      // Job claimed successfully - send verification email to post owner
+      const { data: ownerProfile } = await supabase
         .from('profiles')
         .select('id, name, email')
         .eq('id', post.user_id)
         .single()
       
-      if (ownerError || !ownerProfile) {
-        return NextResponse.json(
-          { success: false, error: 'Could not find the job owner' },
-          { status: 500 }
-        )
-      }
-      
-      // Update the post to mark it under review
-      const now = new Date().toISOString()
-      await supabase
-        .from('posts')
-        .update({
-          under_review: true,
-          submitted_fix_by_id: fixerProfile.id,
-          submitted_fix_by_name: fixerProfile.name,
-          submitted_fix_by_avatar: fixerProfile.avatar_url,
-          submitted_fix_at: now,
-          submitted_fix_note: `Submitted via Alexa by ${fixerProfile.name}`,
-        })
-        .eq('id', jobId)
-      
-      // Send verification email to post owner
-      try {
-        const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ganamos.earth'}/post/${jobId}?verify=true&fixer=${fixerProfile.username}`
-        
-        // Use the existing email sending logic if available
-        // For now, we'll just log and indicate the flow was triggered
-        console.log(`[Alexa Complete] Verification request sent for job ${jobId}`)
-        console.log(`[Alexa Complete] Owner: ${ownerProfile.email}, Fixer: ${fixerProfile.name}`)
-        console.log(`[Alexa Complete] Verify URL: ${verifyUrl}`)
-        
-        // Try to send the email
-        if (ownerProfile.email) {
+      if (ownerProfile?.email) {
+        try {
+          const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://ganamos.earth'}/post/${jobId}?verify=true&fixer=${fixerProfile.username}`
+          
+          console.log(`[Alexa Complete] Verification request sent for job ${jobId}`)
+          console.log(`[Alexa Complete] Owner: ${ownerProfile.email}, Fixer: ${fixerProfile.name}`)
+          console.log(`[Alexa Complete] Verify URL: ${verifyUrl}`)
+          
           await sendVerificationEmail(
             ownerProfile.email,
             ownerProfile.name || 'there',
@@ -258,9 +252,10 @@ export async function POST(
             post.reward,
             verifyUrl
           )
+        } catch (emailError) {
+          console.error('[Alexa Complete] Error sending verification email:', emailError)
+          // Don't fail - job is already claimed
         }
-      } catch (emailError) {
-        console.error('[Alexa Complete] Error sending verification email:', emailError)
       }
       
       return NextResponse.json({
