@@ -87,6 +87,3 @@ $func$;
 -- Grant execute permission to authenticated users and service role
 GRANT EXECUTE ON FUNCTION atomic_claim_job(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION atomic_claim_job(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT) TO service_role;
-
-COMMENT ON FUNCTION atomic_claim_job IS 
-  'Atomically claims a job for a fixer. Returns success=false if job is already claimed, under review, fixed, or deleted. The conditional UPDATE ensures only one user wins in a race condition.';
