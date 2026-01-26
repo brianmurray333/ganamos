@@ -153,7 +153,7 @@ export function DesktopHeader() {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 hidden lg:block">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-background/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 hidden lg:block">
       <div className="max-w-[1800px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
         {/* Left side - Logo */}
         <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
