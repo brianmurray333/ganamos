@@ -1,7 +1,5 @@
--- Migration: Atomic claim job function
--- This ensures only one user can claim a job at a time, preventing race conditions
-
--- Atomically claim a job for a fixer
+-- Atomic claim job function with AI parameters
+-- Ensures only one user can claim a job at a time, preventing race conditions
 CREATE OR REPLACE FUNCTION atomic_claim_job(
   p_job_id UUID,
   p_fixer_id TEXT,
@@ -9,7 +7,9 @@ CREATE OR REPLACE FUNCTION atomic_claim_job(
   p_fixer_avatar TEXT,
   p_fix_note TEXT DEFAULT NULL,
   p_fix_image_url TEXT DEFAULT NULL,
-  p_lightning_address TEXT DEFAULT NULL
+  p_lightning_address TEXT DEFAULT NULL,
+  p_ai_confidence NUMERIC DEFAULT NULL,
+  p_ai_analysis TEXT DEFAULT NULL
 )
 RETURNS JSON
 LANGUAGE plpgsql
@@ -19,7 +19,6 @@ DECLARE
   v_updated_rows INTEGER;
   v_now TIMESTAMPTZ := NOW();
 BEGIN
-  -- Validate inputs
   IF p_job_id IS NULL THEN
     RETURN json_build_object(
       'success', false,
@@ -27,7 +26,6 @@ BEGIN
     );
   END IF;
 
-  -- Atomic UPDATE: Only succeeds if job is still open
   UPDATE posts
   SET 
     under_review = true,
@@ -37,7 +35,11 @@ BEGIN
     submitted_fix_at = v_now,
     submitted_fix_note = p_fix_note,
     submitted_fix_image_url = p_fix_image_url,
-    submitted_fix_lightning_address = p_lightning_address
+    submitted_fix_lightning_address = p_lightning_address,
+    ai_confidence_score = p_ai_confidence,
+    ai_analysis = p_ai_analysis,
+    fixed = false,
+    fixed_by_is_anonymous = false
   WHERE 
     id = p_job_id
     AND under_review = false
@@ -47,7 +49,6 @@ BEGIN
 
   GET DIAGNOSTICS v_updated_rows = ROW_COUNT;
 
-  -- Check if update succeeded
   IF v_updated_rows = 0 THEN
     PERFORM 1 FROM posts WHERE id = p_job_id;
     IF NOT FOUND THEN
@@ -64,7 +65,6 @@ BEGIN
     );
   END IF;
 
-  -- Success
   RETURN json_build_object(
     'success', true,
     'job_id', p_job_id,
