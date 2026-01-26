@@ -1,0 +1,102 @@
+{
+  "manifest": {
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "arn:aws:lambda:us-east-1:XXXXXXXXXXXX:function:ganamos-alexa-skill"
+        },
+        "interfaces": [
+          {
+            "type": "ALEXA_PRESENTATION_APL",
+            "supportedViewports": [
+              {
+                "mode": "HUB",
+                "shape": "ROUND",
+                "minWidth": 480,
+                "maxWidth": 480,
+                "minHeight": 480,
+                "maxHeight": 480
+              },
+              {
+                "mode": "HUB",
+                "shape": "RECTANGLE",
+                "minWidth": 1024,
+                "maxWidth": 1280,
+                "minHeight": 600,
+                "maxHeight": 800
+              },
+              {
+                "mode": "HUB",
+                "shape": "RECTANGLE",
+                "minWidth": 960,
+                "maxWidth": 960,
+                "minHeight": 480,
+                "maxHeight": 480
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "manifestVersion": "1.0",
+    "permissions": [],
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "en-US": {
+          "privacyPolicyUrl": "https://ganamos.earth/privacy",
+          "termsOfUseUrl": "https://ganamos.earth/terms"
+        }
+      }
+    },
+    "publishingInformation": {
+      "locales": {
+        "en-US": {
+          "summary": "Manage your Ganamos jobs with voice commands. List jobs, add new jobs, and mark jobs as complete to earn Bitcoin rewards.",
+          "examplePhrases": [
+            "Alexa, open Ganamos",
+            "Alexa, ask Ganamos to list jobs",
+            "Alexa, tell Ganamos that Marlowe cleaned the garage"
+          ],
+          "keywords": [
+            "bitcoin",
+            "lightning",
+            "sats",
+            "jobs",
+            "chores",
+            "tasks",
+            "community",
+            "rewards",
+            "family"
+          ],
+          "name": "Ganamos",
+          "description": "Ganamos is a community job management skill that lets you earn Bitcoin for completing tasks. Use voice commands to:\n\n• List open jobs in your group\n• Add new jobs with sat rewards\n• Mark jobs as complete and assign credit\n• Check your sat balance\n\nPerfect for families and communities who want to gamify chores and tasks with Bitcoin rewards!\n\nTo get started, link your Ganamos account and select a group. Then say \"Alexa, open Ganamos\" to see your jobs.",
+          "smallIconUri": "https://ganamos.earth/images/alexa-icon-108.png",
+          "largeIconUri": "https://ganamos.earth/images/alexa-icon-512.png"
+        }
+      },
+      "isAvailableWorldwide": true,
+      "testingInstructions": "1. Link a Ganamos account\n2. Select a group\n3. Try listing jobs, adding a job, and completing a job",
+      "category": "ORGANIZERS_AND_ASSISTANTS",
+      "distributionMode": "PUBLIC",
+      "distributionCountries": []
+    },
+    "accountLinking": {
+      "accessTokenScheme": "HTTP_BASIC",
+      "accessTokenUrl": "https://ganamos.earth/api/alexa/token",
+      "authorizationUrl": "https://ganamos.earth/api/alexa/authorize",
+      "clientId": "ganamos-alexa-skill",
+      "scopes": [
+        "ganamos:read",
+        "ganamos:write"
+      ],
+      "type": "AUTH_CODE"
+    }
+  }
+}
+
+

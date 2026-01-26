@@ -1,0 +1,253 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "ganamos",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.YesIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NoIntent",
+          "samples": []
+        },
+        {
+          "name": "ListJobsIntent",
+          "slots": [],
+          "samples": [
+            "are there any jobs",
+            "what jobs are available",
+            "list jobs",
+            "list the jobs",
+            "show me jobs",
+            "read the jobs",
+            "what are the open jobs",
+            "any open tasks",
+            "tell me about the jobs",
+            "what needs to be done",
+            "what chores are there",
+            "are there any tasks",
+            "show open jobs",
+            "read me the jobs",
+            "what jobs need doing"
+          ]
+        },
+        {
+          "name": "AddJobIntent",
+          "slots": [
+            {
+              "name": "JobDescription",
+              "type": "AMAZON.SearchQuery",
+              "samples": [
+                "{JobDescription}"
+              ]
+            },
+            {
+              "name": "RewardAmount",
+              "type": "AMAZON.NUMBER",
+              "samples": [
+                "{RewardAmount}",
+                "{RewardAmount} sats",
+                "{RewardAmount} satoshis"
+              ]
+            }
+          ],
+          "samples": [
+            "add a job",
+            "create a job",
+            "add a task",
+            "new job",
+            "post a job",
+            "I want to add a job",
+            "add a new job",
+            "create a new job",
+            "add a chore",
+            "post a new job"
+          ]
+        },
+        {
+          "name": "CompleteJobIntent",
+          "slots": [
+            {
+              "name": "FixerName",
+              "type": "AMAZON.FirstName",
+              "samples": [
+                "{FixerName}",
+                "by {FixerName}",
+                "it was {FixerName}"
+              ]
+            }
+          ],
+          "samples": [
+            "{FixerName} completed a job",
+            "{FixerName} finished a job",
+            "{FixerName} did a job",
+            "{FixerName} fixed something",
+            "{FixerName} cleaned something",
+            "{FixerName} finished a task",
+            "{FixerName} did a task",
+            "{FixerName} just finished",
+            "{FixerName} took care of it",
+            "mark a job as done by {FixerName}",
+            "mark job complete by {FixerName}",
+            "assign a job to {FixerName}",
+            "{FixerName} completed it",
+            "{FixerName} finished it",
+            "job done by {FixerName}",
+            "completed by {FixerName}",
+            "{FixerName} did it"
+          ]
+        },
+        {
+          "name": "BalanceIntent",
+          "slots": [],
+          "samples": [
+            "check my balance",
+            "what's my balance",
+            "how many sats do I have",
+            "what is my balance",
+            "how much do I have",
+            "check balance",
+            "my balance",
+            "how many satoshis",
+            "show my balance"
+          ]
+        },
+        {
+          "name": "SelectOptionIntent",
+          "slots": [
+            {
+              "name": "OptionNumber",
+              "type": "AMAZON.Ordinal",
+              "samples": [
+                "{OptionNumber}",
+                "the {OptionNumber}",
+                "the {OptionNumber} one",
+                "number {OptionNumber}"
+              ]
+            }
+          ],
+          "samples": [
+            "first",
+            "second",
+            "the first one",
+            "the second one",
+            "first one",
+            "second one",
+            "{OptionNumber}",
+            "the {OptionNumber}",
+            "option {OptionNumber}"
+          ]
+        }
+      ],
+      "types": []
+    },
+    "dialog": {
+      "intents": [
+        {
+          "name": "AddJobIntent",
+          "confirmationRequired": false,
+          "prompts": {},
+          "slots": [
+            {
+              "name": "JobDescription",
+              "type": "AMAZON.SearchQuery",
+              "confirmationRequired": false,
+              "elicitationRequired": true,
+              "prompts": {
+                "elicitation": "Elicit.Slot.JobDescription"
+              }
+            },
+            {
+              "name": "RewardAmount",
+              "type": "AMAZON.NUMBER",
+              "confirmationRequired": false,
+              "elicitationRequired": true,
+              "prompts": {
+                "elicitation": "Elicit.Slot.RewardAmount"
+              }
+            }
+          ]
+        },
+        {
+          "name": "CompleteJobIntent",
+          "confirmationRequired": false,
+          "prompts": {},
+          "slots": [
+            {
+              "name": "FixerName",
+              "type": "AMAZON.FirstName",
+              "confirmationRequired": false,
+              "elicitationRequired": true,
+              "prompts": {
+                "elicitation": "Elicit.Slot.FixerName"
+              }
+            }
+          ]
+        }
+      ],
+      "delegationStrategy": "SKILL_RESPONSE"
+    },
+    "prompts": [
+      {
+        "id": "Elicit.Slot.JobDescription",
+        "variations": [
+          {
+            "type": "PlainText",
+            "value": "What job would you like to add?"
+          },
+          {
+            "type": "PlainText",
+            "value": "Please describe the job."
+          }
+        ]
+      },
+      {
+        "id": "Elicit.Slot.RewardAmount",
+        "variations": [
+          {
+            "type": "PlainText",
+            "value": "How many sats would you like to offer as a reward?"
+          },
+          {
+            "type": "PlainText",
+            "value": "What's the reward in sats?"
+          }
+        ]
+      },
+      {
+        "id": "Elicit.Slot.FixerName",
+        "variations": [
+          {
+            "type": "PlainText",
+            "value": "Who completed the job?"
+          },
+          {
+            "type": "PlainText",
+            "value": "Who should I assign this to?"
+          }
+        ]
+      }
+    ]
+  }
+}

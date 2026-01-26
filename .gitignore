@@ -1,0 +1,47 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# arduino hardware files (not needed for web deployment)
+/arduino-reference
+arduino-reference*
+
+# Duplicate files (macOS creates these)
+* 2.*
+* 2.tsx
+* 2.ts
+* 2.js
+* 2.sql
+
+# tests
+mock-tests/
+test-results
+playwright-report/
+
+# security audit files (local only)
+RLS_POLICY_AUDIT.md
+SECURITY_*.local.md

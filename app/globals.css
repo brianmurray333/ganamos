@@ -1,0 +1,306 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hide scrollbars globally while maintaining scroll functionality */
+* {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+
+*::-webkit-scrollbar {
+  display: none;            /* Chrome, Safari, Opera */
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    --primary: 142.1 76.2% 36.3%;
+    --primary-foreground: 355.7 100% 97.3%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 142.1 76.2% 36.3%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 142.1 70.6% 45.3%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 142.4 71.8% 29.2%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+.font-cursive {
+  font-family: "Pacifico", cursive;
+}
+
+.app-title {
+  font-family: "Pacifico", cursive;
+  font-size: 4.5rem;
+  color: white;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 640px) {
+  .app-title {
+    font-size: 3.5rem;
+  }
+}
+
+/* Hide bottom navigation when camera is active */
+body.camera-active .fixed.bottom-0 {
+  display: none !important;
+}
+
+[data-camera-active="true"] ~ .fixed.bottom-0,
+[data-comparison-active="true"] ~ .fixed.bottom-0 {
+  display: none !important;
+}
+
+/* Hide bottom navigation on before & after page */
+.comparison-page ~ .fixed.bottom-0 {
+  display: none !important;
+}
+
+/* Add this to the end of the file */
+.min-h-screen {
+  min-height: 100dvh; /* For mobile browsers with dynamic viewport height */
+}
+
+body {
+  min-height: 100dvh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* Mobile scroll restoration fix for navigation */
+html {
+  scroll-behavior: auto; /* Disable smooth scroll for instant positioning on navigation */
+}
+
+/* Ensure pages start at top on mobile browsers */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari specific */
+  body {
+    height: 100dvh;
+  }
+}
+
+/* Improve background image handling */
+.fixed-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+}
+
+/* Fade-in animation for pet card */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-in-out;
+}
+
+/* Ensure content has proper z-index and positioning */
+.relative.z-10 {
+  position: relative;
+  z-index: 10;
+}
+
+/* Ensure fixed background stays in place */
+.fixed.inset-0 {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+/* Add these styles at the end of the file */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+.leaflet-div-icon {
+  background: transparent;
+  border: none;
+}
+
+.user-location-marker {
+  z-index: 1000;
+}
+
+.post-marker {
+  z-index: 900;
+}
+
+/* Marker bounce-in animation */
+@keyframes bounce-in {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.custom-marker {
+  animation: bounce-in 0.5s ease-out;
+}
+
+/* Hide scrollbars for horizontal family section */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar { 
+  display: none;  /* Safari and Chrome */
+}
+
+/* Add these styles to your globals.css file */
+
+/* Phone input styles */
+.PhoneInput {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.PhoneInputCountry {
+  display: flex;
+  align-items: center;
+  margin-right: 0.5rem;
+  padding: 0 0.5rem;
+}
+
+.PhoneInputCountryIcon {
+  width: 1.5rem;
+  height: 1rem;
+  margin-right: 0.5rem;
+}
+
+.PhoneInputCountrySelectArrow {
+  border-style: solid;
+  border-width: 0.25rem 0.25rem 0 0.25rem;
+  border-color: #888 transparent transparent transparent;
+  margin-left: 0.5rem;
+}
+
+.PhoneInputInput {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0;
+  font-size: 1rem;
+  outline: none;
+  width: 100%;
+}
+
+/* Dark mode adjustments */
+.dark .PhoneInputInput {
+  color: white;
+}
+
+.dark .PhoneInputCountrySelectArrow {
+  border-color: #aaa transparent transparent transparent;
+}
+
+/* Map marker animations - defined globally to avoid duplicate <style> blocks per marker */
+@keyframes markerDropIn {
+  0% {
+    transform: translateY(-25px);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(5px);
+    opacity: 1;
+  }
+  80% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0px);
+    opacity: 1;
+  }
+}
+
+@keyframes markerShine {
+  0% {
+    transform: translate(-100%, -100%) rotate(25deg);
+  }
+  100% {
+    transform: translate(100%, 100%) rotate(25deg);
+  }
+}

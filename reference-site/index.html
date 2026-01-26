@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ganamos Job Posting - L402 Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Simple QR Code Generator - No external dependencies -->
+    <script>
+        // Simple QR code generator using Google Charts API as fallback
+        function generateQRCode(text, container, size = 200) {
+            console.log('Generating QR code using Google Charts API')
+            
+            const img = document.createElement('img')
+            img.src = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}`
+            img.alt = 'QR Code'
+            img.className = 'mx-auto border rounded'
+            img.style.width = size + 'px'
+            img.style.height = size + 'px'
+            
+            img.onload = () => {
+                console.log('QR code loaded successfully')
+            }
+            
+            img.onerror = () => {
+                console.error('QR code generation failed')
+                container.innerHTML = `
+                    <div class="text-orange-500 p-4 border border-orange-300 rounded bg-orange-50">
+                        <p class="text-sm font-medium">QR Code Unavailable</p>
+                        <p class="text-xs mt-1">Please copy the invoice below manually</p>
+                    </div>
+                `
+            }
+            
+            container.innerHTML = ''
+            container.appendChild(img)
+        }
+        
+        // Make QRCode object available globally for compatibility
+        window.QRCode = {
+            toCanvas: function(container, text, options, callback) {
+                try {
+                    generateQRCode(text, container, options?.width || 200)
+                    if (callback) callback(null) // Success
+                } catch (error) {
+                    if (callback) callback(error)
+                }
+            }
+        }
+        
+        console.log('QR code generator ready')
+    </script>
+</head>
+<body class="bg-gray-50 min-h-screen relative">
+    <!-- Background Image -->
+    <div class="fixed inset-0 z-0">
+        <img src="http://localhost:3457/images/community-fixing.jpg" alt="Community background" class="w-full h-full object-cover">
+        <div class="absolute inset-0 bg-gradient-to-t from-white/40 via-transparent to-transparent"></div>
+    </div>
+    <div class="container mx-auto px-4 py-8 max-w-2xl relative z-10">
+        <div class="bg-white/90 backdrop-blur rounded-lg shadow-lg p-6">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 mb-4">Post a Job on Ganamos</h1>
+            </div>
+
+            <!-- Job Creation Form -->
+            <form id="jobForm" class="space-y-6">
+                <div>
+                    <div id="photoUploadBox" class="relative">
+                        <input 
+                            type="file" 
+                            id="image" 
+                            name="image"
+                            accept="image/*"
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        >
+                        <div class="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-md text-center hover:border-orange-400 transition-colors cursor-pointer">
+                            <span class="text-gray-600">Add a Photo</span>
+                        </div>
+                    </div>
+                    <div id="imagePreview" class="mt-2 hidden relative inline-block">
+                        <img id="previewImg" class="w-full max-w-xs h-48 object-cover rounded-md border" alt="Preview">
+                        <button 
+                            type="button"
+                            id="removePhoto"
+                            class="absolute -top-2 -right-2 w-6 h-6 bg-black/70 text-white rounded-full flex items-center justify-center hover:bg-black transition-colors shadow-md"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <input 
+                        type="text" 
+                        id="title" 
+                        name="title"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        placeholder="Add job title"
+                        required
+                    >
+                </div>
+
+                <div>
+                    <textarea 
+                        id="description" 
+                        name="description"
+                        rows="3"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        placeholder="Describe the job"
+                        required
+                    ></textarea>
+                </div>
+
+                <div>
+                    <div class="relative">
+                        <input 
+                            type="text" 
+                            id="location" 
+                            name="location"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            placeholder="Add location"
+                            autocomplete="off"
+                        >
+                        <div id="locationResults" class="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-md mt-1 max-h-60 overflow-y-auto z-50 hidden">
+                        </div>
+                    </div>
+                </div>
+
+
+                <div>
+                    <div class="flex items-center justify-center space-x-4 mb-3">
+                        <button
+                            type="button"
+                            id="decreaseReward"
+                            class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="text-gray-600">
+                                <path d="M5 12h14" />
+                            </svg>
+                        </button>
+
+                        <span id="rewardDisplay" class="text-3xl font-bold text-gray-900 min-w-[120px] text-center">2000</span>
+
+                        <button
+                            type="button"
+                            id="increaseReward"
+                            class="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="text-gray-600">
+                                <path d="M12 5v14m-7-7h14" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center space-x-2 text-sm text-gray-700 justify-center mb-2">
+                        <div class="w-4 h-4 relative">
+                            <svg viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4 text-orange-500">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            </svg>
+                        </div>
+                        <span>sats reward</span>
+                    </div>
+
+                    <div class="text-center">
+                        <p class="text-xs text-gray-600 mb-1">+10 sat API fee</p>
+                        <div class="h-4 flex items-center justify-center">
+                            <p id="rewardUsd" class="text-xs text-gray-500 transition-opacity duration-300 opacity-0">
+                                $0.00 USD
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+
+
+                <button 
+                    type="submit" 
+                    class="w-full bg-green-600 text-white py-3 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors font-medium"
+                >
+                    Create Job Posting
+                </button>
+            </form>
+
+            <!-- Payment Modal -->
+            <div id="paymentModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-lg p-6 max-w-md w-full">
+                    <div class="text-center">
+                        <h3 class="text-lg font-semibold mb-4">Pay to Post Job</h3>
+                        <p class="text-gray-600 mb-6" id="paymentModalDescription">Scan this QR code with your Lightning wallet</p>
+                        
+                        <div id="qrcode" class="flex justify-center mb-6"></div>
+                        
+                        <div class="space-y-4">
+                            <div class="text-sm text-gray-500 bg-gray-50 p-3 rounded">
+                                <div class="mb-2">
+                                    <strong>Amount:</strong> <span id="paymentAmount"></span> sats (<span id="paymentAmountUsd"></span>)
+                                </div>
+                                <div class="break-all">
+                                    <strong>Invoice:</strong>
+                                    <div id="invoiceText" class="mt-1 font-mono text-xs"></div>
+                                </div>
+                            </div>
+                            
+                            <div class="flex space-x-3">
+                                <button 
+                                    id="copyInvoice"
+                                    class="flex-1 bg-gray-600 text-white py-2 px-4 rounded hover:bg-gray-700 transition-colors"
+                                >
+                                    Copy Invoice
+                                </button>
+                                <button 
+                                    id="cancelPayment"
+                                    class="flex-1 bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <div id="paymentStatus" class="text-sm text-gray-500">
+                                Waiting for payment...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Success Modal -->
+            <div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center p-4 z-50">
+                <div class="bg-white rounded-lg p-6 max-w-md w-full text-center">
+                    <div class="text-green-600 text-6xl mb-4">✅</div>
+                    <h3 class="text-lg font-semibold mb-2">Job Posted Successfully!</h3>
+                    <p class="text-gray-600 mb-4">Your job posting has been created and is now live on Ganamos.</p>
+                    <div class="text-sm text-gray-500 mb-6">
+                        <strong>Post ID:</strong> <span id="postId"></span>
+                    </div>
+                    <button 
+                        id="closeSuccess"
+                        class="bg-green-600 text-white py-2 px-6 rounded hover:bg-green-700 transition-colors"
+                    >
+                        Create Another Job
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Documentation -->
+        <div class="mt-8 bg-white/90 backdrop-blur rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">API Call Preview</h2>
+            <div class="space-y-4 text-sm">
+                <div>
+                    <strong>Endpoint:</strong> <code class="bg-gray-100 px-2 py-1 rounded">POST http://localhost:3457/api/posts</code>
+                </div>
+                <div>
+                    <strong>Authentication:</strong> L402 (Lightning HTTP 402 Protocol)
+                </div>
+                <div class="bg-gray-50 p-4 rounded">
+                    <strong>Request Body:</strong>
+                    <pre id="apiPreview" class="mt-2 text-xs overflow-x-auto bg-gray-800 text-green-400 p-3 rounded"><code>{
+  "title": "Enter job title above",
+  "description": "Enter job description above",
+  "location": "Enter location above",
+  "reward": 2000
+}</code></pre>
+                </div>
+                <div>
+                    <strong>Total Cost:</strong> <span id="apiTotalCost" class="font-mono bg-orange-100 px-2 py-1 rounded">2010 sats</span> 
+                    <span class="text-gray-600">(<span id="apiRewardAmount">2000</span> reward + 10 API fee)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
