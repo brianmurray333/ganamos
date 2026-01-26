@@ -415,7 +415,8 @@ const GlobeMapViewComponent = ({
       {/* Selected Post Preview Card */}
       {selectedPost && showPreviewCard && (
         <div
-          className="absolute bottom-24 left-4 right-4 z-10 max-w-md mx-auto bg-gray-900/95 backdrop-blur-md rounded-xl shadow-2xl overflow-hidden cursor-pointer border border-amber-500/20"
+          className="absolute left-4 right-4 z-30 max-w-md mx-auto bg-gray-900/95 backdrop-blur-md rounded-xl shadow-2xl overflow-hidden cursor-pointer border border-amber-500/20"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 120px)' }}
           onClick={() => router.push(`/post/${selectedPost.id}`)}
         >
           <div className="flex">
