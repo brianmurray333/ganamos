@@ -1,7 +1,10 @@
 -- Migration: Extend atomic_claim_job to support AI confidence and analysis fields
 -- This allows the web UI fix submissions to also be atomic
 
--- Drop and recreate the function with additional parameters
+-- Drop the old function first (it has a different signature)
+DROP FUNCTION IF EXISTS atomic_claim_job(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT);
+
+-- Create the new function with additional parameters (with defaults for backward compatibility)
 CREATE OR REPLACE FUNCTION atomic_claim_job(
   p_job_id UUID,
   p_fixer_id TEXT,
