@@ -97,9 +97,15 @@ const GlobeMapViewComponent = ({
     return `${inK.toFixed(1)}k`.replace(".0k", "k")
   }
 
-  // Initialize globe
+  // Store showPreviewCard in a ref so we can access it in callbacks without re-initializing
+  const showPreviewCardRef = useRef(showPreviewCard)
   useEffect(() => {
-    if (!containerRef.current || !Globe) return
+    showPreviewCardRef.current = showPreviewCard
+  }, [showPreviewCard])
+
+  // Initialize globe ONLY when Globe library loads - not on data changes
+  useEffect(() => {
+    if (!containerRef.current || !Globe || globeRef.current) return
 
     const container = containerRef.current
     const width = container.clientWidth
@@ -143,32 +149,8 @@ const GlobeMapViewComponent = ({
       }, INACTIVITY_TIMEOUT)
     })
 
-    // Set initial camera position
-    if (userLocation) {
-      globe.pointOfView(
-        {
-          lat: userLocation.latitude,
-          lng: userLocation.longitude,
-          altitude: 2,
-        },
-        0
-      )
-    } else if (postsWithLocation.length > 0) {
-      // Center on first post
-      const firstPost = postsWithLocation[0]
-      globe.pointOfView(
-        {
-          lat: Number(firstPost.latitude),
-          lng: Number(firstPost.longitude),
-          altitude: 2,
-        },
-        0
-      )
-    }
-
-    // Add points (bitcoin markets) data
+    // Configure point styling (static config that doesn't depend on data)
     globe
-      .pointsData(postsWithLocation)
       .pointLat((d: Post) => Number(d.latitude))
       .pointLng((d: Post) => Number(d.longitude))
       .pointAltitude(0.01)
@@ -215,7 +197,7 @@ const GlobeMapViewComponent = ({
         </div>
       `)
       .onPointClick((point: Post | null) => {
-        if (point && showPreviewCard) {
+        if (point && showPreviewCardRef.current) {
           setSelectedPost(point)
           // Animate to clicked point
           globe.pointOfView(
@@ -229,27 +211,8 @@ const GlobeMapViewComponent = ({
         }
       })
 
-    // Add user location ring if available
-    if (userLocation) {
-      globe
-        .ringsData([
-          {
-            lat: userLocation.latitude,
-            lng: userLocation.longitude,
-            maxR: 3,
-            propagationSpeed: 2,
-            repeatPeriod: 1000,
-          },
-        ])
-        .ringColor(() => "#4285F4")
-        .ringMaxRadius("maxR")
-        .ringPropagationSpeed("propagationSpeed")
-        .ringRepeatPeriod("repeatPeriod")
-    }
-
-    // Add HTML markers for bitcoin coins
+    // Configure HTML element styling
     globe
-      .htmlElementsData(postsWithLocation)
       .htmlLat((d: Post) => Number(d.latitude))
       .htmlLng((d: Post) => Number(d.longitude))
       .htmlAltitude(0.02)
@@ -303,7 +266,7 @@ const GlobeMapViewComponent = ({
         el.style.pointerEvents = "auto"
         el.style.cursor = "pointer"
         el.onclick = () => {
-          if (showPreviewCard) {
+          if (showPreviewCardRef.current) {
             setSelectedPost(d)
             globe.pointOfView(
               {
@@ -322,9 +285,9 @@ const GlobeMapViewComponent = ({
 
     // Handle resize
     const handleResize = () => {
-      if (containerRef.current && globe) {
-        globe.width(containerRef.current.clientWidth)
-        globe.height(containerRef.current.clientHeight)
+      if (containerRef.current && globeRef.current) {
+        globeRef.current.width(containerRef.current.clientWidth)
+        globeRef.current.height(containerRef.current.clientHeight)
       }
     }
 
@@ -332,11 +295,62 @@ const GlobeMapViewComponent = ({
 
     return () => {
       window.removeEventListener("resize", handleResize)
-      if (globe) {
-        globe._destructor?.()
+      if (globeRef.current) {
+        globeRef.current._destructor?.()
+        globeRef.current = null
       }
     }
-  }, [Globe, postsWithLocation, userLocation, showPreviewCard])
+  }, [Globe]) // Only depend on Globe library loading
+
+  // Set initial camera position when userLocation becomes available
+  const hasSetInitialPosition = useRef(false)
+  useEffect(() => {
+    if (!globeRef.current || hasSetInitialPosition.current) return
+    
+    if (userLocation) {
+      globeRef.current.pointOfView(
+        {
+          lat: userLocation.latitude,
+          lng: userLocation.longitude,
+          altitude: 2,
+        },
+        0
+      )
+      hasSetInitialPosition.current = true
+    } else if (postsWithLocation.length > 0) {
+      // Center on first post
+      const firstPost = postsWithLocation[0]
+      globeRef.current.pointOfView(
+        {
+          lat: Number(firstPost.latitude),
+          lng: Number(firstPost.longitude),
+          altitude: 2,
+        },
+        0
+      )
+      hasSetInitialPosition.current = true
+    }
+  }, [userLocation, postsWithLocation])
+
+  // Update user location ring when it changes
+  useEffect(() => {
+    if (!globeRef.current || !userLocation) return
+    
+    globeRef.current
+      .ringsData([
+        {
+          lat: userLocation.latitude,
+          lng: userLocation.longitude,
+          maxR: 3,
+          propagationSpeed: 2,
+          repeatPeriod: 1000,
+        },
+      ])
+      .ringColor(() => "#4285F4")
+      .ringMaxRadius("maxR")
+      .ringPropagationSpeed("propagationSpeed")
+      .ringRepeatPeriod("repeatPeriod")
+  }, [userLocation])
 
   // Update points when posts change
   useEffect(() => {
