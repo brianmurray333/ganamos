@@ -57,6 +57,7 @@ interface MapViewProps {
   onNewIssue?: () => void // Optional callback for floating "+" button (desktop dashboard)
   showPreviewCard?: boolean // Whether to show the post preview card when a marker is clicked (default: true)
   hideSearchOverlay?: boolean // Hide the search bar and donate button overlay (for embedded desktop use)
+  disableMarkerClicks?: boolean // Explicitly disable marker click interactions (for donation modal)
 }
 
 // Declare google as a global type to avoid linting errors
@@ -82,6 +83,7 @@ function MapViewComponent({
   onNewIssue,
   showPreviewCard = true,
   hideSearchOverlay = false,
+  disableMarkerClicks = false,
 }: MapViewProps) {
   const router = useRouter()
   const mapRef = useRef<HTMLDivElement>(null)
@@ -878,8 +880,8 @@ function MapViewComponent({
     })
     markersRef.current = {}
 
-    // Determine if markers should be clickable (not clickable in modal/donation flow)
-    const markersClickable = !isModal
+    // Determine if markers should be clickable (explicitly disabled for donation flow)
+    const markersClickable = !disableMarkerClicks
 
     // Get current map bounds for viewport prioritization
     const bounds = map.getBounds()

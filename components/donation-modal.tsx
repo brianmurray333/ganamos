@@ -264,6 +264,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                 isLoading={isLoadingPosts}
                 isModal={true}
                 initialSearchQuery={locationName}
+                disableMarkerClicks={true}
               />
             </div>
 
