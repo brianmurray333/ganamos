@@ -27,6 +27,7 @@ import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LocationEditorModal } from "@/components/location-editor-modal"
+import { CreateGroupDialog } from "@/components/create-group-dialog"
 
 // Pre-load the camera component
 import dynamic from "next/dynamic"
@@ -84,6 +85,7 @@ export default function NewPostPage() {
   const [showLocationModal, setShowLocationModal] = useState(false)
   const [groupPickerHighlighted, setGroupPickerHighlighted] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false)
 
   useEffect(() => {
     if (isAnonymous) {
@@ -984,7 +986,8 @@ export default function NewPostPage() {
                       onValueChange={(value: string) => {
                         setGroupPickerHighlighted(false) // Clear highlight when user interacts
                         if (value === "create-group") {
-                          router.push("/profile?tab=groups")
+                          // Open the create group dialog instead of navigating away
+                          setShowCreateGroupDialog(true)
                         } else if (value === "find-username") {
                           // Store current value before opening modal
                           previousSelectValueRef.current = assignedTo ? `person:${assignedTo}` : selectedGroupId || "public"
@@ -1524,6 +1527,27 @@ export default function NewPostPage() {
         onGetCurrentLocation={handleGetLocation}
         isGettingLocation={isGettingLocation}
       />
+
+      {/* Create Group Dialog */}
+      {!isAnonymous && (
+        <CreateGroupDialog
+          open={showCreateGroupDialog}
+          onOpenChange={setShowCreateGroupDialog}
+          userId={activeUserId || user!.id}
+          onSuccess={(newGroup) => {
+            // Automatically select the newly created group
+            setSelectedGroupId(newGroup.id)
+            // Add it to the userGroups list so it shows in the dropdown
+            setUserGroups(prev => [...prev, newGroup])
+            // Close the dialog
+            setShowCreateGroupDialog(false)
+            // Show success message
+            toast.success("Group created!", {
+              description: `${newGroup.name} has been created and selected for this post.`
+            })
+          }}
+        />
+      )}
     </div>
   )
 }
