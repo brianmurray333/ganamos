@@ -74,24 +74,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the job (post) details
-    const { data: post, error: postError } = await supabase
+    // Validate the user is a member of the group (need to fetch post for group_id first)
+    const { data: postForGroup, error: postGroupError } = await supabase
       .from("posts")
-      .select(`
-        id,
-        title,
-        description,
-        reward,
-        user_id,
-        group_id,
-        fixed,
-        claimed,
-        deleted_at
-      `)
+      .select("group_id")
       .eq("id", jobId)
       .single()
 
-    if (postError || !post) {
+    if (postGroupError || !postForGroup) {
       console.log("[Device Job Complete] Post not found:", jobId)
       return NextResponse.json(
         { success: false, error: "Job not found" },
@@ -99,34 +89,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate the post is still open
-    if (post.fixed) {
-      return NextResponse.json(
-        { success: false, error: "Job already completed" },
-        { status: 400 }
-      )
-    }
-
-    if (post.claimed) {
-      return NextResponse.json(
-        { success: false, error: "Job already claimed" },
-        { status: 400 }
-      )
-    }
-
-    if (post.deleted_at) {
-      return NextResponse.json(
-        { success: false, error: "Job has been deleted" },
-        { status: 400 }
-      )
-    }
-
-    // Validate the user is a member of the group
-    if (post.group_id) {
+    if (postForGroup.group_id) {
       const { data: membership } = await supabase
         .from("group_members")
         .select("status")
-        .eq("group_id", post.group_id)
+        .eq("group_id", postForGroup.group_id)
         .eq("user_id", fixerUserId)
         .eq("status", "approved")
         .single()
@@ -139,6 +106,78 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Get fixer's avatar for the atomic claim
+    const { data: fixerFullProfile } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", fixerUserId)
+      .single()
+
+    // Atomically claim the job - prevents race conditions
+    const { data: claimResult, error: claimError } = await supabase.rpc(
+      'atomic_claim_job',
+      {
+        p_job_id: jobId,
+        p_fixer_id: fixerUserId,
+        p_fixer_name: fixerProfile.name || fixerProfile.username || "Unknown",
+        p_fixer_avatar: fixerFullProfile?.avatar_url || null,
+        p_fix_note: "Submitted via device",
+        p_fix_image_url: null,
+        p_lightning_address: null
+      }
+    )
+
+    if (claimError) {
+      console.error("[Device Job Complete] Claim error:", claimError)
+      return NextResponse.json(
+        { success: false, error: "Failed to claim job" },
+        { status: 500 }
+      )
+    }
+
+    // Check if the atomic claim succeeded
+    if (!claimResult?.success) {
+      const errorMessage = claimResult?.error || "Job is no longer available"
+      console.log(`[Device Job Complete] Claim failed: ${errorMessage}`)
+      
+      // Return appropriate status based on error type
+      if (claimResult?.error === "Job not found") {
+        return NextResponse.json(
+          { success: false, error: "Job not found" },
+          { status: 404 }
+        )
+      }
+      
+      // Job was already claimed/fixed/under_review
+      return NextResponse.json(
+        { success: false, error: "Job already claimed or completed" },
+        { status: 400 }
+      )
+    }
+
+    // Job claimed successfully - now fetch full post details for email notifications
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .select(`
+        id,
+        title,
+        description,
+        reward,
+        user_id,
+        group_id
+      `)
+      .eq("id", jobId)
+      .single()
+
+    if (postError || !post) {
+      // This shouldn't happen since we just claimed the job, but handle gracefully
+      console.error("[Device Job Complete] Failed to fetch post after claim:", postError)
+      return NextResponse.json({
+        success: true,
+        message: "Verification request sent to poster"
+      })
+    }
+
     // Get the post owner's profile (for email)
     const { data: ownerProfile, error: ownerError } = await supabase
       .from("profiles")
@@ -148,33 +187,30 @@ export async function POST(request: NextRequest) {
 
     if (ownerError || !ownerProfile) {
       console.error("[Device Job Complete] Owner profile not found:", post.user_id)
-      return NextResponse.json(
-        { success: false, error: "Post owner not found" },
-        { status: 404 }
-      )
-    }
-
-    // Send email notification to the post owner
-    if (ownerProfile.email && !ownerProfile.email.includes('@ganamos.app')) {
-      try {
-        await sendDeviceJobCompletionEmail({
-          toEmail: ownerProfile.email,
-          ownerName: ownerProfile.name || "User",
-          issueTitle: post.title || "Your issue",
-          fixerName: fixerProfile.name || fixerProfile.username || "Someone",
-          fixerUsername: fixerProfile.username || "",
-          fixerUserId: fixerUserId,
-          rewardAmount: post.reward,
-          date: new Date(),
-          postId: jobId
-        })
-        console.log(`[Device Job Complete] Email sent to ${ownerProfile.email} for job ${jobId}`)
-      } catch (emailError) {
-        console.error("[Device Job Complete] Error sending email:", emailError)
-        // Don't fail the request if email fails - still return success
-      }
+      // Don't fail - job is already claimed, just skip email
     } else {
-      console.log("[Device Job Complete] Skipping email - owner has no valid email")
+      // Send email notification to the post owner
+      if (ownerProfile.email && !ownerProfile.email.includes('@ganamos.app')) {
+        try {
+          await sendDeviceJobCompletionEmail({
+            toEmail: ownerProfile.email,
+            ownerName: ownerProfile.name || "User",
+            issueTitle: post.title || "Your issue",
+            fixerName: fixerProfile.name || fixerProfile.username || "Someone",
+            fixerUsername: fixerProfile.username || "",
+            fixerUserId: fixerUserId,
+            rewardAmount: post.reward,
+            date: new Date(),
+            postId: jobId
+          })
+          console.log(`[Device Job Complete] Email sent to ${ownerProfile.email} for job ${jobId}`)
+        } catch (emailError) {
+          console.error("[Device Job Complete] Error sending email:", emailError)
+          // Don't fail the request if email fails - job already claimed
+        }
+      } else {
+        console.log("[Device Job Complete] Skipping email - owner has no valid email")
+      }
     }
     
     // Also send email to all other group admins (so any admin can approve)
@@ -211,7 +247,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Device Job Complete] User ${fixerUserId} (${fixerProfile.username}) marked job ${jobId} as complete`)
+    console.log(`[Device Job Complete] User ${fixerUserId} (${fixerProfile.username}) atomically claimed job ${jobId}`)
 
     return NextResponse.json({
       success: true,

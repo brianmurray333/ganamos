@@ -309,7 +309,7 @@ describe('POST /api/alexa/jobs/[id]/complete', () => {
       expect(response.status).toBe(400)
       const data = await response.json()
       expect(data.success).toBe(false)
-      expect(data.error).toBe('Job is already completed')
+      expect(data.error).toBe('Job has already been claimed or is under review')
     })
 
     it('should return 400 when job is already claimed', async () => {
@@ -324,7 +324,7 @@ describe('POST /api/alexa/jobs/[id]/complete', () => {
       expect(response.status).toBe(400)
       const data = await response.json()
       expect(data.success).toBe(false)
-      expect(data.error).toBe('Job has already been claimed')
+      expect(data.error).toBe('Job has already been claimed or is under review')
     })
 
     it('should return 400 when job is deleted', async () => {
@@ -339,7 +339,7 @@ describe('POST /api/alexa/jobs/[id]/complete', () => {
       expect(response.status).toBe(400)
       const data = await response.json()
       expect(data.success).toBe(false)
-      expect(data.error).toBe('Job has been deleted')
+      expect(data.error).toBe('Job has already been claimed or is under review')
     })
   })
 

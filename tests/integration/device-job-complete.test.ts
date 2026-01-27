@@ -328,7 +328,7 @@ describe('POST /api/device/job-complete', () => {
 
     expect(response.status).toBe(400)
     expect(data.success).toBe(false)
-    expect(data.error).toBe('Job already completed')
+    expect(data.error).toBe('Job already claimed or completed')
 
     // Cleanup
     await supabase.from('posts').delete().eq('id', fixedPost!.id)
@@ -370,7 +370,7 @@ describe('POST /api/device/job-complete', () => {
 
     expect(response.status).toBe(400)
     expect(data.success).toBe(false)
-    expect(data.error).toBe('Job already claimed')
+    expect(data.error).toBe('Job already claimed or completed')
 
     // Cleanup
     await supabase.from('posts').delete().eq('id', claimedPost!.id)
@@ -413,7 +413,7 @@ describe('POST /api/device/job-complete', () => {
 
     expect(response.status).toBe(400)
     expect(data.success).toBe(false)
-    expect(data.error).toBe('Job has been deleted')
+    expect(data.error).toBe('Job already claimed or completed')
 
     // Cleanup
     await supabase.from('posts').delete().eq('id', deletedPost!.id)

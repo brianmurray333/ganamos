@@ -846,10 +846,43 @@ export async function submitAnonymousFixForReviewAction(
     return { success: false, error: "Post ID and Fix Image URL are required." }
   }
   const supabase = createServerSupabaseClient(await getCookieStore())
-  const now = new Date().toISOString()
 
   try {
-    // First get the post to get owner info for email (including group_id for group admins)
+    // Use atomic claim to prevent race conditions when multiple people try to claim the same job
+    const { data: claimResult, error: claimError } = await supabase.rpc(
+      'atomic_claim_job',
+      {
+        p_job_id: postId,
+        p_fixer_id: null, // Anonymous submission
+        p_fixer_name: "Anonymous Fixer (Pending Review)",
+        p_fixer_avatar: null,
+        p_fix_note: fixerNote,
+        p_fix_image_url: fixImageUrl,
+        p_lightning_address: null,
+        p_ai_confidence: aiConfidence,
+        p_ai_analysis: aiAnalysis
+      }
+    )
+
+    if (claimError) {
+      console.error("Error in submitAnonymousFixForReviewAction (atomic claim):", claimError)
+      return { success: false, error: claimError.message }
+    }
+
+    // Check if the atomic claim succeeded
+    if (!claimResult?.success) {
+      const errorMessage = claimResult?.error || "Job is no longer available"
+      console.log(`[Anonymous Fix] Claim failed: ${errorMessage}`)
+      
+      if (claimResult?.error === "Job not found") {
+        return { success: false, error: "Post not found." }
+      }
+      
+      // Job was already claimed/fixed/under_review
+      return { success: false, error: "This job has already been claimed by someone else." }
+    }
+
+    // Claim succeeded - now fetch post data for email notifications
     const { data: postData, error: fetchError } = await supabase
       .from("posts")
       .select("user_id, title, reward, group_id, image_url")
@@ -857,31 +890,9 @@ export async function submitAnonymousFixForReviewAction(
       .single()
 
     if (fetchError) {
-      console.error("Error fetching post in submitAnonymousFixForReviewAction:", fetchError)
-      return { success: false, error: "Post not found." }
-    }
-
-    const { error } = await supabase
-      .from("posts")
-      .update({
-        under_review: true,
-        submitted_fix_by_id: null, // Indicates anonymous submission for review
-        submitted_fix_by_name: "Anonymous Fixer (Pending Review)",
-        submitted_fix_by_avatar: null,
-        submitted_fix_at: now,
-        submitted_fix_image_url: fixImageUrl,
-        submitted_fix_note: fixerNote,
-        ai_confidence_score: aiConfidence,
-        ai_analysis: aiAnalysis,
-        // Ensure these are not set yet
-        fixed: false,
-        fixed_by_is_anonymous: false, // Not yet fixed by anonymous, just submitted
-      })
-      .eq("id", postId)
-
-    if (error) {
-      console.error("Error in submitAnonymousFixForReviewAction:", error)
-      return { success: false, error: error.message }
+      // Job was claimed successfully but we couldn't fetch details for email
+      // Don't fail - the claim already succeeded
+      console.error("Error fetching post after claim in submitAnonymousFixForReviewAction:", fetchError)
     }
 
     // Use admin supabase to create activity and send email
@@ -1032,7 +1043,41 @@ export async function submitLoggedInFixForReviewAction(params: {
       .eq('id', userId)
       .single()
 
-    // Get post data for owner info and title (including group_id for group admins)
+    // Use atomic claim to prevent race conditions when multiple people try to claim the same job
+    const { data: claimResult, error: claimError } = await supabase.rpc(
+      'atomic_claim_job',
+      {
+        p_job_id: postId,
+        p_fixer_id: userId,
+        p_fixer_name: userProfile?.name || 'Unknown User',
+        p_fixer_avatar: userProfile?.avatar_url || null,
+        p_fix_note: fixerNote,
+        p_fix_image_url: fixImageUrl,
+        p_lightning_address: null,
+        p_ai_confidence: aiConfidence,
+        p_ai_analysis: aiAnalysis
+      }
+    )
+
+    if (claimError) {
+      console.error('Error in submitLoggedInFixForReviewAction (atomic claim):', claimError)
+      return { success: false, error: claimError.message }
+    }
+
+    // Check if the atomic claim succeeded
+    if (!claimResult?.success) {
+      const errorMessage = claimResult?.error || "Job is no longer available"
+      console.log(`[Logged-in Fix] Claim failed: ${errorMessage}`)
+      
+      if (claimResult?.error === "Job not found") {
+        return { success: false, error: 'Post not found.' }
+      }
+      
+      // Job was already claimed/fixed/under_review
+      return { success: false, error: 'This job has already been claimed by someone else.' }
+    }
+
+    // Claim succeeded - now fetch post data for email notifications
     const { data: postData, error: fetchError } = await supabase
       .from('posts')
       .select('user_id, title, reward, group_id, image_url')
@@ -1040,39 +1085,19 @@ export async function submitLoggedInFixForReviewAction(params: {
       .single()
 
     if (fetchError || !postData) {
-      console.error('Error fetching post in submitLoggedInFixForReviewAction:', fetchError)
-      return { success: false, error: 'Post not found.' }
-    }
-
-    const now = new Date().toISOString()
-
-    // Update post with review submission
-    const { error } = await supabase
-      .from('posts')
-      .update({
-        under_review: true,
-        submitted_fix_by_id: userId,
-        submitted_fix_by_name: userProfile?.name || 'Unknown User',
-        submitted_fix_by_avatar: userProfile?.avatar_url,
-        submitted_fix_at: now,
-        submitted_fix_image_url: fixImageUrl,
-        submitted_fix_note: fixerNote,
-        ai_confidence_score: aiConfidence,
-        ai_analysis: aiAnalysis,
-        fixed: false,
-        fixed_by_is_anonymous: false,
-      })
-      .eq('id', postId)
-
-    if (error) {
-      console.error('Error updating post review status:', error)
-      return { success: false, error: 'Failed to submit fix for review.' }
+      // Job was claimed successfully but we couldn't fetch details for email
+      // Don't fail - the claim already succeeded
+      console.error('Error fetching post after claim in submitLoggedInFixForReviewAction:', fetchError)
+      console.log(`Logged-in user fix for post ${postId} submitted for review (skipping notifications).`)
+      return { success: true }
     }
 
     // Use admin supabase for activities (bypasses RLS for creating activities for other users)
     const adminSupabase = createServerSupabaseClient({
       supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
     })
+
+    const now = new Date().toISOString()
 
     // Create activity for the fixer
     await adminSupabase.from('activities').insert({
