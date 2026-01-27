@@ -28,6 +28,7 @@ import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LocationEditorModal } from "@/components/location-editor-modal"
 import { CreateGroupDialog } from "@/components/create-group-dialog"
+import { ShareGroupModal } from "@/components/share-group-modal"
 
 // Pre-load the camera component
 import dynamic from "next/dynamic"
@@ -86,6 +87,8 @@ export default function NewPostPage() {
   const [groupPickerHighlighted, setGroupPickerHighlighted] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false)
+  const [showShareGroupModal, setShowShareGroupModal] = useState(false)
+  const [pendingGroup, setPendingGroup] = useState<Group | null>(null)
 
   useEffect(() => {
     if (isAnonymous) {
@@ -1535,16 +1538,35 @@ export default function NewPostPage() {
           onOpenChange={setShowCreateGroupDialog}
           userId={activeUserId || user!.id}
           onSuccess={(newGroup) => {
-            // Automatically select the newly created group
-            setSelectedGroupId(newGroup.id)
-            // Add it to the userGroups list so it shows in the dropdown
-            setUserGroups(prev => [...prev, newGroup])
-            // Close the dialog
+            // Store the created group
+            setPendingGroup(newGroup)
+            // Close the create dialog
             setShowCreateGroupDialog(false)
+            // Open the share modal
+            setShowShareGroupModal(true)
+          }}
+        />
+      )}
+
+      {/* Share Group Modal */}
+      {!isAnonymous && pendingGroup && (
+        <ShareGroupModal
+          open={showShareGroupModal}
+          onOpenChange={setShowShareGroupModal}
+          group={pendingGroup}
+          onDone={() => {
+            // Auto-select the group in dropdown
+            setSelectedGroupId(pendingGroup.id)
+            // Add it to the userGroups list so it shows in the dropdown
+            setUserGroups(prev => [...prev, pendingGroup])
+            // Close the share modal
+            setShowShareGroupModal(false)
             // Show success message
             toast.success("Group created!", {
-              description: `${newGroup.name} has been created and selected for this post.`
+              description: `${pendingGroup.name} has been created and selected for this post.`
             })
+            // Clear pending group
+            setPendingGroup(null)
           }}
         />
       )}
