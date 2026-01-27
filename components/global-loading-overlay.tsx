@@ -28,8 +28,8 @@ export function GlobalLoadingOverlay() {
     }
   }, [])
 
-  // Don't show loading overlay on public pages that handle their own loading
-  const isPublicPage = pathname === "/map" || pathname?.startsWith("/auth/")
+  // Don't show loading overlay on pages that handle their own loading
+  const isPublicPage = pathname === "/map" || pathname?.startsWith("/auth/") || pathname?.startsWith("/admin")
 
   // Show loading while auth state is being determined
   const isLoading = (loading || !sessionLoaded) && !authTimeout

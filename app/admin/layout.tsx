@@ -55,35 +55,65 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const supabase = createBrowserSupabaseClient()
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      
-      if (!session) {
+    let isMounted = true
+    let authCheckCompleted = false
+    
+    // Add timeout to prevent infinite loading
+    const authTimeout = setTimeout(() => {
+      if (isMounted && !authCheckCompleted) {
+        console.log("[Admin] Auth check timeout, redirecting to login")
+        setIsLoading(false)
         if (pathname !== "/admin/login") {
           router.push("/admin/login")
         }
-        setIsLoading(false)
-        return
       }
+    }, 5000) // 5 second timeout
+    
+    const checkAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!isMounted) return
+        authCheckCompleted = true
+        
+        if (!session) {
+          if (pathname !== "/admin/login") {
+            router.push("/admin/login")
+          }
+          setIsLoading(false)
+          return
+        }
 
-      const email = session.user.email
-      setUserEmail(email || null)
+        const email = session.user.email
+        setUserEmail(email || null)
 
-      if (email !== ADMIN_EMAIL) {
-        // Not authorized
-        await supabase.auth.signOut()
-        router.push("/admin/login?error=unauthorized")
+        if (email !== ADMIN_EMAIL) {
+          // Not authorized
+          await supabase.auth.signOut()
+          router.push("/admin/login?error=unauthorized")
+          setIsLoading(false)
+          return
+        }
+
+        setIsAuthenticated(true)
         setIsLoading(false)
-        return
+      } catch (error) {
+        console.error("[Admin] Auth check error:", error)
+        authCheckCompleted = true
+        if (isMounted) {
+          setIsLoading(false)
+          if (pathname !== "/admin/login") {
+            router.push("/admin/login")
+          }
+        }
       }
-
-      setIsAuthenticated(true)
-      setIsLoading(false)
     }
 
     checkAuth()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isMounted) return
+      
       if (event === "SIGNED_OUT") {
         setIsAuthenticated(false)
         router.push("/admin/login")
@@ -92,6 +122,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         if (email === ADMIN_EMAIL) {
           setIsAuthenticated(true)
           setUserEmail(email)
+          setIsLoading(false)
           if (pathname === "/admin/login") {
             router.push("/admin")
           }
@@ -102,7 +133,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      clearTimeout(authTimeout)
+      subscription.unsubscribe()
+    }
   }, [supabase, router, pathname])
 
   // Fetch system settings
@@ -173,7 +208,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
       </div>
     )
   }
