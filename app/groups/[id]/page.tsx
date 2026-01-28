@@ -16,7 +16,7 @@ import { useAuth } from "@/components/auth-provider"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
-import { Copy, Check } from "lucide-react"
+import { Share2 } from "lucide-react"
 import type { Group, GroupMember, Post } from "@/lib/types"
 
 export default function GroupPage({ params }: { params: { id: string } }) {
@@ -41,8 +41,6 @@ export default function GroupPage({ params }: { params: { id: string } }) {
   const [postFilter, setPostFilter] = useState<"all" | "open" | "in_review" | "fixed">("all")
   const [showInviteDialog, setShowInviteDialog] = useState(false)
   const [inviteUrl, setInviteUrl] = useState("")
-  const [copied, setCopied] = useState(false)
-  const [copiedGroupCode, setCopiedGroupCode] = useState(false)
   
   // Admin group management
   const [showRenameDialog, setShowRenameDialog] = useState(false)
@@ -349,17 +347,83 @@ export default function GroupPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const copyInviteLink = () => {
-    navigator.clipboard.writeText(inviteUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const copyInviteLink = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      toast.success("Copied to clipboard", {
+        description: "Invite link copied",
+      })
+    } catch (error) {
+      console.error("Failed to copy:", error)
+    }
   }
 
-  const copyGroupCode = () => {
+  const copyGroupCode = async () => {
     if (group?.group_code) {
-      navigator.clipboard.writeText(group.group_code)
-      setCopiedGroupCode(true)
-      setTimeout(() => setCopiedGroupCode(false), 2000)
+      try {
+        await navigator.clipboard.writeText(group.group_code)
+        toast.success("Copied to clipboard", {
+          description: "Group code copied",
+        })
+      } catch (error) {
+        console.error("Failed to copy:", error)
+      }
+    }
+  }
+
+  const handleShareLink = async () => {
+    const shareText = `Join my group "${group?.name}" on Ganamos!\n\nUse invite link: ${inviteUrl}\n\nOr enter code: ${group?.group_code}`
+    
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    
+    if (isMobile && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Join ${group?.name} on Ganamos`,
+          text: shareText,
+        })
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error sharing:', error)
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareText)
+        toast.success("Copied to clipboard", {
+          description: "Share text copied - paste it in your favorite app",
+        })
+      } catch (error) {
+        console.error("Failed to copy:", error)
+      }
+    }
+  }
+
+  const handleShareCode = async () => {
+    const shareText = `Join my group "${group?.name}" on Ganamos!\n\nEnter group code: ${group?.group_code}`
+    
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+    
+    if (isMobile && navigator.share) {
+      try {
+        await navigator.share({
+          title: `Join ${group?.name} on Ganamos`,
+          text: shareText,
+        })
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          console.error('Error sharing:', error)
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareText)
+        toast.success("Copied to clipboard", {
+          description: "Share text copied - paste it in your favorite app",
+        })
+      } catch (error) {
+        console.error("Failed to copy:", error)
+      }
     }
   }
 
@@ -1126,74 +1190,136 @@ export default function GroupPage({ params }: { params: { id: string } }) {
       <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Share Group</DialogTitle>
+            <DialogTitle>Share {group?.name} group</DialogTitle>
           </DialogHeader>
           <div className="py-4 space-y-4">
+            {/* Invite Link */}
             <div>
-              <p className="text-sm font-medium mb-2">Group Code</p>
-              <p className="text-sm text-muted-foreground mb-3">
-                Share this 4-character code for easy group discovery:
+              <p className="text-sm font-medium mb-2 flex items-center gap-1">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                Invite Link
               </p>
               <div className="flex items-center space-x-2">
-                <div className="flex-1 h-9 bg-gray-50 dark:bg-gray-800 rounded-md flex items-center justify-center">
-                  <span className="font-mono text-xl font-bold tracking-widest">{group?.group_code}</span>
-                </div>
-                <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={copyGroupCode}>
-                  {copiedGroupCode ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                <button
+                  type="button"
+                  onClick={copyInviteLink}
+                  className="flex-1 h-10 bg-gray-50 dark:bg-gray-800 rounded-md px-3 text-left text-sm font-mono truncate hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
+                >
+                  {inviteUrl}
+                </button>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="icon" 
+                  className="h-10 w-10 shrink-0" 
+                  onClick={handleShareLink}
+                  title="Share link"
+                >
+                  <Share2 className="h-4 w-4" />
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-9 px-2">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="1" />
-                        <circle cx="12" cy="5" r="1" />
-                        <circle cx="12" cy="19" r="1" />
-                      </svg>
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={handleRegenerateCode} disabled={isRegeneratingCode}>
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="mr-2"
-                      >
-                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                        <path d="M3 3v5h5" />
-                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                        <path d="M16 16h5v5" />
-                      </svg>
-                      {isRegeneratingCode ? "Regenerating..." : "Regenerate Code"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
               </div>
             </div>
 
-            <div className="border-t pt-4">
-              <p className="text-sm font-medium mb-2">Invite Link</p>
-              <p className="text-sm text-muted-foreground mb-3">Or share this direct link:</p>
+            {/* Group Code */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium flex items-center gap-1">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                  Group Code
+                </p>
+                {userRole === "admin" && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <circle cx="12" cy="12" r="1" />
+                          <circle cx="12" cy="5" r="1" />
+                          <circle cx="12" cy="19" r="1" />
+                        </svg>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleRegenerateCode} disabled={isRegeneratingCode}>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="mr-2"
+                        >
+                          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                          <path d="M3 3v5h5" />
+                          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                          <path d="M16 16h5v5" />
+                        </svg>
+                        {isRegeneratingCode ? "Regenerating..." : "Regenerate Code"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
               <div className="flex items-center space-x-2">
-                <Input value={inviteUrl} readOnly className="text-xs h-9" />
-                <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={copyInviteLink}>
-                  {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                <button
+                  type="button"
+                  onClick={copyGroupCode}
+                  className="flex-1 h-10 bg-gray-50 dark:bg-gray-800 rounded-md flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-gray-600"
+                >
+                  <span className="font-mono text-xl font-bold tracking-widest">
+                    {group?.group_code}
+                  </span>
+                </button>
+                <Button 
+                  type="button"
+                  variant="outline" 
+                  size="icon" 
+                  className="h-10 w-10 shrink-0" 
+                  onClick={handleShareCode}
+                  title="Share code"
+                >
+                  <Share2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
