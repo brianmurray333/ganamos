@@ -25,6 +25,11 @@ export default function GroupsPage() {
     }
   }, [sessionLoaded, session, router]);
 
+  // Scroll to top on mount
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   if (sessionLoaded && !session) {
     return null;
   }
@@ -40,11 +45,6 @@ export default function GroupsPage() {
       </div>
     );
   }
-
-  // Scroll to top on mount
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-background">
