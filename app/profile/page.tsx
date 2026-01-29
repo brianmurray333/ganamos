@@ -229,7 +229,7 @@ export default function ProfilePage() {
       
       setIsDevicesLoading(true);
       try {
-        const response = await fetch(`/api/device/list?userId=${activeUserId}`);
+        const response = await fetch(`/api/device/list?activeUserId=${activeUserId}`);
         const data = await response.json();
         if (data.devices) {
           setConnectedDevices(data.devices);
