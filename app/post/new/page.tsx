@@ -630,6 +630,21 @@ export default function NewPostPage() {
 
     // This code only runs for registered users
     try {
+      // SAFETY: Check caps before creating post
+      const { checkPostSafetyCapsAction } = await import("@/app/actions/post-actions")
+      const capsCheck = await checkPostSafetyCapsAction({
+        userId: activeUserId || user!.id,
+        reward,
+      })
+      
+      if (!capsCheck.allowed) {
+        toast.error("Post Limit Reached", {
+          description: capsCheck.error || "Unable to create post at this time.",
+        })
+        setIsSubmitting(false)
+        return
+      }
+
       const now = new Date()
       const postId = uuidv4()
 

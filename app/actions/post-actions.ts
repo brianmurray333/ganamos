@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase" // For createFundedA
 import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning-validation"
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
+import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
 
 async function getCookieStore() {
   const { cookies } = await import("next/headers")
@@ -567,6 +568,24 @@ export async function createFundedAnonymousPostAction(postDetails: {
   const now = new Date()
 
   try {
+    // SAFETY: Check system-wide live posts cap (200 total)
+    const livePostsCapCheck = await checkLivePostsCap()
+    if (!livePostsCapCheck.allowed) {
+      console.warn(`[Safety Caps] Anonymous post blocked: system at ${livePostsCapCheck.currentCount}/${livePostsCapCheck.limitValue} live posts`)
+      return { 
+        success: false, 
+        error: livePostsCapCheck.message || 'The platform has reached its limit of active posts. Please try again later.'
+      }
+    }
+
+    // SAFETY: Check reward cap for anonymous posts too
+    // Note: For anonymous posts, we use 'anonymous' as userId for tracking
+    const rewardCapCheck = await checkPostRewardCap('00000000-0000-0000-0000-000000000000', postDetails.reward)
+    if (!rewardCapCheck.allowed) {
+      console.warn(`[Safety Caps] Anonymous post reward blocked: ${postDetails.reward} sats exceeds hard cap`)
+      return { success: false, error: rewardCapCheck.message || 'Post reward exceeds maximum allowed amount.' }
+    }
+
     const { data, error } = await supabase
       .from("posts")
       .insert({
@@ -1363,6 +1382,16 @@ export async function createPostWithRewardAction(params: {
       return { success: false, error: 'Invalid parameters' }
     }
 
+    // SAFETY: Check reward cap (blocks at hard limit)
+    const rewardCapCheck = await checkPostRewardCap(userId, reward)
+    if (!rewardCapCheck.allowed) {
+      console.warn(`[Safety Caps] Post reward blocked: ${reward} sats exceeds hard cap for user ${userId}`)
+      return { success: false, error: rewardCapCheck.message || 'Post reward exceeds maximum allowed amount.' }
+    }
+    if (rewardCapCheck.capLevel !== 'none') {
+      console.log(`[Safety Caps] Post reward cap ${rewardCapCheck.capLevel} triggered for user ${userId}`)
+    }
+
     // Get current balance to verify sufficient funds
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
@@ -1602,6 +1631,12 @@ export async function createFixRewardAction(params: {
     const newBalance = (profile.balance || 0) + reward
     const newCoins = (profile.pet_coins || 0) + reward  // Also add to pet coins
     const newFixedCount = (profile.fixed_issues_count || 0) + 1
+    
+    // SAFETY: Check balance cap for earnings (never blocks, only logs/notifies)
+    const balanceCapCheck = await checkBalanceCap(userId, newBalance, true) // isEarning=true
+    if (balanceCapCheck.capLevel !== 'none') {
+      console.log(`[Safety Caps] Earning balance cap ${balanceCapCheck.capLevel} triggered for user ${userId} (earnings never blocked)`)
+    }
     
     const { error: balanceError } = await dbClient
       .from('profiles')
@@ -2237,5 +2272,70 @@ export async function recordDeviceRejectionAction(params: {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred',
     }
+  }
+}
+
+/**
+ * Pre-check safety caps before creating a post
+ * Call this BEFORE inserting a post to ensure it won't be blocked
+ */
+export async function checkPostSafetyCapsAction(params: {
+  userId: string
+  reward: number
+}): Promise<{ 
+  allowed: boolean
+  error?: string
+  rewardCapLevel?: string
+  livePostsCapLevel?: string
+  currentLivePosts?: number
+  maxLivePosts?: number
+}> {
+  'use server'
+  
+  const { userId, reward } = params
+
+  try {
+    // Check system-wide live posts cap
+    const livePostsCapCheck = await checkLivePostsCap()
+    if (!livePostsCapCheck.allowed) {
+      return { 
+        allowed: false, 
+        error: livePostsCapCheck.message,
+        livePostsCapLevel: 'hard',
+        currentLivePosts: livePostsCapCheck.currentCount,
+        maxLivePosts: livePostsCapCheck.limitValue,
+      }
+    }
+
+    // Check reward cap if reward > 0
+    if (reward > 0) {
+      const rewardCapCheck = await checkPostRewardCap(userId, reward)
+      if (!rewardCapCheck.allowed) {
+        return { 
+          allowed: false, 
+          error: rewardCapCheck.message,
+          rewardCapLevel: 'hard',
+        }
+      }
+      return { 
+        allowed: true, 
+        rewardCapLevel: rewardCapCheck.capLevel,
+        livePostsCapLevel: 'none',
+        currentLivePosts: livePostsCapCheck.currentCount,
+        maxLivePosts: livePostsCapCheck.limitValue,
+      }
+    }
+
+    return { 
+      allowed: true,
+      rewardCapLevel: 'none',
+      livePostsCapLevel: 'none',
+      currentLivePosts: livePostsCapCheck.currentCount,
+      maxLivePosts: livePostsCapCheck.limitValue,
+    }
+  } catch (error) {
+    console.error('Error in checkPostSafetyCapsAction:', error)
+    // Fail open - allow post if check fails
+    return { allowed: true }
   }
 }
