@@ -801,4 +801,97 @@ describe('deletePostAction', () => {
       expect(result.success).toBe(true)
     })
   })
+
+  // --------------------------------------------------------------------------
+  // Admin Client Tests (Critical for RLS bypass)
+  // --------------------------------------------------------------------------
+
+  describe('Admin Client Usage', () => {
+    it('should use admin client for balance updates, transactions, and activities', async () => {
+      // Create separate mock clients for user session and admin
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: { session: createMockSession(TEST_USER_ID) },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({ data: MOCK_POST, error: null }),
+                })),
+              })),
+              update: vi.fn(() => ({
+                eq: vi.fn().mockResolvedValue({ data: MOCK_POST, error: null }),
+              })),
+            }
+          }
+          return {
+            select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: null, error: null }) })) })),
+            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+            update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })),
+          }
+        }),
+      }
+
+      const mockAdminClient: any = {
+        from: vi.fn((table: string) => {
+          if (table === 'profiles') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({ data: MOCK_POSTER_PROFILE, error: null }),
+                })),
+              })),
+              update: vi.fn(() => ({
+                eq: vi.fn().mockResolvedValue({ data: MOCK_POSTER_PROFILE, error: null }),
+              })),
+            }
+          }
+          return {
+            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+          }
+        }),
+      }
+
+      vi.clearAllMocks()
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)  // First call: user session client
+        .mockReturnValueOnce(mockAdminClient) // Second call: admin client
+
+      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+
+      expect(result.success).toBe(true)
+
+      // Verify createServerSupabaseClient was called twice
+      expect(createServerSupabaseClient).toHaveBeenCalledTimes(2)
+
+      // First call should be with cookie store (user session)
+      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(1, expect.any(Object))
+
+      // Second call should be with service role key (admin client)
+      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(2, {
+        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+      })
+
+      // Verify admin client was used for balance-sensitive operations
+      expect(mockAdminClient.from).toHaveBeenCalledWith('activities')
+      expect(mockAdminClient.from).toHaveBeenCalledWith('profiles')
+      expect(mockAdminClient.from).toHaveBeenCalledWith('transactions')
+    })
+  })
 })
