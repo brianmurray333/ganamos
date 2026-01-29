@@ -223,13 +223,16 @@ export default function ProfilePage() {
   }, [bitcoinPrice, CACHE_KEYS.BITCOIN_PRICE]);
 
   // Fetch connected devices (pets)
+  // Use profile?.id because activeUserId is null for the main account
+  const targetUserId = activeUserId || profile?.id;
+  
   useEffect(() => {
     const fetchDevices = async () => {
-      if (!activeUserId) return;
+      if (!targetUserId) return;
       
       setIsDevicesLoading(true);
       try {
-        const response = await fetch(`/api/device/list?activeUserId=${activeUserId}`);
+        const response = await fetch(`/api/device/list?activeUserId=${targetUserId}`);
         const data = await response.json();
         if (data.devices) {
           setConnectedDevices(data.devices);
@@ -240,7 +243,7 @@ export default function ProfilePage() {
               pet_name: data.devices[0].pet_name 
             };
             localStorage.setItem(
-              `${CACHE_KEYS.PET}_${activeUserId}`,
+              `${CACHE_KEYS.PET}_${targetUserId}`,
               JSON.stringify({ pet: petData, timestamp: Date.now() })
             );
             setCachedPet(petData);
@@ -254,7 +257,7 @@ export default function ProfilePage() {
     };
     
     fetchDevices();
-  }, [activeUserId, CACHE_KEYS.PET]);
+  }, [targetUserId, CACHE_KEYS.PET]);
 
   // Fetch posts count - use profile.id directly since profile is already loaded
   useEffect(() => {
