@@ -1392,8 +1392,15 @@ export async function createPostWithRewardAction(params: {
       console.log(`[Safety Caps] Post reward cap ${rewardCapCheck.capLevel} triggered for user ${userId}`)
     }
 
+    // IMPORTANT: Use admin supabase for transaction creation and balance updates
+    // The prevent_direct_balance_update trigger only allows service_role to modify balances
+    // All transaction creation must go through service_role
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
     // Get current balance to verify sufficient funds
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await adminSupabase
       .from('profiles')
       .select('balance')
       .eq('id', userId)
@@ -1408,7 +1415,7 @@ export async function createPostWithRewardAction(params: {
     }
 
     // Create transaction record for the post reward deduction
-    const { data: transaction, error: txError } = await supabase
+    const { data: transaction, error: txError } = await adminSupabase
       .from('transactions')
       .insert({
         user_id: userId,
@@ -1427,7 +1434,7 @@ export async function createPostWithRewardAction(params: {
 
     // Update balance atomically
     const newBalance = profile.balance - reward
-    const { error: balanceError } = await supabase
+    const { error: balanceError } = await adminSupabase
       .from('profiles')
       .update({
         balance: newBalance,
@@ -1443,7 +1450,7 @@ export async function createPostWithRewardAction(params: {
     }
 
     // Create activity for the post reward
-    await supabase.from('activities').insert({
+    await adminSupabase.from('activities').insert({
       id: uuidv4(),
       user_id: userId,
       type: 'post',
@@ -2132,8 +2139,15 @@ export async function deletePostAction(
       return { success: false, error: 'Failed to delete post' }
     }
 
+    // IMPORTANT: Use admin supabase for transaction creation and balance updates
+    // The RLS policy for transaction inserts was removed for security
+    // The prevent_direct_balance_update trigger only allows service_role to modify balances
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
     // Create activity for the deletion
-    await supabase.from('activities').insert({
+    await adminSupabase.from('activities').insert({
       id: uuidv4(),
       user_id: effectiveUserId,
       type: 'post_deleted',
@@ -2148,7 +2162,7 @@ export async function deletePostAction(
 
     // Refund the reward back to the poster's balance
     if (post.reward && post.reward > 0) {
-      const { data: profile, error: profileError } = await supabase
+      const { data: profile, error: profileError } = await adminSupabase
         .from('profiles')
         .select('balance')
         .eq('id', effectiveUserId)
@@ -2162,7 +2176,7 @@ export async function deletePostAction(
         const newBalance = (profile.balance || 0) + post.reward
         console.log(`Refunding ${post.reward} sats to user ${effectiveUserId}. Current balance: ${profile.balance}, New balance: ${newBalance}`)
         
-        const { error: updateError } = await supabase
+        const { error: balanceUpdateError } = await adminSupabase
           .from('profiles')
           .update({
             balance: newBalance,
@@ -2170,14 +2184,14 @@ export async function deletePostAction(
           })
           .eq('id', effectiveUserId)
 
-        if (updateError) {
-          console.error('Error updating profile balance for refund:', updateError)
+        if (balanceUpdateError) {
+          console.error('Error updating profile balance for refund:', balanceUpdateError)
         } else {
           console.log(`Successfully updated balance to ${newBalance} for user ${effectiveUserId}`)
         }
 
         // Create a transaction record for the refund
-        const { error: txError } = await supabase.from('transactions').insert({
+        const { error: txError } = await adminSupabase.from('transactions').insert({
           user_id: effectiveUserId,
           type: 'internal',
           amount: post.reward,
