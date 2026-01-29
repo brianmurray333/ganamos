@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
 import { sendBitcoinReceivedEmail } from "@/lib/transaction-emails"
 import { alertLargeDeposit } from "@/lib/sms-alerts"
+import { checkBalanceCap } from "@/lib/safety-caps"
 
 // Dynamic import for cookies to avoid issues with pages directory
 async function getCookieStore() {
@@ -288,7 +289,23 @@ export async function checkDepositStatus(rHash: string) {
 
       console.log("Current balance:", profile.balance, "Type:", typeof profile.balance)
       console.log("Current pet_coins:", profile.pet_coins, "Type:", typeof profile.pet_coins)
-      const newBalance = parseInt(profile.balance) + actualAmountPaid
+      const calculatedNewBalance = parseInt(profile.balance) + actualAmountPaid
+      
+      // SAFETY: Check balance cap (deposits can be blocked at hard cap)
+      const balanceCapCheck = await checkBalanceCap(userId, calculatedNewBalance, false)
+      if (!balanceCapCheck.allowed) {
+        console.warn(`[Safety Caps] Deposit blocked: balance ${calculatedNewBalance} exceeds hard cap for user ${userId}`)
+        return { 
+          success: false, 
+          error: balanceCapCheck.message || "Deposit would exceed maximum allowed balance.",
+          settled: true // Invoice is settled but we won't credit
+        }
+      }
+      if (balanceCapCheck.capLevel !== 'none') {
+        console.log(`[Safety Caps] Balance cap ${balanceCapCheck.capLevel} triggered for user ${userId}`)
+      }
+      
+      const newBalance = calculatedNewBalance
       // When user earns sats (deposit), also add to pet_coins (1:1 conversion)
       const currentCoins = parseInt(profile.pet_coins || "0")
       const newCoins = currentCoins + actualAmountPaid
