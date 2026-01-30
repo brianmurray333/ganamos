@@ -479,7 +479,7 @@ export default function NewPostPage() {
     // setLocationErrorCount(0) // Reset error count on new attempt - this was part of the undone change
 
     try {
-      const locationInfo = await getCurrentLocationWithName({ forceRefresh: false, useCache: true }) // Use the imported utility
+      const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false }) // User explicitly requested fresh location
 
       if (locationInfo) {
         setCurrentLocation({
