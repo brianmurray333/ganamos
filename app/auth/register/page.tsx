@@ -70,15 +70,12 @@ export default function RegisterPage() {
 
     try {
       await signUpWithEmail(email, password, name)
-      toast.success("Registration successful", {
-        description: "Please check your email to confirm your account before signing in.",
-      })
-      // Don't redirect immediately - user needs to confirm email first
+      // Redirect to confirmation page with email as query parameter
+      router.push(`/auth/confirm-email?email=${encodeURIComponent(email)}`)
     } catch (error: any) {
       toast.error("Registration failed", {
         description: error?.message || "There was an error creating your account. Please try again.",
       })
-    } finally {
       setIsLoading(false)
       isSubmittingRef.current = false
     }
