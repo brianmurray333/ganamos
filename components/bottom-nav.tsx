@@ -50,7 +50,7 @@ export function BottomNav() {
           prefetch={canPrefetch}
           data-testid="nav-dashboard-link"
           className={cn(
-            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
+            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 active:opacity-60",
             isActive("/dashboard") 
               ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
               : "hover:bg-gray-100 dark:hover:bg-gray-800",
@@ -71,7 +71,7 @@ export function BottomNav() {
           onClick={handleMapClick}
           data-testid="nav-map-button"
           className={cn(
-            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
+            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 active:opacity-60",
             pathname === "/map" 
               ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
               : "hover:bg-gray-100 dark:hover:bg-gray-800",
@@ -91,7 +91,7 @@ export function BottomNav() {
         <button
           onClick={() => router.push("/post/new")}
           data-testid="nav-new-post-button"
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-[0_2px_8px_rgba(34,197,94,0.4)]"
+          className="flex items-center justify-center w-12 h-12 rounded-full bg-primary hover:bg-primary/90 active:opacity-60 transition-all duration-200 transform hover:scale-105 shadow-[0_2px_8px_rgba(34,197,94,0.4)]"
           aria-label="New Post"
         >
           <Plus className="w-6 h-6 text-primary-foreground stroke-[2.5]" />
@@ -103,7 +103,7 @@ export function BottomNav() {
           prefetch={canPrefetch}
           data-testid="nav-wallet-link"
           className={cn(
-            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
+            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 active:opacity-60",
             isActive("/wallet") 
               ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
               : "hover:bg-gray-100 dark:hover:bg-gray-800",
@@ -125,7 +125,7 @@ export function BottomNav() {
           prefetch={canPrefetch}
           data-testid="nav-profile-link"
           className={cn(
-            "flex items-center justify-center relative w-12 h-12 rounded-full transition-all duration-200",
+            "flex items-center justify-center relative w-12 h-12 rounded-full transition-all duration-200 active:opacity-60",
             isActive("/profile") 
               ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
               : "hover:bg-gray-100 dark:hover:bg-gray-800",
