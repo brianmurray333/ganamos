@@ -404,7 +404,7 @@ export default function NewPostPage() {
     // Since the photo is being taken right now, the issue is at the user's current location
     setIsGettingLocation(true)
     try {
-      const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false })
+      const locationInfo = await getCurrentLocationWithName({ forceRefresh: false, useCache: true })
 
       if (locationInfo) {
         setCurrentLocation({
@@ -479,7 +479,7 @@ export default function NewPostPage() {
     // setLocationErrorCount(0) // Reset error count on new attempt - this was part of the undone change
 
     try {
-      const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false }) // Use the imported utility
+      const locationInfo = await getCurrentLocationWithName({ forceRefresh: false, useCache: true }) // Use the imported utility
 
       if (locationInfo) {
         setCurrentLocation({

@@ -95,6 +95,25 @@ export function CameraCapture({
 
         try {
           console.log("📷 Requesting camera access...")
+          
+          // Check camera permission state before requesting (Safari compatibility)
+          if (navigator.permissions?.query) {
+            try {
+              const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
+              console.log("📷 Camera permission state:", permissionStatus.state)
+              
+              if (permissionStatus.state === 'denied') {
+                setError('Camera permission denied. Please enable camera access in your browser settings.')
+                return
+              }
+              // If granted or prompt, proceed with getUserMedia
+            } catch (permError) {
+              console.warn('📷 Permission API not available, proceeding with getUserMedia:', permError)
+            }
+          } else {
+            console.log("📷 Permissions API not available (Safari?), proceeding with getUserMedia")
+          }
+          
           const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
           console.log("📷 Got media stream:", mediaStream.id)
           
