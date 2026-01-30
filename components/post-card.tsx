@@ -326,7 +326,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
   return (
     <>
       <Card 
-        className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card cursor-pointer active:scale-[0.98] transition-transform touch-manipulation" 
+        className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card cursor-pointer active:scale-[0.98] active:opacity-90 transition-[transform,opacity] touch-manipulation" 
         onClick={handleClick} 
         onMouseEnter={handleMouseEnter}
       >
