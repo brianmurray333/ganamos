@@ -178,6 +178,7 @@ export default function MapPage() {
             }
           : null
       }
+      onNewIssue={() => router.push("/post/new")}
     />
   )
 }
