@@ -114,7 +114,7 @@ function MapViewComponent({
   const [allPosts, setAllPosts] = useState<Post[]>(posts)
   const [isDonationModalOpen, setIsDonationModalOpen] = useState(false)
   const [userCleared, setUserCleared] = useState(false)
-  const [viewMode, setViewMode] = useState<"flat" | "globe">("globe")
+  const [viewMode, setViewMode] = useState<"flat" | "globe">("flat")
   const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; zoom?: number } | null>(null)
   
   // Internal user location state - used when userLocation prop is not provided
