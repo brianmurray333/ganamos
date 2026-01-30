@@ -1256,10 +1256,10 @@ function MapViewComponent({
         />
       </div>
 
-      {/* Floating New Issue Button - Only show when onNewIssue is provided (desktop dashboard) */}
-      {onNewIssue && (
+      {/* Floating New Issue Button - Always show on map (uses onNewIssue if provided, otherwise navigates to /post/new) */}
+      {!hideSearchOverlay && (
         <button
-          onClick={onNewIssue}
+          onClick={onNewIssue || handleNewPost}
           className="absolute right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg"
           style={{ bottom: isModal ? 24 : BOTTOM_NAV_CLEARANCE }}
           aria-label="New Issue"
