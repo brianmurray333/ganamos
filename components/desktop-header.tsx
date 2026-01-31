@@ -222,7 +222,7 @@ export function DesktopHeader() {
           <Button
             variant="ghost"
             onClick={() => router.push("/wallet")}
-            className="flex items-center gap-2 h-10 px-4 rounded-full bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 border border-amber-200 dark:border-amber-800 shadow-md"
+            className="flex items-center gap-2 h-10 px-4 rounded-full bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:opacity-60 border border-amber-200 dark:border-amber-800 shadow-md transition-opacity"
           >
             <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={18} height={18} />
             <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
@@ -256,11 +256,11 @@ export function DesktopHeader() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64 p-2">
               {/* Menu Items */}
-              <DropdownMenuItem onClick={() => router.push("/profile")} className="py-2.5 px-3 rounded-lg flex items-center gap-3">
+              <DropdownMenuItem onClick={() => router.push("/profile")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
                 <UserCircle className="h-4 w-4" />
                 Profile
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/wallet")} className="py-2.5 px-3 rounded-lg flex items-center gap-3">
+              <DropdownMenuItem onClick={() => router.push("/wallet")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
                 <Wallet className="h-4 w-4" />
                 Wallet
               </DropdownMenuItem>
@@ -365,7 +365,7 @@ export function DesktopHeader() {
               </DropdownMenuItem>
 
               <DropdownMenuSeparator className="my-2" />
-              <DropdownMenuItem onClick={() => router.push("/auth/logout")} className="py-2.5 px-3 rounded-lg text-red-600 dark:text-red-400 flex items-center gap-3">
+              <DropdownMenuItem onClick={() => router.push("/auth/logout")} className="py-2.5 px-3 rounded-lg text-red-600 dark:text-red-400 flex items-center gap-3 active:opacity-60 transition-opacity">
                 <LogOut className="h-4 w-4" />
                 Log out
               </DropdownMenuItem>
