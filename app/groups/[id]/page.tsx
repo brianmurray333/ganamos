@@ -51,6 +51,7 @@ export default function GroupPage({ params }: { params: { id: string } }) {
   const [selectedNewAdmin, setSelectedNewAdmin] = useState<string | null>(null)
   const [isRegeneratingCode, setIsRegeneratingCode] = useState(false)
   const [isRenamingGroup, setIsRenamingGroup] = useState(false)
+  const [copiedGroupCode, setCopiedGroupCode] = useState(false)
   const [isDeletingGroup, setIsDeletingGroup] = useState(false)
   const [isAppointingAdmin, setIsAppointingAdmin] = useState(false)
   
@@ -362,9 +363,11 @@ export default function GroupPage({ params }: { params: { id: string } }) {
     if (group?.group_code) {
       try {
         await navigator.clipboard.writeText(group.group_code)
+        setCopiedGroupCode(true)
         toast.success("Copied to clipboard", {
           description: "Group code copied",
         })
+        setTimeout(() => setCopiedGroupCode(false), 2000)
       } catch (error) {
         console.error("Failed to copy:", error)
       }
