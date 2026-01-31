@@ -76,6 +76,7 @@ export default function NewPostPage() {
   const [isAwaitingPayment, setIsAwaitingPayment] = useState(false)
   const [showFundingModal, setShowFundingModal] = useState(false)
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const postCreationRef = useRef(false) // Prevent duplicate post creation
   const [showCreateAccountPrompt, setShowCreateAccountPrompt] = useState(false)
   const [lastCreatedPostId, setLastCreatedPostId] = useState<string | null>(null)
   const [locationErrorCount, setLocationErrorCount] = useState(0)
@@ -242,7 +243,9 @@ export default function NewPostPage() {
         try {
           console.log("Polling for payment status for rHash:", fundingRHash)
           const statusResult = await checkPostFundingStatusAction(fundingRHash)
-          if (statusResult.success && statusResult.settled) {
+          if (statusResult.success && statusResult.settled && !postCreationRef.current) {
+            // CRITICAL: Set lock immediately to prevent duplicate creation
+            postCreationRef.current = true
             console.log("Payment confirmed for rHash:", fundingRHash)
             if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current)
             setIsAwaitingPayment(false)
@@ -607,6 +610,7 @@ export default function NewPostPage() {
           })
           setFundingPaymentRequest(fundingInvoiceResult.paymentRequest)
           setFundingRHash(fundingInvoiceResult.rHash)
+          postCreationRef.current = false // Reset lock for new funding attempt
           setShowFundingModal(true)
           setIsAwaitingPayment(true)
           setIsSubmitting(false) // Reset submitting state
