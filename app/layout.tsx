@@ -94,9 +94,9 @@ export default function RootLayout({
                   {children}
                 </main>
                 <BottomNav />
+                <Toaster />
               </ConditionalThemeProvider>
             </DonationModalProvider>
-            <Toaster />
           </DashboardCacheProvider>
         </AuthProvider>
       </body>
