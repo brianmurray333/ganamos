@@ -590,10 +590,10 @@ export default function DashboardPage() {
           
           {/* Mobile Header - Floating sats balance pill */}
           <div className="lg:hidden sticky top-0 z-10 bg-gradient-to-b from-background via-background to-transparent pb-2 w-full flex justify-center will-change-transform" style={{ contain: 'layout style paint', transform: 'translate3d(0,0,0)' }}>
-            <div className="w-full max-w-md pt-3 px-4 relative">
+            <div className="w-full max-w-md pt-3 px-4 relative min-h-[56px]">
               {isHeaderReady() && (
             // Header content - fades in when ready
-            <div className="flex items-center justify-end animate-in fade-in duration-400 fill-mode-both">
+            <div className="flex items-center justify-end animate-in fade-in duration-200 fill-mode-both">
               {/* Sats Balance Pill */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

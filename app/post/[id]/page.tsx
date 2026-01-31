@@ -720,10 +720,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           // The updateBalance call above should handle the UI part.
 
           window.dispatchEvent(new Event("storage")) // To sync across tabs/components if needed
-          toast.success("🎊 Fix verified!", {
-            description: `${formatSatsValue(post?.reward || 0)} sats have been added to your balance 💰`,
-          })
           router.push("/dashboard")
+          // Show toast after navigation to prevent race condition
+          setTimeout(() => {
+            toast.success("🎊 Fix verified!", {
+              description: `${formatSatsValue(post?.reward || 0)} sats have been added to your balance 💰`,
+            })
+          }, 100)
         }
       } else {
         // Low confidence for logged-in user: Submit for review
@@ -766,10 +769,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               : null,
           )
         }
-        toast("Fix submitted for review", {
-          description: "Your fix has been submitted for review. The original poster will be notified to approve it.",
-        })
         router.push("/dashboard")
+        // Show toast after navigation to prevent race condition
+        setTimeout(() => {
+          toast("Fix submitted for review", {
+            description: "Your fix has been submitted for review. The original poster will be notified to approve it.",
+          })
+        }, 100)
       }
     } catch (error) {
       console.error("🔍 FIX SUBMISSION - Error during verification or submission:", error)
