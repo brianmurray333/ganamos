@@ -2112,7 +2112,17 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             rewardAmount={post.reward}
             postId={post.id}
             onSuccess={() => {
+              // Immediately hide UI to prevent re-submission
               setShowAnonymousRewardOptions(false)
+              setShowLightningModal(false)
+              setAnonymousFixedPostId(null)
+              
+              // Clear localStorage to prevent showing option again on refresh
+              if (typeof window !== 'undefined') {
+                localStorage.removeItem('pending_anonymous_reward_post')
+                localStorage.removeItem('pending_anonymous_reward_amount')
+              }
+              
               toast.success("Reward Claimed!", {
                 description: `${formatSatsValue(post.reward)} sats sent to your Lightning wallet`,
               })
