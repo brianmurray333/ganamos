@@ -115,6 +115,8 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
   const [travelTimes, setTravelTimes] = useState<TravelTimes>({ walking: null, driving: null })
   const [isLoadingTravelTimes, setIsLoadingTravelTimes] = useState(false)
   const [showTravelTimes, setShowTravelTimes] = useState(false)
+  const [isVisible, setIsVisible] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
   const prevTravelTimes = useRef<{ walking: string | null; driving: string | null }>({ walking: null, driving: null })
 
   useEffect(() => {
@@ -146,9 +148,31 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
     getUserLocation()
   }, [])
 
-  // Fetch travel times when user location and post location are available
+  // IntersectionObserver to detect when card is visible
   useEffect(() => {
-    if (!userLocation || !post.latitude || !post.longitude) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true)
+          observer.disconnect() // Only trigger once
+        }
+      },
+      { 
+        rootMargin: '100px', // Start loading 100px before card enters viewport
+        threshold: 0.01 // Trigger as soon as any part is visible
+      }
+    )
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current)
+    }
+
+    return () => observer.disconnect()
+  }, [])
+
+  // Fetch travel times ONLY when card is visible
+  useEffect(() => {
+    if (!isVisible || !userLocation || !post.latitude || !post.longitude) return;
 
     const cacheKey = `${userLocation.lat},${userLocation.lng}|${post.latitude},${post.longitude}`;
     if (travelTimeCache.has(cacheKey)) {
@@ -207,7 +231,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
         }
       }
     };
-  }, [userLocation, post.latitude, post.longitude]);
+  }, [isVisible, userLocation, post.latitude, post.longitude]);
 
   useEffect(() => {
     // Fade in when travelTimes change from null to a value
@@ -326,6 +350,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
   return (
     <>
       <Card 
+        ref={cardRef}
         className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card cursor-pointer active:scale-[0.98] active:opacity-90 transition-[transform,opacity] touch-manipulation" 
         onClick={handleClick} 
         onMouseEnter={handleMouseEnter}
@@ -355,6 +380,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
               src={getImageUrl() || "/placeholder.svg"}
               alt={post.description}
               className="object-cover w-full h-full"
+              loading="lazy"
               onError={() => setImageError(true)}
             />
           )}
@@ -573,6 +599,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
                   alt="Bitcoin"
                   width={43}
                   height={43}
+                  loading="lazy"
                   style={{ zIndex: 1 }}
                 />
               </div>
