@@ -58,6 +58,21 @@ export function CameraCapture({
     }
   }, [])
 
+  // Helper to check if we've already been granted camera access this session
+  const getCameraPermissionFromStorage = () => {
+    if (typeof window === 'undefined') return null
+    return sessionStorage.getItem('camera_permission_granted') === 'true'
+  }
+
+  const saveCameraPermissionToStorage = (granted: boolean) => {
+    if (typeof window === 'undefined') return
+    if (granted) {
+      sessionStorage.setItem('camera_permission_granted', 'true')
+    } else {
+      sessionStorage.removeItem('camera_permission_granted')
+    }
+  }
+
   useEffect(() => {
     // Add a camera flag to the URL to help with navigation bar hiding
     if (typeof window !== "undefined") {
@@ -94,28 +109,42 @@ export function CameraCapture({
         }
 
         try {
-          console.log("📷 Requesting camera access...")
+          // Check if we already have permission from this session (skip permission check)
+          const hasStoredPermission = getCameraPermissionFromStorage()
           
-          // Check camera permission state before requesting (Safari compatibility)
-          if (navigator.permissions?.query) {
-            try {
-              const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
-              console.log("📷 Camera permission state:", permissionStatus.state)
-              
-              if (permissionStatus.state === 'denied') {
-                setError('Camera permission denied. Please enable camera access in your browser settings.')
-                return
-              }
-              // If granted or prompt, proceed with getUserMedia
-            } catch (permError) {
-              console.warn('📷 Permission API not available, proceeding with getUserMedia:', permError)
-            }
+          if (hasStoredPermission) {
+            console.log("📷 Camera permission already granted this session, skipping check")
           } else {
-            console.log("📷 Permissions API not available (Safari?), proceeding with getUserMedia")
+            console.log("📷 Checking camera permission...")
+            
+            // Check camera permission state before requesting (Safari compatibility)
+            if (navigator.permissions?.query) {
+              try {
+                const permissionStatus = await navigator.permissions.query({ name: 'camera' as PermissionName })
+                console.log("📷 Camera permission state:", permissionStatus.state)
+                
+                if (permissionStatus.state === 'denied') {
+                  setError('Camera permission denied. Please enable camera access in your browser settings.')
+                  return
+                }
+                
+                // If already granted, save to session to skip future checks
+                if (permissionStatus.state === 'granted') {
+                  saveCameraPermissionToStorage(true)
+                }
+              } catch (permError) {
+                console.warn('📷 Permission API not available, proceeding with getUserMedia:', permError)
+              }
+            } else {
+              console.log("📷 Permissions API not available (Safari?), proceeding with getUserMedia")
+            }
           }
           
           const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
           console.log("📷 Got media stream:", mediaStream.id)
+          
+          // Successfully got camera - save permission state for this session
+          saveCameraPermissionToStorage(true)
           
           // Store stream ref FIRST before any state updates
           streamRef.current = mediaStream
@@ -158,6 +187,8 @@ export function CameraCapture({
           console.log("📷 Camera setup complete")
         } catch (err) {
           console.error("Error accessing camera:", err)
+          // Clear stored permission on error (might have been revoked)
+          saveCameraPermissionToStorage(false)
           setError("Could not access camera. Please check permissions.")
         }
       } catch (e) {
