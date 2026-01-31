@@ -268,9 +268,17 @@ export async function payAnonymousRewardAction(
   const supabase = createServerSupabaseClient(await getCookieStore())
 
   try {
-    // 1. Fetch the post and validate it has an unclaimed anonymous reward
-    const { data: post, error: fetchError } = await supabase
+    // 1. ATOMIC LOCK: Attempt to acquire lock before any validation
+    // This prevents race conditions where multiple requests pass validation simultaneously
+    const lockId = uuidv4()
+    const { data: lockedPost, error: lockError } = await supabase
       .from("posts")
+      .update({ anonymous_reward_payment_lock: lockId })
+      .eq("id", postId)
+      .eq("fixed_by_is_anonymous", true)
+      .eq("fixed", true)
+      .is("anonymous_reward_paid_at", null)
+      .is("anonymous_reward_payment_lock", null) // Only if not already locked
       .select(`
         *,
         group:group_id(
@@ -283,53 +291,55 @@ export async function payAnonymousRewardAction(
           name
         )
       `)
-      .eq("id", postId)
       .single()
 
-    if (fetchError || !post) {
-      console.error("Error fetching post for anonymous payout:", fetchError)
-      return { success: false, error: "Post not found." }
+    if (lockError || !lockedPost) {
+      // Could not acquire lock - either already locked, already paid, or doesn't exist
+      console.log("Could not acquire payment lock for post:", postId, lockError?.message)
+      return { success: false, error: "Reward unavailable or already being processed." }
     }
 
-    // Validate this is an anonymous fix that hasn't been paid yet
-    if (!post.fixed_by_is_anonymous) {
-      return { success: false, error: "This reward is not available for anonymous claim." }
-    }
+    // Use the locked post data for remaining operations
+    const post = lockedPost
 
-    if (post.anonymous_reward_paid_at) {
-      return { success: false, error: "This reward has already been claimed." }
-    }
-
-    if (!post.fixed) {
-      return { success: false, error: "This post has not been marked as fixed yet." }
+    // Helper to release lock on failure
+    const releaseLock = async () => {
+      await supabase
+        .from("posts")
+        .update({ anonymous_reward_payment_lock: null })
+        .eq("id", postId)
+        .eq("anonymous_reward_payment_lock", lockId) // Only release our own lock
     }
 
     // 2. Enhanced Lightning invoice validation
     if (!validateLightningInvoice(lightningInvoice)) {
+      await releaseLock()
       return { success: false, error: "Invalid Lightning invoice format." }
     }
 
     // 3. Validate invoice amount matches reward (if amount is specified in invoice)
     if (!validateInvoiceAmount(lightningInvoice, post.reward)) {
+      await releaseLock()
       return {
         success: false,
         error: `Invoice amount doesn't match reward amount of ${post.reward} sats.`,
       }
     }
 
-    // 3. Check Lightning configuration
+    // 4. Check Lightning configuration
     const LND_REST_URL = process.env.LND_REST_URL
     const LND_ADMIN_MACAROON = process.env.LND_ADMIN_MACAROON
 
     if (!LND_REST_URL || !LND_ADMIN_MACAROON) {
       console.error("Lightning configuration missing in payAnonymousRewardAction")
+      await releaseLock()
       return {
         success: false,
         error: "Lightning payment system is currently unavailable.",
       }
     }
 
-    // 4. Attempt to pay the Lightning invoice
+    // 5. Attempt to pay the Lightning invoice
     console.log(`Attempting to pay anonymous reward for post ${postId}: ${post.reward} sats`)
 
     const { payInvoice } = await import("@/lib/lightning")
@@ -337,6 +347,7 @@ export async function payAnonymousRewardAction(
 
     if (!paymentResult.success) {
       console.error("Failed to pay Lightning invoice:", paymentResult.error, paymentResult.details)
+      await releaseLock()
       return {
         success: false,
         error: "Failed to process Lightning payment. Please check your invoice and try again.",
@@ -344,7 +355,7 @@ export async function payAnonymousRewardAction(
       }
     }
 
-    // 5. Mark the reward as claimed in the database
+    // 6. Mark the reward as claimed in the database (lock remains set, paid_at is the permanent indicator)
     const now = new Date().toISOString()
     const { error: updateError } = await supabase
       .from("posts")
@@ -353,6 +364,7 @@ export async function payAnonymousRewardAction(
         anonymous_reward_payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
       })
       .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId) // Verify we still hold the lock
 
     if (updateError) {
       console.error("Error marking anonymous reward as paid:", updateError)

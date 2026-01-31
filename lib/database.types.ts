@@ -85,6 +85,7 @@ export interface Database {
           fixed_by_is_anonymous: boolean // << ADDED
           anonymous_reward_paid_at: string | null // << ADDED (TIMESTAMPTZ in DB)
           anonymous_reward_payment_hash: string | null // << ADDED (TEXT in DB)
+          anonymous_reward_payment_lock: string | null // UUID lock to prevent race conditions
           // Individual assignment
           assigned_to: string | null // UUID of user this job is assigned to
         }
@@ -131,6 +132,7 @@ export interface Database {
           fixed_by_is_anonymous?: boolean
           anonymous_reward_paid_at?: string | null
           anonymous_reward_payment_hash?: string | null
+          anonymous_reward_payment_lock?: string | null
           // Individual assignment
           assigned_to?: string | null
         }
@@ -177,6 +179,7 @@ export interface Database {
           fixed_by_is_anonymous?: boolean
           anonymous_reward_paid_at?: string | null
           anonymous_reward_payment_hash?: string | null
+          anonymous_reward_payment_lock?: string | null
           // Individual assignment
           assigned_to?: string | null
         }
