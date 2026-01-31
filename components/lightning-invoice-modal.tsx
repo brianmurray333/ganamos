@@ -29,6 +29,7 @@ export function LightningInvoiceModal({
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState("")
   const [step, setStep] = useState<"input" | "processing" | "success">("input")
+  const [paymentComplete, setPaymentComplete] = useState(false)
 
   const validateInvoice = (invoice: string): boolean => {
     const trimmedInvoice = invoice.trim().toLowerCase()
@@ -53,6 +54,11 @@ export function LightningInvoiceModal({
   }
 
   const handleSubmit = async () => {
+    // Prevent re-submission after successful payment
+    if (isProcessing || paymentComplete) {
+      return
+    }
+
     setError("")
 
     if (!invoice.trim()) {
@@ -81,15 +87,17 @@ export function LightningInvoiceModal({
         return
       }
 
-      // Payment successful
+      // Payment successful - mark as complete FIRST to prevent re-submission
+      setPaymentComplete(true)
       console.log("Anonymous reward payment successful:", result.paymentHash)
       setStep("success")
 
-      // Auto-close and call success callback after showing success state
+      // Call onSuccess immediately so parent can hide UI and clear localStorage
+      onSuccess()
+      
+      // Auto-close after showing success state briefly
       setTimeout(() => {
-        onSuccess()
         onOpenChange(false)
-        resetModal()
       }, 2000)
     } catch (error) {
       console.error("Error processing payment:", error)
@@ -109,7 +117,8 @@ export function LightningInvoiceModal({
   }
 
   const handleClose = () => {
-    if (!isProcessing) {
+    // Don't allow manual close while processing or after payment complete (showing success)
+    if (!isProcessing && !paymentComplete) {
       resetModal()
       onOpenChange(false)
     }
@@ -156,7 +165,7 @@ export function LightningInvoiceModal({
               <Button variant="outline" onClick={handleClose} className="flex-1">
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={!invoice.trim() || isProcessing} className="flex-1 bg-green-600 hover:bg-green-700">
+              <Button onClick={handleSubmit} disabled={!invoice.trim() || isProcessing || paymentComplete} className="flex-1 bg-green-600 hover:bg-green-700">
                 Withdraw {formatSatsValue(rewardAmount)}
               </Button>
             </div>
