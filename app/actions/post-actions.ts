@@ -926,6 +926,16 @@ export async function submitAnonymousFixForReviewAction(
       console.error("Error fetching post after claim in submitAnonymousFixForReviewAction:", fetchError)
     }
 
+    // SECURITY: For anonymous posts (no owner), only high-confidence AI can approve
+    // Low-confidence fixes should be rejected since there's no one to manually review them
+    if (postData && !postData.user_id && aiConfidence < 7) {
+      console.log(`[Security] Rejecting low-confidence anonymous fix for anonymous post ${postId}. AI confidence: ${aiConfidence}`)
+      return {
+        success: false,
+        error: "For anonymous posts, we need higher AI confidence to verify fixes. Please try again with a clearer, well-lit photo showing the fix more clearly."
+      }
+    }
+
     // Use admin supabase to create activity and send email
     const adminSupabase = createServerSupabaseClient({
       supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
@@ -1121,6 +1131,16 @@ export async function submitLoggedInFixForReviewAction(params: {
       console.error('Error fetching post after claim in submitLoggedInFixForReviewAction:', fetchError)
       console.log(`Logged-in user fix for post ${postId} submitted for review (skipping notifications).`)
       return { success: true }
+    }
+
+    // SECURITY: For anonymous posts (no owner), only high-confidence AI can approve
+    // Low-confidence fixes should be rejected since there's no one to manually review them
+    if (!postData.user_id && aiConfidence < 7) {
+      console.log(`[Security] Rejecting low-confidence fix for anonymous post ${postId}. AI confidence: ${aiConfidence}`)
+      return {
+        success: false,
+        error: "For anonymous posts, we need higher AI confidence to verify fixes. Please try again with a clearer, well-lit photo showing the fix more clearly."
+      }
     }
 
     // Use admin supabase for activities (bypasses RLS for creating activities for other users)

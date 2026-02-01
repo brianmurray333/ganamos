@@ -1453,7 +1453,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   }
 
   // Device Fix Review - early return when reviewing a device-submitted fix
-  if (showDeviceFixReview && deviceFixerProfile && post) {
+  if (showDeviceFixReview && deviceFixerProfile && post && post.user_id != null) {
     return (
       <div className="container px-4 py-6 mx-auto max-w-md">
         {/* Header */}
@@ -1629,6 +1629,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             {((post.under_review &&
             post.submitted_fix_image_url &&
             user &&
+            post.user_id != null &&
             (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin)) ||
           (post.fixed && post.fixed_image_url)) ? (
             <div className="grid grid-cols-2 gap-2 mb-4">
@@ -1998,6 +1999,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {post.under_review &&
           post.submitted_fix_image_url &&
           user &&
+          post.user_id != null &&
           (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) ? (
             // Show review interface for post owner or group admin
             <div className="space-y-4 mb-6">
