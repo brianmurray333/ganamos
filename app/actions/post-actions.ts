@@ -888,7 +888,7 @@ export async function submitAnonymousFixForReviewAction(
       .eq("id", postId)
       .single()
 
-    if (postCheckError) {
+    if (postCheckError || !postCheck) {
       console.error("Error checking post in submitAnonymousFixForReviewAction:", postCheckError)
       return { success: false, error: "Post not found." }
     }
@@ -1098,7 +1098,7 @@ export async function submitLoggedInFixForReviewAction(params: {
       .eq('id', postId)
       .single()
 
-    if (postCheckError) {
+    if (postCheckError || !postCheck) {
       console.error('Error checking post in submitLoggedInFixForReviewAction:', postCheckError)
       return { success: false, error: 'Post not found.' }
     }
