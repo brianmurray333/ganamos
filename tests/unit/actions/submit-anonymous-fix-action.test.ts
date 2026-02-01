@@ -385,8 +385,10 @@ describe('submitAnonymousFixForReviewAction', () => {
 
     it('handles database RPC errors gracefully', async () => {
       // ARRANGE - RPC call itself fails
+      // Note: Must provide valid postData so security check passes, then RPC error is tested
+      const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
-        postData: null,
+        postData: testPost,
         rpcError: {
           message: 'Database connection failed',
           code: 'CONNECTION_ERROR'
@@ -411,8 +413,10 @@ describe('submitAnonymousFixForReviewAction', () => {
 
     it('handles unexpected database errors', async () => {
       // ARRANGE
+      // Note: Must provide valid postData so security check passes, then RPC error is tested
+      const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
-        postData: null,
+        postData: testPost,
         postError: null
       })
       
@@ -438,8 +442,10 @@ describe('submitAnonymousFixForReviewAction', () => {
 
     it('handles job already claimed error (race condition)', async () => {
       // ARRANGE - atomic claim returns "already claimed" error
+      // Note: Must provide valid postData so security check passes, then RPC error is tested
+      const testPost = createTestPost()
       const mockClient = createCompleteMockClient({
-        postData: null,
+        postData: testPost,
         rpcResult: { success: false, error: 'Job is no longer available', reason: 'already_claimed' }
       })
       vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
@@ -508,7 +514,32 @@ describe('submitAnonymousFixForReviewAction', () => {
       })
     })
 
-    it('does not send email when post has no owner (user_id is null)', async () => {
+    it('rejects low-confidence fixes for anonymous posts (no owner to review)', async () => {
+      // ARRANGE
+      const testPost = createTestPost({
+        user_id: null  // Anonymous post - no owner to review
+      })
+      const mockClient = createCompleteMockClient({
+        postData: testPost
+      })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+      // ACT - Low confidence (< 7) should be rejected for anonymous posts
+      const result = await submitAnonymousFixForReviewAction(
+        'test-post-123',
+        'https://example.com/fix.jpg',
+        'Fixed',
+        6.0,  // Low confidence
+        'Analysis'
+      )
+
+      // ASSERT - Should fail because anonymous posts require high AI confidence
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('higher AI confidence')
+      expect(sendFixSubmittedForReviewEmail).not.toHaveBeenCalled()
+    })
+
+    it('allows high-confidence fixes for anonymous posts', async () => {
       // ARRANGE
       const testPost = createTestPost({
         user_id: null  // Anonymous post
@@ -518,16 +549,18 @@ describe('submitAnonymousFixForReviewAction', () => {
       })
       vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
 
-      // ACT
-      await submitAnonymousFixForReviewAction(
+      // ACT - High confidence (>= 7) should be allowed for anonymous posts
+      const result = await submitAnonymousFixForReviewAction(
         'test-post-123',
         'https://example.com/fix.jpg',
         'Fixed',
-        6.0,
+        7.0,  // High confidence
         'Analysis'
       )
 
-      // ASSERT
+      // ASSERT - Should succeed (though in real usage, high-confidence fixes auto-approve via different action)
+      expect(result.success).toBe(true)
+      // No email sent because there's no owner
       expect(sendFixSubmittedForReviewEmail).not.toHaveBeenCalled()
     })
 
