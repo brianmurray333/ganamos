@@ -157,6 +157,13 @@ export default function PetSettingsPage() {
         toast.success("Pet Unpaired", {
           description: "Your device has been disconnected.",
         })
+        
+        // Clear the pet cache to ensure profile page doesn't show stale data
+        const targetUserId = activeUserId || user?.id
+        if (targetUserId) {
+          localStorage.removeItem(`ganamos_pet_${targetUserId}`)
+        }
+        
         // Redirect to profile
         router.push('/profile')
       } else {
