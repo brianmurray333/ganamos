@@ -159,9 +159,9 @@ export default function PetSettingsPage() {
         })
         
         // Clear the pet cache to ensure profile page doesn't show stale data
-        const activeUserId = localStorage.getItem('ganamos_active_user_id')
-        if (activeUserId) {
-          localStorage.removeItem(`ganamos_pet_${activeUserId}`)
+        const targetUserId = activeUserId || user?.id
+        if (targetUserId) {
+          localStorage.removeItem(`ganamos_pet_${targetUserId}`)
         }
         
         // Redirect to profile
