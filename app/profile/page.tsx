@@ -247,6 +247,10 @@ export default function ProfilePage() {
               JSON.stringify({ pet: petData, timestamp: Date.now() })
             );
             setCachedPet(petData);
+          } else {
+            // Clear cache when no devices are connected
+            localStorage.removeItem(`${CACHE_KEYS.PET}_${targetUserId}`);
+            setCachedPet(null);
           }
       }
     } catch (error) {
