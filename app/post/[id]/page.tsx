@@ -499,10 +499,57 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     }
   }, [post?.fixed_by, supabase])
 
+  // Ref for hidden file input (gallery upload)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const handleCaptureFixImage = (imageSrc: string) => {
     setFixImage(imageSrc)
     setShowCamera(false)
     setShowBeforeAfter(true)
+  }
+
+  // Handle gallery/file upload
+  const handleGalleryClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error("Invalid file type", {
+        description: "Please select an image file (JPEG, PNG, etc.)",
+      })
+      return
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File too large", {
+        description: "Please select an image smaller than 10MB",
+      })
+      return
+    }
+
+    // Convert to base64 (same format as camera capture)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const imageSrc = e.target?.result as string
+      if (imageSrc) {
+        handleCaptureFixImage(imageSrc)
+      }
+    }
+    reader.onerror = () => {
+      toast.error("Error reading file", {
+        description: "Could not read the selected image",
+      })
+    }
+    reader.readAsDataURL(file)
+
+    // Reset input so same file can be selected again
+    event.target.value = ''
   }
 
   const handleRetakePhoto = () => {
@@ -1251,7 +1298,16 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             Take a photo
           </div>
         </div>
-        <CameraCapture onCapture={handleCaptureFixImage} />
+        <CameraCapture onCapture={handleCaptureFixImage} onGalleryClick={handleGalleryClick} />
+        {/* Hidden file input for gallery upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileSelect}
+          className="hidden"
+          aria-label="Upload image from gallery"
+        />
       </div>
     )
   }
