@@ -26,7 +26,8 @@ const DEFAULT_JOB_REWARD = 1000 // Default job reward in sats
  *   "location": "Location name", // optional
  *   "latitude": 37.7749, // optional
  *   "longitude": -122.4194, // optional
- *   "reward": 1000 // reward in sats (total payment = reward + 10 sats API fee)
+ *   "reward": 1000, // reward in sats (total payment = reward + 10 sats API fee)
+ *   "task_type": "photo" | "text" // optional, defaults to "photo"
  * }
  */
 export async function POST(request: NextRequest) {
@@ -78,7 +79,10 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json()
-    const { title, description, image_url, location, latitude, longitude, reward } = body
+    const { title, description, image_url, location, latitude, longitude, reward, task_type } = body
+    
+    // Validate task_type if provided
+    const validTaskType = task_type === 'text' ? 'text' : 'photo' // Default to 'photo'
 
     // Validate required fields
     if (!description || typeof description !== 'string') {
@@ -139,7 +143,8 @@ export async function POST(request: NextRequest) {
       longitude: longitude || null,
       city: location || null, // Use location as city for now
       funding_r_hash: verification.paymentHash!,
-      funding_payment_request: '' // We don't have the original payment request, but it's paid
+      funding_payment_request: '', // We don't have the original payment request, but it's paid
+      task_type: validTaskType // 'photo' or 'text'
     })
 
     if (!postResult.success) {

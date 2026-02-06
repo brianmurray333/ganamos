@@ -574,6 +574,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
   city: string | null
   funding_r_hash: string // Renamed from fundingRHash
   funding_payment_request: string // Added this
+  task_type?: 'photo' | 'text' // Type of task: photo requires image proof, text requires text response
 }): Promise<{ success: boolean; postId?: string; error?: string }> {
   const supabase = createServerSupabaseClient(await getCookieStore())
   const postId = uuidv4()
@@ -621,6 +622,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
         funding_r_hash: postDetails.funding_r_hash,
         funding_payment_request: postDetails.funding_payment_request,
         funding_status: "paid",
+        task_type: postDetails.task_type || 'photo', // Default to 'photo' for backward compatibility
       })
       .select("id")
       .single()
