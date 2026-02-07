@@ -25,7 +25,7 @@ export default defineConfig({
         '**/.{idea,git,cache,output,temp}',
       ],
     },
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     exclude: ['node_modules', 'dist', '.next', 'tests/integration/**'],
   },
   resolve: {
