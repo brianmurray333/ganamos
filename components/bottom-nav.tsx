@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation"
 import { Home, User, Map, Wallet, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
+import { AuthPromptModal } from "@/components/auth-prompt-modal"
+import { useState } from "react"
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -12,6 +14,8 @@ export function BottomNav() {
   // NotificationsProvider removed - pending requests feature disabled
   const hasPendingRequests = false
   const { user, loading, session, sessionLoaded } = useAuth()
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authFeature, setAuthFeature] = useState<'wallet' | 'profile'>('wallet')
 
   // Only enable prefetch after session is confirmed to prevent caching stale auth redirects
   // Before session is established, prefetch could cache a "redirect to login" response
@@ -19,12 +23,6 @@ export function BottomNav() {
 
   // Don't show bottom nav on home page, auth pages, public job posting page, post creation page, post detail page, withdraw page, deposit page, pet settings page, or satoshi-pet pages
   if (pathname === "/" || pathname.startsWith("/auth") || pathname === "/new" || pathname === "/post/new" || pathname.startsWith("/post/") || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
-    return null
-  }
-
-  // Don't show bottom nav for unauthenticated users (except on specific public pages)
-  // Wait until sessionLoaded is true before deciding to hide - prevents flash during OAuth callback
-  if (sessionLoaded && !user) {
     return null
   }
 
@@ -98,50 +96,98 @@ export function BottomNav() {
         </button>
 
         {/* Wallet icon */}
-        <Link
-          href="/wallet"
-          prefetch={canPrefetch}
-          data-testid="nav-wallet-link"
-          className={cn(
-            "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
-            isActive("/wallet") 
-              ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
-              : "hover:bg-gray-100 dark:hover:bg-gray-800",
-          )}
-        >
-          <Wallet
+        {user ? (
+          <Link
+            href="/wallet"
+            prefetch={canPrefetch}
+            data-testid="nav-wallet-link"
             className={cn(
-              "w-6 h-6 transition-colors",
+              "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
               isActive("/wallet") 
-                ? "text-gray-900 dark:text-white" 
-                : "text-gray-500 dark:text-gray-400",
+                ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
+                : "hover:bg-gray-100 dark:hover:bg-gray-800",
             )}
-          />
-        </Link>
+          >
+            <Wallet
+              className={cn(
+                "w-6 h-6 transition-colors",
+                isActive("/wallet") 
+                  ? "text-gray-900 dark:text-white" 
+                  : "text-gray-500 dark:text-gray-400",
+              )}
+            />
+          </Link>
+        ) : (
+          <button
+            onClick={() => {
+              setAuthFeature('wallet')
+              setShowAuthModal(true)
+            }}
+            data-testid="nav-wallet-button"
+            className={cn(
+              "flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200",
+              "hover:bg-gray-100 dark:hover:bg-gray-800",
+            )}
+          >
+            <Wallet
+              className={cn(
+                "w-6 h-6 transition-colors",
+                "text-gray-500 dark:text-gray-400",
+              )}
+            />
+          </button>
+        )}
 
         {/* Profile icon */}
-        <Link
-          href="/profile"
-          prefetch={canPrefetch}
-          data-testid="nav-profile-link"
-          className={cn(
-            "flex items-center justify-center relative w-12 h-12 rounded-full transition-all duration-200",
-            isActive("/profile") 
-              ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
-              : "hover:bg-gray-100 dark:hover:bg-gray-800",
-          )}
-        >
-          <User
+        {user ? (
+          <Link
+            href="/profile"
+            prefetch={canPrefetch}
+            data-testid="nav-profile-link"
             className={cn(
-              "w-6 h-6 transition-colors",
+              "flex items-center justify-center relative w-12 h-12 rounded-full transition-all duration-200",
               isActive("/profile") 
-                ? "text-gray-900 dark:text-white" 
-                : "text-gray-500 dark:text-gray-400",
+                ? "bg-gray-100 dark:bg-gray-800 text-primary dark:text-white" 
+                : "hover:bg-gray-100 dark:hover:bg-gray-800",
             )}
-          />
-          {hasPendingRequests && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
-        </Link>
+          >
+            <User
+              className={cn(
+                "w-6 h-6 transition-colors",
+                isActive("/profile") 
+                  ? "text-gray-900 dark:text-white" 
+                  : "text-gray-500 dark:text-gray-400",
+              )}
+            />
+            {hasPendingRequests && <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
+          </Link>
+        ) : (
+          <button
+            onClick={() => {
+              setAuthFeature('profile')
+              setShowAuthModal(true)
+            }}
+            data-testid="nav-profile-button"
+            className={cn(
+              "flex items-center justify-center relative w-12 h-12 rounded-full transition-all duration-200",
+              "hover:bg-gray-100 dark:hover:bg-gray-800",
+            )}
+          >
+            <User
+              className={cn(
+                "w-6 h-6 transition-colors",
+                "text-gray-500 dark:text-gray-400",
+              )}
+            />
+          </button>
+        )}
       </div>
+      
+      <AuthPromptModal
+        open={showAuthModal}
+        onOpenChange={setShowAuthModal}
+        feature={authFeature}
+      />
     </div>
   )
 }
