@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, vi } from 'vitest'
 import { createMockSupabaseClient, resetMockSupabaseClient } from './mocks/supabase-mock'
+import '@testing-library/jest-dom/vitest'
 
 // Create global mock Supabase client that all tests share
 export const mockSupabaseClient = createMockSupabaseClient()
