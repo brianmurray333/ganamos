@@ -47,7 +47,7 @@ export default function HomePage() {
           <a
             href="/map"
             data-testid="earn-bitcoin-link"
-            className="hidden inline-flex items-center justify-center gap-2 whitespace-nowrap text-base font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-14 rounded-md px-10 w-full max-w-xs bg-green-600 hover:bg-green-700 text-white"
+            className="inline-flex items-center justify-center gap-2 whitespace-nowrap text-base font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 h-14 rounded-md px-10 w-full max-w-xs bg-green-600 hover:bg-green-700 text-white"
           >
             <div className="scale-75">
               <img
