@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { formatSatsValue } from "@/lib/utils"
 import { useDonationModal } from "@/components/donation-modal-provider"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import { AuthPromptModal } from "@/components/auth-prompt-modal"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +54,8 @@ export function DesktopHeader() {
   const [placesService, setPlacesService] = useState<google.maps.places.PlacesService | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const searchContainerRef = useRef<HTMLDivElement>(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [authFeature, setAuthFeature] = useState<'wallet' | 'profile'>('wallet')
 
   // Initialize Google Maps Places services
   // IMPORTANT: All hooks must be called BEFORE any conditional returns
@@ -104,11 +107,6 @@ export function DesktopHeader() {
   // Don't show header on home page, auth pages, or certain pages
   // Note: /post/[id] is allowed on desktop for side-by-side layout
   if (pathname === "/" || pathname.startsWith("/auth") || pathname === "/post/new" || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
-    return null
-  }
-
-  // Don't show for unauthenticated users
-  if (sessionLoaded && !user) {
     return null
   }
 
@@ -218,161 +216,218 @@ export function DesktopHeader() {
 
         {/* Right side - Wallet & Profile */}
         <div className="flex items-center gap-3">
-          {/* Wallet Button */}
-          <Button
-            variant="ghost"
-            onClick={() => router.push("/wallet")}
-            className="flex items-center gap-2 h-10 px-4 rounded-full bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:opacity-60 border border-amber-200 dark:border-amber-800 shadow-md transition-opacity"
-          >
-            <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={18} height={18} />
-            <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
-              {profile ? formatSatsValue(profile.balance) : formatSatsValue(0)}
-            </span>
-          </Button>
-
-          {/* Profile Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                className="flex items-center gap-2 h-10 px-2 rounded-full border border-gray-300 dark:border-gray-600 shadow-md transition-shadow"
+          {user ? (
+            // Authenticated user view
+            <>
+              {/* Wallet Button */}
+              <Button
+                variant="ghost"
+                onClick={() => router.push("/wallet")}
+                className="flex items-center gap-2 h-10 px-4 rounded-full bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:opacity-60 border border-amber-200 dark:border-amber-800 shadow-md transition-opacity"
               >
-                <Menu className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                <div className="relative">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage
-                      src={profile?.avatar_url ?? undefined}
-                      alt={profile?.name ?? "User"}
-                    />
-                    <AvatarFallback className="bg-gray-200 dark:bg-gray-700">
-                      <User className="h-4 w-4 text-gray-500" />
-                    </AvatarFallback>
-                  </Avatar>
-                  {hasPendingRequests && (
-                    <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900"></span>
-                  )}
-                </div>
+                <Image src="/images/bitcoin-logo.png" alt="Bitcoin" width={18} height={18} />
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">
+                  {profile ? formatSatsValue(profile.balance) : formatSatsValue(0)}
+                </span>
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-64 p-2">
-              {/* Menu Items */}
-              <DropdownMenuItem onClick={() => router.push("/profile")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
-                <UserCircle className="h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => router.push("/wallet")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
-                <Wallet className="h-4 w-4" />
-                Wallet
-              </DropdownMenuItem>
 
-              {/* Account Switcher Section */}
-              {connectedAccounts.length > 0 && (
-                <>
-                  <DropdownMenuSeparator className="my-2" />
-                  <div className="px-3 py-1 mb-1">
-                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                      Switch Account
-                    </p>
-                  </div>
-
-                  <DropdownMenuItem
-                    onClick={resetToMainAccount}
-                    className={`flex items-center gap-3 py-2.5 px-3 rounded-lg ${!isConnectedAccount ? "bg-emerald-50 dark:bg-emerald-950" : ""}`}
+              {/* Profile Dropdown */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    className="flex items-center gap-2 h-10 px-2 rounded-full border border-gray-300 dark:border-gray-600 shadow-md transition-shadow"
                   >
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage 
-                        src={!isConnectedAccount ? profile?.avatar_url : mainAccountProfile?.avatar_url ?? undefined} 
-                        alt={mainAccountProfile?.name ?? user?.user_metadata?.full_name ?? "User"} 
-                      />
-                      <AvatarFallback>
-                        <User className="h-4 w-4" />
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="flex-1 font-medium">
-                      {mainAccountProfile?.name || user?.user_metadata?.full_name || "Main Account"}{!isConnectedAccount && " (You)"}
-                    </span>
-                    {!isConnectedAccount && <span className="text-emerald-600">✓</span>}
-                  </DropdownMenuItem>
-
-                  {connectedAccounts.map((account: any) => (
-                    <DropdownMenuItem
-                      key={account.id}
-                      onClick={() => switchToAccount(account.id)}
-                      className={`flex items-center gap-3 py-2.5 px-3 rounded-lg ${activeUserId === account.id ? "bg-emerald-50 dark:bg-emerald-950" : ""}`}
-                    >
+                    <Menu className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                    <div className="relative">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={account.avatar_url ?? undefined} alt={account.name ?? undefined} />
-                        <AvatarFallback>
-                          <User className="h-4 w-4" />
+                        <AvatarImage
+                          src={profile?.avatar_url ?? undefined}
+                          alt={profile?.name ?? "User"}
+                        />
+                        <AvatarFallback className="bg-gray-200 dark:bg-gray-700">
+                          <User className="h-4 w-4 text-gray-500" />
                         </AvatarFallback>
                       </Avatar>
-                      <span className="flex-1 font-medium">{account.name}</span>
-                      {activeUserId === account.id && <span className="text-emerald-600">✓</span>}
-                    </DropdownMenuItem>
-                  ))}
-                </>
-              )}
+                      {hasPendingRequests && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-gray-900"></span>
+                      )}
+                    </div>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-2">
+                  {/* Menu Items */}
+                  <DropdownMenuItem onClick={() => router.push("/profile")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
+                    <UserCircle className="h-4 w-4" />
+                    Profile
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push("/wallet")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
+                    <Wallet className="h-4 w-4" />
+                    Wallet
+                  </DropdownMenuItem>
 
-              <DropdownMenuSeparator className="my-2" />
-              
-              {/* Theme Switcher */}
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.preventDefault()
-                  setTheme(theme === "dark" ? "light" : "dark")
-                }}
-                className="py-2.5 px-3 rounded-lg flex items-center gap-3"
-              >
-                {theme === "dark" ? (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-yellow-300"
-                  >
-                    <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2" />
-                    <path d="M12 20v2" />
-                    <path d="m4.93 4.93 1.41 1.41" />
-                    <path d="m17.66 17.66 1.41 1.41" />
-                    <path d="M2 12h2" />
-                    <path d="M20 12h2" />
-                    <path d="m6.34 17.66-1.41 1.41" />
-                    <path d="m19.07 4.93-1.41 1.41" />
-                  </svg>
-                ) : (
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-                  </svg>
-                )}
-                {theme === "dark" ? "Light Mode" : "Dark Mode"}
-              </DropdownMenuItem>
+                  {/* Account Switcher Section */}
+                  {connectedAccounts.length > 0 && (
+                    <>
+                      <DropdownMenuSeparator className="my-2" />
+                      <div className="px-3 py-1 mb-1">
+                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                          Switch Account
+                        </p>
+                      </div>
 
-              <DropdownMenuSeparator className="my-2" />
-              <DropdownMenuItem onClick={() => router.push("/auth/logout")} className="py-2.5 px-3 rounded-lg text-red-600 dark:text-red-400 flex items-center gap-3 active:opacity-60 transition-opacity">
-                <LogOut className="h-4 w-4" />
-                Log out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      <DropdownMenuItem
+                        onClick={resetToMainAccount}
+                        className={`flex items-center gap-3 py-2.5 px-3 rounded-lg ${!isConnectedAccount ? "bg-emerald-50 dark:bg-emerald-950" : ""}`}
+                      >
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage 
+                            src={!isConnectedAccount ? (profile?.avatar_url ?? undefined) : (mainAccountProfile?.avatar_url ?? undefined)} 
+                            alt={mainAccountProfile?.name ?? user?.user_metadata?.full_name ?? "User"} 
+                          />
+                          <AvatarFallback>
+                            <User className="h-4 w-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="flex-1 font-medium">
+                          {mainAccountProfile?.name || user?.user_metadata?.full_name || "Main Account"}{!isConnectedAccount && " (You)"}
+                        </span>
+                        {!isConnectedAccount && <span className="text-emerald-600">✓</span>}
+                      </DropdownMenuItem>
+
+                      {connectedAccounts.map((account: any) => (
+                        <DropdownMenuItem
+                          key={account.id}
+                          onClick={() => switchToAccount(account.id)}
+                          className={`flex items-center gap-3 py-2.5 px-3 rounded-lg ${activeUserId === account.id ? "bg-emerald-50 dark:bg-emerald-950" : ""}`}
+                        >
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={account.avatar_url ?? undefined} alt={account.name ?? undefined} />
+                            <AvatarFallback>
+                              <User className="h-4 w-4" />
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="flex-1 font-medium">{account.name}</span>
+                          {activeUserId === account.id && <span className="text-emerald-600">✓</span>}
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+
+                  <DropdownMenuSeparator className="my-2" />
+                  
+                  {/* Theme Switcher */}
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault()
+                      setTheme(theme === "dark" ? "light" : "dark")
+                    }}
+                    className="py-2.5 px-3 rounded-lg flex items-center gap-3"
+                  >
+                    {theme === "dark" ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-yellow-300"
+                      >
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2" />
+                        <path d="M12 20v2" />
+                        <path d="m4.93 4.93 1.41 1.41" />
+                        <path d="m17.66 17.66 1.41 1.41" />
+                        <path d="M2 12h2" />
+                        <path d="M20 12h2" />
+                        <path d="m6.34 17.66-1.41 1.41" />
+                        <path d="m19.07 4.93-1.41 1.41" />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                      </svg>
+                    )}
+                    {theme === "dark" ? "Light Mode" : "Dark Mode"}
+                  </DropdownMenuItem>
+
+                  <DropdownMenuSeparator className="my-2" />
+                  <DropdownMenuItem onClick={() => router.push("/auth/logout")} className="py-2.5 px-3 rounded-lg text-red-600 dark:text-red-400 flex items-center gap-3 active:opacity-60 transition-opacity">
+                    <LogOut className="h-4 w-4" />
+                    Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          ) : (
+            // Anonymous user view
+            sessionLoaded && (
+              <>
+                <Link 
+                  href="/map" 
+                  className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                >
+                  Map
+                </Link>
+                <button
+                  onClick={() => {
+                    setAuthFeature('wallet')
+                    setShowAuthModal(true)
+                  }}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Wallet
+                </button>
+                <button
+                  onClick={() => {
+                    setAuthFeature('profile')
+                    setShowAuthModal(true)
+                  }}
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                >
+                  <UserCircle className="w-4 h-4" />
+                  Profile
+                </button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => router.push('/auth/login')}
+                  className="h-9"
+                >
+                  Log In
+                </Button>
+                <Button 
+                  onClick={() => router.push('/auth/register')}
+                  className="h-9"
+                >
+                  Sign Up
+                </Button>
+              </>
+            )
+          )}
         </div>
       </div>
+
+      {/* Auth Prompt Modal */}
+      <AuthPromptModal
+        open={showAuthModal}
+        onOpenChange={setShowAuthModal}
+        feature={authFeature}
+      />
     </header>
   )
 }
