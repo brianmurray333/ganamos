@@ -384,44 +384,51 @@ export async function GET(request: NextRequest) {
       console.warn("[Device Config] Error checking for new jobs:", error)
     }
 
+    // Build config object - only include rejection fields if there's an actual rejection
+    const config: Record<string, any> = {
+      deviceId: device.id,
+      petName: device.pet_name,
+      petType: device.pet_type,
+      userId: device.user_id,
+      userName: profile?.name || "User",
+      balance: profile?.balance || 0,
+      coins: deviceCoins, // Per-device coin balance (synced with firmware's local balance)
+      coinsEarnedSinceLastSync: coinsEarnedSinceLastSync, // Coins earned from transactions since last sync
+      btcPrice: btcPrice,
+      pollInterval: 30, // seconds
+      serverUrl:
+        process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3457",
+      lastMessage: lastMessage, // Include the last transaction message
+      lastMessageType: lastMessageType, // "fix" for fix rewards, "transfer" for transfers
+      lastPostTitle: lastPostTitle, // Post title for fix rewards
+      lastSenderName: lastSenderName, // Sender name for internal transfers
+      // Pet care costs (configurable, defaults provided)
+      // Based on 1k sats/day baseline - allows 10 games/day at 100 coins each
+      petFeedCost: 100, // Default feed cost (can be overridden by food selection: 100, 200, 300, 400, 500)
+      petHealCost: 200, // Coins to heal pet (not currently used)
+      gameCost: 100, // Coins per game attempt (budgets 10 plays/day for 1k sats/day earnings)
+      gameReward: 15, // Happiness increase per successful game
+      // Economy parameters (time-based decay only, no cooldowns)
+      hungerDecayPer24h: 40.0, // Points per 24 hours (needs 2-4 feeds/day)
+      happinessDecayPer24h: 25.0, // Points per 24 hours (needs 1-2 plays/day)
+      // New job notification
+      hasNewJob: hasNewJob,
+      newJobTitle: newJobTitle,
+      newJobReward: newJobReward,
+    }
+    
+    // Only include rejection fields if there's actually a rejection to show
+    // This prevents Arduino from displaying "Fix rejected null" when there's no rejection
+    if (device.last_rejection_id) {
+      config.lastRejectionId = device.last_rejection_id
+      config.rejectionMessage = device.rejection_message || "Try again!"
+      config.rejectionPostTitle = rejectionPostTitle || "Issue"
+    }
+
     // Return device configuration and user data with explicit no-cache headers
     const response = NextResponse.json({
       success: true,
-      config: {
-        deviceId: device.id,
-        petName: device.pet_name,
-        petType: device.pet_type,
-        userId: device.user_id,
-        userName: profile?.name || "User",
-        balance: profile?.balance || 0,
-        coins: deviceCoins, // Per-device coin balance (synced with firmware's local balance)
-        coinsEarnedSinceLastSync: coinsEarnedSinceLastSync, // Coins earned from transactions since last sync
-        btcPrice: btcPrice,
-        pollInterval: 30, // seconds
-        serverUrl:
-          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3457",
-        lastMessage: lastMessage, // Include the last transaction message
-        lastMessageType: lastMessageType, // "fix" for fix rewards, "transfer" for transfers
-        lastPostTitle: lastPostTitle, // Post title for fix rewards
-        lastSenderName: lastSenderName, // Sender name for internal transfers
-        // Pet care costs (configurable, defaults provided)
-        // Based on 1k sats/day baseline - allows 10 games/day at 100 coins each
-        petFeedCost: 100, // Default feed cost (can be overridden by food selection: 100, 200, 300, 400, 500)
-        petHealCost: 200, // Coins to heal pet (not currently used)
-        gameCost: 100, // Coins per game attempt (budgets 10 plays/day for 1k sats/day earnings)
-        gameReward: 15, // Happiness increase per successful game
-        // Economy parameters (time-based decay only, no cooldowns)
-        hungerDecayPer24h: 40.0, // Points per 24 hours (needs 2-4 feeds/day)
-        happinessDecayPer24h: 25.0, // Points per 24 hours (needs 1-2 plays/day)
-        // New job notification
-        hasNewJob: hasNewJob,
-        newJobTitle: newJobTitle,
-        newJobReward: newJobReward,
-        // Fix rejection notification
-        lastRejectionId: device.last_rejection_id || null,
-        rejectionMessage: device.rejection_message || null,
-        rejectionPostTitle: rejectionPostTitle || null, // Post title extracted from rejection message
-      },
+      config,
     })
     
     // Add explicit no-cache headers to prevent Vercel edge caching
