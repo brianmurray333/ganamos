@@ -1626,12 +1626,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 <div className="container px-4 pt-4 pb-6 lg:pt-4 lg:pb-8 mx-auto max-w-md lg:max-w-none">
             {/* Updated image display logic to handle anonymous reviews */}
             {/* Show before/after for post owner, group admins, or completed fixes */}
-            {((post.under_review &&
+            {/* Fixed takes priority over under_review */}
+            {((post.fixed && post.fixed_image_url) ||
+            (!post.fixed && post.under_review &&
             post.submitted_fix_image_url &&
             user &&
             post.user_id != null &&
-            (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin)) ||
-          (post.fixed && post.fixed_image_url)) ? (
+            (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin))) ? (
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div>
                 <div 
@@ -1652,10 +1653,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <div>
                 <div 
                   className="relative w-full h-40 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                  onClick={() => openFullscreenImage((post.under_review ? post.submitted_fix_image_url : post.fixed_image_url) || "/placeholder.svg")}
+                  onClick={() => openFullscreenImage((post.fixed ? post.fixed_image_url : post.submitted_fix_image_url) || "/placeholder.svg")}
                 >
                   <Image
-                    src={(post.under_review ? post.submitted_fix_image_url : post.fixed_image_url) || "/placeholder.svg"}
+                    src={(post.fixed ? post.fixed_image_url : post.submitted_fix_image_url) || "/placeholder.svg"}
                     alt="After"
                     fill
                     className="object-cover"
@@ -1793,7 +1794,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <div className="flex flex-col gap-1">
               {/* First line: Status, Time ago, and Creator */}
               <div className="flex items-center text-sm text-muted-foreground flex-wrap gap-x-2">
-                {post.fixed && (
+                {/* Status indicators are mutually exclusive: fixed takes priority over under_review */}
+                {post.fixed ? (
                   <>
                     <div className="flex items-center whitespace-nowrap">
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5"></span>
@@ -1803,8 +1805,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     </div>
                     <span className="hidden sm:inline">•</span>
                   </>
-                )}
-                {post.under_review && (
+                ) : post.under_review ? (
                   <>
                     <div className="flex items-center whitespace-nowrap">
                       <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 mr-1.5"></span>
@@ -1812,8 +1813,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     </div>
                     <span className="hidden sm:inline">•</span>
                   </>
-                )}
-                {!post.fixed && !post.under_review && (
+                ) : (
                   <>
                     <div className="flex items-center whitespace-nowrap">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1.5"></span>
@@ -1839,7 +1839,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 )}
               </div>
               </div>
-              {post.under_review && post.submitted_fix_by_name && (
+              {!post.fixed && post.under_review && post.submitted_fix_by_name && (
                 <div className="flex items-center mt-1 text-sm text-muted-foreground">
                   <span>Fix submitted by {post.submitted_fix_by_name}</span>
                 </div>
@@ -1953,7 +1953,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </div>
           )}
           
-          {post.under_review && post.submitted_fix_image_url && (
+          {!post.fixed && post.under_review && post.submitted_fix_image_url && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-6">
               <div className="flex items-center mb-1">
                 {" "}
@@ -1996,7 +1996,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </div>
           )}
           {/* Check if this is the post owner or group admin viewing a fix under review */}
-          {post.under_review &&
+          {!post.fixed &&
+          post.under_review &&
           post.submitted_fix_image_url &&
           user &&
           post.user_id != null &&
