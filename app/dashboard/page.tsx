@@ -77,7 +77,9 @@ export default function DashboardPage() {
   const [filterCleared, setFilterCleared] = useState(false)
   const [showBalancePulse, setShowBalancePulse] = useState(false)
   const prevBalance = useRef<number | null>(null)
-  const { isOpen: showDonationModal, closeDonationModal } = useDonationModal()
+  const donationModal = useDonationModal()
+  const showDonationModal = donationModal?.isOpen ?? false
+  const closeDonationModal = donationModal?.closeDonationModal ?? (() => {})
 
   const prevDeps = useRef({ user, loading, router })
   const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -104,24 +106,13 @@ export default function DashboardPage() {
     }
   }, [cache, isCacheFresh])
 
-  // Add session guard with useEffect
-  useEffect(() => {
-    if (sessionLoaded && !session) {
-      console.log("Dashboard - No session after loading, redirecting to login")
-      router.push("/auth/login")
-    }
-  }, [session, sessionLoaded, router])
+  // Anonymous users are now allowed - no session redirect
 
   useEffect(() => {
     if (prevDeps.current.router !== router) {
       console.log("Router object changed.")
     }
     prevDeps.current = { user, loading, router }
-
-    if (!loading && !user) {
-      router.push("/auth/login")
-      return
-    }
 
     // Always set location to Downtown
     if (typeof window !== "undefined") {
@@ -478,14 +469,14 @@ export default function DashboardPage() {
     }
   }, [supabase, session, currentLocation, pageSize, activeFilters])
 
-  // Initial data loading effect
+  // Initial data loading effect - works for both anonymous and authenticated users
   useEffect(() => {
-    if (!loading && user && session && activeFilters && !initialDataLoaded.current) {
-      console.log("Dashboard - Initial data fetch triggered")
+    if (sessionLoaded && activeFilters && !initialDataLoaded.current) {
+      console.log("Dashboard - Initial data fetch triggered", { user: !!user, session: !!session })
       fetchPosts(1, activeFilters)
       initialDataLoaded.current = true
     }
-  }, [loading, user, session, activeFilters])
+  }, [sessionLoaded, user, session, activeFilters, fetchPosts])
 
   // Handle page visibility changes
   useEffect(() => {
@@ -559,18 +550,8 @@ export default function DashboardPage() {
     localStorage.setItem('activeFilters', JSON.stringify(newFilters))
   }
 
-  // Session guard with early return
-  if (sessionLoaded && !session) {
-    return null // Will redirect in useEffect
-  }
-
-  // IMPORTANT CHANGE: Skip the full-screen loading state when we're coming from auth
-  // Only show loading state if we're not in the auth flow (sessionLoaded is true but still loading user data)
-  if (!sessionLoaded && (loading || !user)) {
-    // We're still in the auth flow, don't show another loading screen
-    return null
-  } else if (loading || !user) {
-    // We're not in the auth flow, but still loading user data (e.g., after a refresh)
+  // Show loading state only when session is still being loaded
+  if (!sessionLoaded) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">Loading...</div>
@@ -588,10 +569,21 @@ export default function DashboardPage() {
         {/* Left Panel - Feed (scrollable) - Thinner */}
         <div className="w-full lg:w-[380px] xl:w-[420px] lg:flex-shrink-0 lg:overflow-y-auto lg:border-r lg:border-gray-200 lg:dark:border-gray-800">
           
-          {/* Mobile Header - Floating sats balance pill */}
+          {/* Mobile Header - Floating sats balance pill OR sign-up CTA for anonymous */}
           <div className="lg:hidden sticky top-0 z-10 bg-gradient-to-b from-background via-background to-transparent pb-2 w-full flex justify-center will-change-transform" style={{ contain: 'layout style paint', transform: 'translate3d(0,0,0)' }}>
             <div className="w-full max-w-md pt-3 px-4 relative min-h-[56px]">
-              {isHeaderReady() && (
+              {!user ? (
+                // Anonymous user - show sign-up CTA
+                <div className="flex items-center justify-end gap-2 animate-in fade-in duration-200 fill-mode-both">
+                  <Button 
+                    onClick={() => router.push("/auth/register")}
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    Sign Up to Earn
+                  </Button>
+                </div>
+              ) : isHeaderReady() && (
             // Header content - fades in when ready
             <div className="flex items-center justify-end animate-in fade-in duration-200 fill-mode-both">
               {/* Sats Balance Pill */}
