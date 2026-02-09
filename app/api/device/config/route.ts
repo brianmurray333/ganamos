@@ -417,12 +417,17 @@ export async function GET(request: NextRequest) {
       newJobReward: newJobReward,
     }
     
-    // Only include rejection fields if there's actually a rejection to show
-    // This prevents Arduino from displaying "Fix rejected null" when there's no rejection
+    // Always send rejection fields - empty strings when no rejection to clear Arduino's cached state
+    // Using empty strings instead of null/omitting to explicitly signal "no rejection"
     if (device.last_rejection_id) {
       config.lastRejectionId = device.last_rejection_id
       config.rejectionMessage = device.rejection_message || "Try again!"
       config.rejectionPostTitle = rejectionPostTitle || "Issue"
+    } else {
+      // Explicitly send empty strings to clear any cached rejection on the device
+      config.lastRejectionId = ""
+      config.rejectionMessage = ""
+      config.rejectionPostTitle = ""
     }
 
     // Return device configuration and user data with explicit no-cache headers
