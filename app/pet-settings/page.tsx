@@ -100,6 +100,7 @@ export default function PetSettingsPage() {
 
     setIsSaving(true)
     try {
+      const targetUserId = activeUserId || user?.id
       const response = await fetch('/api/device/update', {
         method: 'POST',
         headers: {
@@ -109,6 +110,7 @@ export default function PetSettingsPage() {
           deviceId: device.id,
           petName: petName.trim(),
           petType,
+          activeUserId: targetUserId,
         }),
       })
 
@@ -141,6 +143,7 @@ export default function PetSettingsPage() {
 
     setIsUnpairing(true)
     try {
+      const targetUserId = activeUserId || user?.id
       const response = await fetch('/api/device/remove', {
         method: 'POST',
         headers: {
@@ -148,6 +151,7 @@ export default function PetSettingsPage() {
         },
         body: JSON.stringify({
           deviceId: device.id,
+          activeUserId: targetUserId,
         }),
       })
 
