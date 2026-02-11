@@ -7,6 +7,37 @@ export async function middleware(req: NextRequest) {
   const host = req.headers.get("host") || ""
   const path = req.nextUrl.pathname
 
+  // SECURITY: Block malicious path patterns (webshell/backdoor scanners)
+  // These are common attack patterns that should never be valid requests
+  const suspiciousPatterns = [
+    /\.php$/i,                    // PHP files - we're Next.js, not PHP
+    /\.asp$/i,                    // ASP files
+    /\.aspx$/i,                   // ASPX files
+    /\.cgi$/i,                    // CGI scripts
+    /\/wp-admin/i,                // WordPress admin
+    /\/wp-content/i,              // WordPress content
+    /\/wp-includes/i,             // WordPress includes
+    /\/xmlrpc\.php/i,             // WordPress XML-RPC
+    /\/\.env/i,                   // Environment files
+    /\/\.git/i,                   // Git directories
+    /\/\.well-known\/.*\.php/i,   // PHP in well-known
+    /\/admin\/.*\.php/i,          // PHP in admin paths
+    /\/cgi-bin/i,                 // CGI bin directory
+    /\/phpmyadmin/i,              // phpMyAdmin
+    /\/pma\//i,                   // phpMyAdmin shorthand
+    /\/mysql/i,                   // MySQL admin panels
+    /\/config\.(php|bak|old)/i,   // Config file probing
+    /\/backup/i,                  // Backup directory probing
+  ]
+
+  const isSuspicious = suspiciousPatterns.some(pattern => pattern.test(path))
+  if (isSuspicious) {
+    // Return 404 immediately - don't give attackers any information
+    // Log for monitoring (but keep it minimal to avoid log spam)
+    console.log(`[MW-SECURITY] Blocked suspicious request: ${path}`)
+    return new NextResponse(null, { status: 404 })
+  }
+
   // DEBUG: Log what host we're seeing (to diagnose www redirect)
   console.log(`[MW] host="${host}" path="${path}" url="${req.url}"`)
 
@@ -141,19 +172,13 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/",
-    "/pet",
-    "/setup",
-    "/order/:path*",
-    "/satoshi-pet/:path*",
-    "/dashboard/:path*",
-    "/wallet/:path*",
-    "/profile/:path*",
-    "/post/:path*",
-    "/auth/login",
-    "/auth/register",
-    "/auth/phone",
-    "/auth/suspended",
-    "/admin/:path*",
+    /*
+     * Match all request paths except:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder assets
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff|woff2)$).*)",
   ],
 }
