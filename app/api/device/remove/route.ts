@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { deviceId } = body
+    const { deviceId, activeUserId } = body
 
     if (!deviceId) {
       return NextResponse.json(
@@ -38,12 +38,35 @@ export async function POST(request: Request) {
       )
     }
 
+    // Determine the target user ID (supports connected accounts)
+    const targetUserId = activeUserId || user.id
+
+    // Verify permission: must be own account OR a connected account they manage
+    if (targetUserId !== user.id) {
+      const { data: connection } = await supabase
+        .from('connected_accounts')
+        .select('primary_user_id')
+        .eq('connected_user_id', targetUserId)
+        .eq('primary_user_id', user.id)
+        .single()
+
+      if (!connection) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Unauthorized to modify this account's devices",
+          },
+          { status: 403 }
+        )
+      }
+    }
+
     // Delete the device
     const { error: deleteError } = await supabase
       .from("devices")
       .delete()
       .eq("id", deviceId)
-      .eq("user_id", user.id) // Ensure user owns this device
+      .eq("user_id", targetUserId) // Use target user ID (supports connected accounts)
 
     if (deleteError) {
       console.error("Error deleting device:", deleteError)
