@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Database } from './database.types'
 import { sendEmail } from './email'
+import { lndRequest } from './lightning'
 
 let supabase: SupabaseClient<Database> | null = null
 
@@ -30,6 +31,67 @@ function getSupabaseClient() {
   return supabase
 }
 
+/**
+ * Get node balance directly from LND API (no HTTP self-call)
+ * This avoids rate limiting and bot protection issues
+ */
+async function getNodeBalanceDirect(): Promise<{
+  success: boolean
+  balances: {
+    channel_balance: number
+    pending_balance: number
+    onchain_balance: number
+    total_balance: number
+  }
+  error?: string
+}> {
+  console.log('[NODE BALANCE] Fetching balance directly from LND...')
+  
+  try {
+    // Get channel balance from LND
+    const channelResult = await lndRequest("/v1/balance/channels")
+    
+    if (!channelResult.success) {
+      console.error("[NODE BALANCE] Failed to get channel balance:", channelResult.error)
+      return {
+        success: false,
+        balances: { channel_balance: 0, pending_balance: 0, onchain_balance: 0, total_balance: 0 },
+        error: channelResult.error
+      }
+    }
+
+    const channelBalance = parseInt(channelResult.data.balance || "0")
+    const pendingBalance = parseInt(channelResult.data.pending_open_balance || "0")
+    
+    // Get on-chain balance
+    const onChainResult = await lndRequest("/v1/balance/blockchain")
+    const onChainBalance = onChainResult.success 
+      ? parseInt(onChainResult.data.confirmed_balance || "0")
+      : 0
+
+    const totalBalance = channelBalance + pendingBalance + onChainBalance
+    
+    console.log(`[NODE BALANCE] Channel: ${channelBalance}, Pending: ${pendingBalance}, On-chain: ${onChainBalance}, Total: ${totalBalance}`)
+
+    return {
+      success: true,
+      balances: {
+        channel_balance: channelBalance,
+        pending_balance: pendingBalance,
+        onchain_balance: onChainBalance,
+        total_balance: totalBalance
+      }
+    }
+  } catch (error) {
+    console.error('[NODE BALANCE] Error fetching balance:', error)
+    return {
+      success: false,
+      balances: { channel_balance: 0, pending_balance: 0, onchain_balance: 0, total_balance: 0 },
+      error: error instanceof Error ? error.message : String(error)
+    }
+  }
+}
+
 async function checkVoltageAPI(): Promise<{
   status: 'online' | 'offline' | 'error'
   nodeBalance: number
@@ -39,22 +101,8 @@ async function checkVoltageAPI(): Promise<{
   console.log('[API HEALTH] Checking Voltage API...')
   
   try {
-    // Get node balance from Voltage
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                   (process.env.NODE_ENV === 'production' ? 'https://www.ganamos.earth' : 'http://localhost:3457')
-    
-    const response = await fetch(`${appUrl}/api/admin/node-balance`)
-    
-    if (!response.ok) {
-      return {
-        status: 'error',
-        nodeBalance: 0,
-        discrepancy: 0,
-        error: `HTTP ${response.status}: ${response.statusText}`
-      }
-    }
-    
-    const nodeData = await response.json()
+    // Get node balance directly from LND (no HTTP self-call)
+    const nodeData = await getNodeBalanceDirect()
     
     if (!nodeData.success) {
       return {
@@ -627,30 +675,10 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
   const yesterdayIso = yesterday.toISOString()
   console.log('[DATA DEBUG] Yesterday ISO:', yesterdayIso)
 
-  // Get node balance
-  // In production, use the production domain; in development, use localhost
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 
-                 (process.env.NODE_ENV === 'production' ? 'https://www.ganamos.earth' : 'http://localhost:3457')
-  console.log('[DATA DEBUG] App URL:', appUrl)
-  console.log('[DATA DEBUG] NEXT_PUBLIC_APP_URL:', process.env.NEXT_PUBLIC_APP_URL)
-  console.log('[DATA DEBUG] VERCEL_URL:', process.env.VERCEL_URL)
-  console.log('[DATA DEBUG] About to fetch node balance from:', `${appUrl}/api/admin/node-balance`)
-  
-  let nodeBalanceData
-  try {
-    const nodeBalanceResponse = await fetch(`${appUrl}/api/admin/node-balance`)
-    console.log('[DATA DEBUG] Node balance response status:', nodeBalanceResponse.status)
-    console.log('[DATA DEBUG] Node balance response ok:', nodeBalanceResponse.ok)
-    
-    nodeBalanceData = nodeBalanceResponse.ok 
-      ? await nodeBalanceResponse.json()
-      : { balances: { channel_balance: 0, pending_balance: 0, onchain_balance: 0, total_balance: 0 } }
-    
-    console.log('[DATA DEBUG] Node balance data:', JSON.stringify(nodeBalanceData, null, 2))
-  } catch (fetchError) {
-    console.error('[DATA DEBUG] Error fetching node balance:', fetchError)
-    nodeBalanceData = { balances: { channel_balance: 0, pending_balance: 0, onchain_balance: 0, total_balance: 0 } }
-  }
+  // Get node balance directly from LND (no HTTP self-call to avoid rate limiting)
+  console.log('[DATA DEBUG] Fetching node balance directly from LND...')
+  const nodeBalanceData = await getNodeBalanceDirect()
+  console.log('[DATA DEBUG] Node balance data:', JSON.stringify(nodeBalanceData, null, 2))
 
   const supabaseClient = getSupabaseClient()
   
