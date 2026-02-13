@@ -407,7 +407,7 @@ export async function GET(request: NextRequest) {
       petFeedCost: 100, // Default feed cost (can be overridden by food selection: 100, 200, 300, 400, 500)
       petHealCost: 200, // Coins to heal pet (not currently used)
       gameCost: 100, // Coins per game attempt (budgets 10 plays/day for 1k sats/day earnings)
-      gameReward: 15, // Happiness increase per successful game
+      gameReward: 50, // Happiness increase per successful game
       // Economy parameters (time-based decay only, no cooldowns)
       hungerDecayPer24h: 40.0, // Points per 24 hours (needs 2-4 feeds/day)
       happinessDecayPer24h: 25.0, // Points per 24 hours (needs 1-2 plays/day)

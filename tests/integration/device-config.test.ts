@@ -196,7 +196,7 @@ describe('GET /api/device/config', () => {
       expect(data.config.petFeedCost).toBe(100)
       expect(data.config.petHealCost).toBe(200)
       expect(data.config.gameCost).toBe(100)
-      expect(data.config.gameReward).toBe(15)
+      expect(data.config.gameReward).toBe(50)
       expect(data.config.hungerDecayPer24h).toBe(40.0)
       expect(data.config.happinessDecayPer24h).toBe(25.0)
     })
