@@ -136,7 +136,7 @@ function MapViewComponent({
     
     const fetchLocation = async () => {
       try {
-        const location = await getCurrentLocationWithName({ useCache: true })
+        const location = await getCurrentLocationWithName({ useCache: true, preferCached: true })
         if (location) {
           setInternalUserLocation({
             latitude: location.latitude,

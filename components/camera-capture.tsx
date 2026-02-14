@@ -58,18 +58,41 @@ export function CameraCapture({
     }
   }, [])
 
-  // Helper to check if we've already been granted camera access this session
+  // Helper to check if we've already been granted camera access
+  // Uses localStorage instead of sessionStorage so permission state persists across PWA sessions
+  const CAMERA_PERMISSION_KEY = 'ganamos_camera_permission'
+  const CAMERA_PERMISSION_DURATION = 30 * 24 * 60 * 60 * 1000 // 30 days
+
   const getCameraPermissionFromStorage = () => {
     if (typeof window === 'undefined') return null
-    return sessionStorage.getItem('camera_permission_granted') === 'true'
+    try {
+      const stored = localStorage.getItem(CAMERA_PERMISSION_KEY)
+      if (stored) {
+        const { granted, timestamp } = JSON.parse(stored)
+        // Check if stored permission is still valid (30 days)
+        if (granted && Date.now() - timestamp < CAMERA_PERMISSION_DURATION) {
+          return true
+        }
+      }
+    } catch {
+      // Silently fail
+    }
+    return false
   }
 
   const saveCameraPermissionToStorage = (granted: boolean) => {
     if (typeof window === 'undefined') return
-    if (granted) {
-      sessionStorage.setItem('camera_permission_granted', 'true')
-    } else {
-      sessionStorage.removeItem('camera_permission_granted')
+    try {
+      if (granted) {
+        localStorage.setItem(CAMERA_PERMISSION_KEY, JSON.stringify({ 
+          granted: true, 
+          timestamp: Date.now() 
+        }))
+      } else {
+        localStorage.removeItem(CAMERA_PERMISSION_KEY)
+      }
+    } catch {
+      // Silently fail
     }
   }
 
