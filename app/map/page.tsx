@@ -54,7 +54,7 @@ export default function MapPage() {
 
       try {
         // Always try fresh location first, fallback to cached if available
-        const location = await getCurrentLocationWithName({ useCache: true })
+        const location = await getCurrentLocationWithName({ useCache: true, preferCached: true })
         if (location) {
           setUserLocation({
             latitude: location.latitude,

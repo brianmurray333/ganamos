@@ -246,7 +246,7 @@ function DashboardMapComponent({ posts, onNewIssue, mapInstance: externalMapInst
 
     const initMap = async () => {
       try {
-        const location = await getCurrentLocationWithName()
+        const location = await getCurrentLocationWithName({ preferCached: true })
         if (location) {
           setUserLocation({
             latitude: location.lat,

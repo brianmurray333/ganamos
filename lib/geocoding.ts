@@ -32,12 +32,16 @@ export interface LocationPermissionState {
 
 const LOCATION_PERMISSION_KEY = 'ganamos_location_permission'
 const CACHED_LOCATION_KEY = 'ganamos_cached_location'
-const PERMISSION_CACHE_DURATION = 14 * 24 * 60 * 60 * 1000 // 2 weeks
+const PERMISSION_CACHE_DURATION = 6 * 30 * 24 * 60 * 60 * 1000 // ~6 months - how long we trust the user's "granted" permission state
+const LOCATION_FRESH_DURATION = 4 * 60 * 60 * 1000 // 4 hours - preferCached callers skip GPS lookup if coordinates are this recent
 
 // In-memory cache for geocoding results to prevent duplicate API calls
 const geocodingCache = new Map<string, {result: string, timestamp: number}>()
 const geocodingPromises = new Map<string, Promise<string>>()
 const GEOCODING_CACHE_DURATION = 60 * 60 * 1000 // 1 hour
+
+// In-memory deduplication for concurrent getCurrentPosition calls
+let pendingLocationPromise: Promise<LocationData | null> | null = null
 
 // Get stored location permission state
 export function getLocationPermissionState(): LocationPermissionState {
@@ -49,7 +53,7 @@ export function getLocationPermissionState(): LocationPermissionState {
     const stored = localStorage.getItem(LOCATION_PERMISSION_KEY)
     if (stored) {
       const state = JSON.parse(stored) as LocationPermissionState
-      // Check if cache is still valid (24 hours)
+      // Check if cache is still valid (2 weeks)
       if (Date.now() - state.lastChecked < PERMISSION_CACHE_DURATION) {
         return state
       }
@@ -83,7 +87,7 @@ export function getCachedLocation(): LocationData | null {
     const stored = localStorage.getItem(CACHED_LOCATION_KEY)
     if (stored) {
       const cached = JSON.parse(stored)
-      // Check if cache is still valid (24 hours)
+      // Check if cache is still valid (2 weeks)
       if (Date.now() - cached.timestamp < PERMISSION_CACHE_DURATION) {
         return cached.location
       }
@@ -93,6 +97,23 @@ export function getCachedLocation(): LocationData | null {
   }
 
   return null
+}
+
+// Check if cached location is fresh enough to return without calling the browser API
+export function isCachedLocationFresh(): boolean {
+  if (typeof window === 'undefined') return false
+
+  try {
+    const stored = localStorage.getItem(CACHED_LOCATION_KEY)
+    if (stored) {
+      const cached = JSON.parse(stored)
+      return Date.now() - cached.timestamp < LOCATION_FRESH_DURATION
+    }
+  } catch (error) {
+    // Silently fail
+  }
+
+  return false
 }
 
 // Save location data to cache
@@ -272,8 +293,9 @@ export async function getStandardizedLocation(
 export async function getCurrentLocationWithName(options?: { 
   forceRefresh?: boolean 
   useCache?: boolean 
+  preferCached?: boolean // When true, returns cached location without calling browser API if cache is fresh (< 1 hour)
 }): Promise<LocationData | null> {
-  const { forceRefresh = false, useCache = true } = options || {}
+  const { forceRefresh = false, useCache = true, preferCached = false } = options || {}
 
   // Check permission state first
   const permissionState = getLocationPermissionState()
@@ -284,8 +306,8 @@ export async function getCurrentLocationWithName(options?: {
     if (useCache) {
       const cachedLocation = getCachedLocation()
       if (cachedLocation) {
-        console.log('Permission denied, using cached location data')
-        return Promise.resolve(cachedLocation)
+        console.log('📍 Permission denied, using cached location data')
+        return cachedLocation
       }
     }
     const error: GeolocationPositionError = {
@@ -298,10 +320,29 @@ export async function getCurrentLocationWithName(options?: {
     throw error
   }
 
+  // When preferCached is true, return cached location if it's fresh enough (< 1 hour old).
+  // This avoids calling getCurrentPosition entirely, preventing the browser permission prompt.
+  // Used by non-critical flows like PostCard travel times, dashboard map, donate page.
+  // The post flow should NOT use this — it needs real-time location precision.
+  if (preferCached && !forceRefresh && permissionState.status === 'granted') {
+    const cachedLocation = getCachedLocation()
+    if (cachedLocation && isCachedLocationFresh()) {
+      console.log('📍 Returning fresh cached location (< 1 hour old), skipping browser API call')
+      return cachedLocation
+    }
+  }
+
+  // Deduplication: if there's already a pending location request, share it
+  // This prevents multiple components (e.g. PostCard) from triggering simultaneous prompts
+  if (pendingLocationPromise && !forceRefresh) {
+    console.log('📍 Sharing existing pending location request')
+    return pendingLocationPromise
+  }
+
   // Get cached location for fallback (if permission granted and fresh fetch fails)
   const cachedLocationForFallback = useCache ? getCachedLocation() : null
 
-  return new Promise((resolve, reject) => {
+  const locationPromise = new Promise<LocationData | null>((resolve, reject) => {
     if (!navigator.geolocation) {
       const error: GeolocationPositionError = {
         code: 0, // Custom code for "not supported"
@@ -361,12 +402,12 @@ export async function getCurrentLocationWithName(options?: {
           // For other errors (timeout, unavailable, etc.), try cached location as fallback
           // if permission was previously granted
           if (permissionState.status === 'granted' && cachedLocationForFallback) {
-            console.log('Fresh location failed, using cached location as fallback')
+            console.log('📍 Fresh location failed, using cached location as fallback')
             resolve(cachedLocationForFallback)
             return
           }
           // For other errors, don't change permission state
-          console.log('Geolocation failed but not due to permission denial')
+          console.log('📍 Geolocation failed but not due to permission denial')
         }
         
         reject(error)
@@ -374,6 +415,19 @@ export async function getCurrentLocationWithName(options?: {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }, // Use 5-minute cache for position
     )
   })
+
+  // Store the pending promise for deduplication, clear it when done
+  // Use .then(onResolve, onReject) instead of .finally() to avoid creating
+  // an unhandled rejection when the location promise rejects
+  if (!forceRefresh) {
+    pendingLocationPromise = locationPromise
+    locationPromise.then(
+      () => { pendingLocationPromise = null },
+      () => { pendingLocationPromise = null }
+    )
+  }
+
+  return locationPromise
 }
 
 export async function getTravelTimes(

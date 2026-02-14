@@ -529,8 +529,8 @@ describe('getCurrentLocationWithName()', () => {
         latitude: 0,
         longitude: 0,
       })
-      // Set permission state to 73 hours ago (expired)
-      const expiredTimestamp = Date.now() - (73 * 60 * 60 * 1000)
+      // Set permission state to 7 months ago (expired - PERMISSION_CACHE_DURATION is ~6 months)
+      const expiredTimestamp = Date.now() - (7 * 30 * 24 * 60 * 60 * 1000)
       localStorage.setItem(LOCATION_PERMISSION_KEY, JSON.stringify({
         status: 'granted',
         lastChecked: expiredTimestamp
@@ -539,9 +539,9 @@ describe('getCurrentLocationWithName()', () => {
       mockGeolocationSuccess(TEST_COORDINATES.sanFrancisco.lat, TEST_COORDINATES.sanFrancisco.lng)
       setMockGeocodingResponse(MOCK_GEOCODING_RESPONSES.sanFrancisco)
 
-      const result = await getCurrentLocationWithName({ useCache: true })
+      const result = await getCurrentLocationWithName({ useCache: true, preferCached: true })
 
-      // getLocationPermissionState() returns 'unknown' for expired state, so cache won't be used
+      // getLocationPermissionState() returns 'unknown' for expired state (> 2 weeks), so preferCached won't apply
       expect(result?.name).toBe('San Francisco, CA')
       expect(fetchCallHistory.length).toBeGreaterThan(0)
     })
@@ -554,7 +554,7 @@ describe('getCurrentLocationWithName()', () => {
           latitude: 0,
           longitude: 0,
         },
-        timestamp: Date.now() - (73 * 60 * 60 * 1000) // 73 hours ago
+        timestamp: Date.now() - (7 * 30 * 24 * 60 * 60 * 1000) // 7 months ago (exceeds 6-month PERMISSION_CACHE_DURATION)
       }
       localStorage.setItem('ganamos_cached_location', JSON.stringify(expiredCache))
       saveLocationPermissionState({ status: 'granted', lastChecked: Date.now() })

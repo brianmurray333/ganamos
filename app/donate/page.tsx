@@ -119,7 +119,7 @@ export default function DonatePage() {
         setIsLoadingLocations(true)
         let userLocation = undefined
         try {
-          const currentLocation = await getCurrentLocationWithName({ useCache: true })
+          const currentLocation = await getCurrentLocationWithName({ useCache: true, preferCached: true })
           if (currentLocation) {
             userLocation = {
               locality: currentLocation.locality,

@@ -132,7 +132,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
   useEffect(() => {
     const getUserLocation = async () => {
       try {
-        const locationData = await getCurrentLocationWithName({ useCache: true })
+        const locationData = await getCurrentLocationWithName({ useCache: true, preferCached: true })
         if (locationData) {
           setUserLocation({
             lat: locationData.latitude,
