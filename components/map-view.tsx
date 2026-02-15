@@ -18,8 +18,8 @@ const containerStyle = {
   height: "100%",
 }
 
-// Floating pill nav clearance for buttons (64px height + 32px margin + some padding)
-const BOTTOM_NAV_CLEARANCE = 120
+// Docked bottom nav clearance for buttons (82px nav height + some padding)
+const BOTTOM_NAV_CLEARANCE = 100
 
 const defaultCenter = {
   lat: 37.7749,
