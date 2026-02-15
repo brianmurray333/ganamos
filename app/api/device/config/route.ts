@@ -384,6 +384,57 @@ export async function GET(request: NextRequest) {
       console.warn("[Device Config] Error checking for new jobs:", error)
     }
 
+    // Check for active pickleball game invites
+    // Look for games in 'lobby' or 'countdown' status where this user is in the same group
+    let pickleballInvite: { gameId: string; hostPetName: string; playerCount: number; hostMac: string } | null = null
+    
+    try {
+      if (groupIds && groupIds.length > 0) {
+        // Find active games from group members (not from this device)
+        const { data: activeGames } = await supabase
+          .from("pickleball_games")
+          .select("id, host_device_id, host_user_id, players, lobby_expires_at")
+          .in("status", ["lobby", "countdown"])
+          .neq("host_device_id", device.id)
+          .gt("lobby_expires_at", new Date().toISOString())
+          .order("created_at", { ascending: false })
+          .limit(5)
+        
+        if (activeGames && activeGames.length > 0) {
+          // Check if any game host is in the same group
+          for (const game of activeGames) {
+            // Verify host is in one of user's groups
+            const { data: hostMembership } = await supabase
+              .from("group_members")
+              .select("id")
+              .in("group_id", groupIds)
+              .eq("user_id", game.host_user_id)
+              .eq("status", "approved")
+              .limit(1)
+              .single()
+            
+            if (hostMembership) {
+              const players = (game.players as any[]) || []
+              // Don't invite if already in the game or game is full
+              const alreadyJoined = players.some((p: any) => p.deviceId === device.id)
+              if (!alreadyJoined && players.length < 4) {
+                const hostPlayer = players[0]
+                pickleballInvite = {
+                  gameId: game.id,
+                  hostPetName: hostPlayer?.petName || "Someone",
+                  playerCount: players.length,
+                  hostMac: hostPlayer?.macAddress || "",
+                }
+                break // Take first valid invite
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[Device Config] Error checking for game invites:", error)
+    }
+
     // Build config object - only include rejection fields if there's an actual rejection
     const config: Record<string, any> = {
       deviceId: device.id,
@@ -415,6 +466,13 @@ export async function GET(request: NextRequest) {
       hasNewJob: hasNewJob,
       newJobTitle: newJobTitle,
       newJobReward: newJobReward,
+      // Pickleball game invite (if any active lobby from group members)
+      pickleballInvite: pickleballInvite ? {
+        gameId: pickleballInvite.gameId,
+        hostPetName: pickleballInvite.hostPetName,
+        playerCount: pickleballInvite.playerCount,
+        hostMac: pickleballInvite.hostMac,
+      } : null,
     }
     
     // Always send rejection fields - empty strings when no rejection to clear Arduino's cached state
