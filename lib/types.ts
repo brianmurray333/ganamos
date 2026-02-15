@@ -6,6 +6,7 @@ export interface Post {
   description: string
   imageUrl?: string
   image_url?: string
+  task_type?: 'photo' | 'text' // Type of task: photo requires image proof, text requires text response
   location?: string // Make optional
   latitude?: number // Add optional latitude
   longitude?: number // Add optional longitude
@@ -37,6 +38,7 @@ export interface Post {
   submitted_fix_image_url?: string | null
   fixed_image_url?: string | null
   submitted_fix_note?: string | null
+  submitted_fix_text?: string | null // Text response for text-based task submissions
   submitted_fix_lightning_address?: string | null
   city?: string | null
   ai_confidence_score?: number | null
