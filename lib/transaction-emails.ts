@@ -1770,3 +1770,487 @@ export async function sendGroupAdminClosedIssueEmail(params: {
     }
   )
 }
+
+/**
+ * Send email notification when a post is expiring soon (6-hour warning)
+ */
+export async function sendPostExpiryWarningEmail(params: {
+  toEmail: string
+  userName: string
+  postTitle: string
+  expiresAt: Date
+  postId: string
+}): Promise<void> {
+  try {
+    const { toEmail, userName, postTitle, expiresAt, postId } = params
+
+    // Get first name only
+    const firstName = userName.split(' ')[0]
+
+    // Format time remaining using formatDistanceToNow
+    const { formatDistanceToNow } = await import('date-fns')
+    const timeRemaining = formatDistanceToNow(expiresAt, { addSuffix: false })
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f5f5f5;
+        }
+        .container {
+          background-color: #ffffff;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+          color: #ffffff;
+          padding: 30px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 700;
+        }
+        .content {
+          padding: 30px;
+        }
+        .greeting {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 10px;
+        }
+        .issue-title {
+          background-color: #f9fafb;
+          padding: 15px;
+          border-left: 4px solid #f59e0b;
+          margin: 20px 0;
+          font-weight: 600;
+          font-size: 16px;
+        }
+        .info-box {
+          background-color: #fef3c7;
+          border: 1px solid #fde68a;
+          border-radius: 8px;
+          padding: 20px;
+          margin: 20px 0;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 8px 0;
+          border-bottom: 1px solid #fde68a;
+        }
+        .info-row:last-child {
+          border-bottom: none;
+        }
+        .info-label {
+          font-weight: 600;
+          color: #92400e;
+        }
+        .info-value {
+          color: #78350f;
+          font-size: 14px;
+        }
+        .button {
+          display: inline-block;
+          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+          color: #ffffff !important;
+          text-decoration: none;
+          padding: 14px 28px;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 16px;
+          margin: 20px 0;
+        }
+        .footer {
+          background-color: #f9fafb;
+          padding: 20px;
+          text-align: center;
+          font-size: 14px;
+          color: #6b7280;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⏰ Your post expires soon</h1>
+        </div>
+        <div class="content">
+          <p class="greeting">Hi ${firstName},</p>
+          <p>This is a reminder that your post is expiring soon:</p>
+          <div class="issue-title">"${postTitle}"</div>
+          
+          <div class="info-box">
+            <div class="info-row">
+              <span class="info-label">Time remaining</span>
+              <span class="info-value">${timeRemaining}</span>
+            </div>
+          </div>
+          
+          <p>If your post expires without being fixed, it will be automatically taken down and your sats will be refunded to your balance.</p>
+          
+          <center>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/post/${postId}" class="button">View Post</a>
+          </center>
+        </div>
+        <div class="footer">
+          <p>You can extend or remove the expiration from the post page.</p>
+          <p style="margin-bottom: 0;">Ganamos Earth</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+    await sendEmail(
+      toEmail,
+      'Your post expires soon',
+      html,
+      {
+        type: 'post_expiry_warning',
+        metadata: {
+          userName,
+          postTitle,
+          expiresAt: expiresAt.toISOString(),
+          postId,
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Error sending post expiry warning email:', error)
+    // Don't throw - email failures should not block the cron job
+  }
+}
+
+/**
+ * Send email notification when a post has expired and sats have been refunded
+ */
+export async function sendPostExpiredConfirmationEmail(params: {
+  toEmail: string
+  userName: string
+  postTitle: string
+  refundAmountSats: number
+  postId: string
+}): Promise<void> {
+  try {
+    const { toEmail, userName, postTitle, refundAmountSats, postId } = params
+
+    // Get first name only
+    const firstName = userName.split(' ')[0]
+
+    // Format amount
+    const formattedAmount = formatSatsValue(refundAmountSats)
+    const usdAmount = await convertSatsToUSD(refundAmountSats)
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f5f5f5;
+        }
+        .container {
+          background-color: #ffffff;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+          color: #ffffff;
+          padding: 30px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 700;
+        }
+        .content {
+          padding: 30px;
+        }
+        .greeting {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 10px;
+        }
+        .issue-title {
+          background-color: #f9fafb;
+          padding: 15px;
+          border-left: 4px solid #6b7280;
+          margin: 20px 0;
+          font-weight: 600;
+          font-size: 16px;
+        }
+        .info-box {
+          background-color: #f0fdf4;
+          border: 1px solid #bbf7d0;
+          border-radius: 8px;
+          padding: 20px;
+          margin: 20px 0;
+        }
+        .info-row {
+          display: flex;
+          justify-content: space-between;
+          padding: 8px 0;
+          border-bottom: 1px solid #bbf7d0;
+        }
+        .info-row:last-child {
+          border-bottom: none;
+        }
+        .info-label {
+          font-weight: 600;
+          color: #166534;
+        }
+        .info-value {
+          color: #15803d;
+          font-size: 14px;
+        }
+        .button {
+          display: inline-block;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: #ffffff !important;
+          text-decoration: none;
+          padding: 14px 28px;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 16px;
+          margin: 20px 0;
+        }
+        .footer {
+          background-color: #f9fafb;
+          padding: 20px;
+          text-align: center;
+          font-size: 14px;
+          color: #6b7280;
+        }
+        .note {
+          background-color: #f0f9ff;
+          border: 1px solid #bfdbfe;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px 0;
+          font-size: 14px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⏱️ Your post has expired — sats refunded</h1>
+        </div>
+        <div class="content">
+          <p class="greeting">Hi ${firstName},</p>
+          <p>Your post has expired and has been automatically taken down:</p>
+          <div class="issue-title">"${postTitle}"</div>
+          
+          <div class="info-box">
+            <div class="info-row">
+              <span class="info-label">Refund amount</span>
+              <span class="info-value">${formattedAmount} (~${usdAmount})</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Status</span>
+              <span class="info-value">Refunded to your balance</span>
+            </div>
+          </div>
+          
+          <div class="note">
+            <strong>💰 Your sats are back!</strong><br>
+            The full reward amount has been returned to your account balance. You can use it to create a new post or withdraw it anytime.
+          </div>
+          
+          <center>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/profile" class="button">View Your Balance</a>
+          </center>
+        </div>
+        <div class="footer">
+          <p>Thanks for using Ganamos!</p>
+          <p style="margin-bottom: 0;">Ganamos Earth</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+    await sendEmail(
+      toEmail,
+      'Your post has expired — sats refunded',
+      html,
+      {
+        type: 'post_expired_confirmation',
+        metadata: {
+          userName,
+          postTitle,
+          refundAmountSats,
+          postId,
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Error sending post expired confirmation email:', error)
+    // Don't throw - email failures should not block the cron job
+  }
+}
+
+/**
+ * Send email notification to fixer when an assigned post expires
+ */
+export async function sendPostExpiredFixerEmail(params: {
+  toEmail: string
+  fixerName: string
+  postTitle: string
+  postId: string
+}): Promise<void> {
+  try {
+    const { toEmail, fixerName, postTitle, postId } = params
+
+    // Get first name only
+    const firstName = fixerName.split(' ')[0]
+
+    const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          max-width: 600px;
+          margin: 0 auto;
+          padding: 20px;
+          background-color: #f5f5f5;
+        }
+        .container {
+          background-color: #ffffff;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+          color: #ffffff;
+          padding: 30px;
+          text-align: center;
+        }
+        .header h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 700;
+        }
+        .content {
+          padding: 30px;
+        }
+        .greeting {
+          font-size: 18px;
+          font-weight: 600;
+          margin-bottom: 10px;
+        }
+        .issue-title {
+          background-color: #f9fafb;
+          padding: 15px;
+          border-left: 4px solid #6b7280;
+          margin: 20px 0;
+          font-weight: 600;
+          font-size: 16px;
+        }
+        .note {
+          background-color: #fef3c7;
+          border: 1px solid #fde68a;
+          border-radius: 8px;
+          padding: 15px;
+          margin: 20px 0;
+          font-size: 14px;
+        }
+        .button {
+          display: inline-block;
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: #ffffff !important;
+          text-decoration: none;
+          padding: 14px 28px;
+          border-radius: 8px;
+          font-weight: 600;
+          font-size: 16px;
+          margin: 20px 0;
+        }
+        .footer {
+          background-color: #f9fafb;
+          padding: 20px;
+          text-align: center;
+          font-size: 14px;
+          color: #6b7280;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>⏱️ A post you were assigned has expired</h1>
+        </div>
+        <div class="content">
+          <p class="greeting">Hi ${firstName},</p>
+          <p>A post you were assigned to fix has expired and been automatically removed:</p>
+          <div class="issue-title">"${postTitle}"</div>
+          
+          <div class="note">
+            <strong>📋 What this means</strong><br>
+            The post has been taken down and no longer needs a fix. The reward has been refunded to the poster. You're free to work on other posts!
+          </div>
+          
+          <center>
+            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/feed" class="button">Browse Available Posts</a>
+          </center>
+        </div>
+        <div class="footer">
+          <p>Thanks for being part of the Ganamos community!</p>
+          <p style="margin-bottom: 0;">Ganamos Earth</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `
+
+    await sendEmail(
+      toEmail,
+      'A post you were assigned has expired',
+      html,
+      {
+        type: 'post_expired_fixer',
+        metadata: {
+          fixerName,
+          postTitle,
+          postId,
+        }
+      }
+    )
+  } catch (error) {
+    console.error('Error sending post expired fixer email:', error)
+    // Don't throw - email failures should not block the cron job
+  }
+}
