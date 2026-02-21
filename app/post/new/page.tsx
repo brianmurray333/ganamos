@@ -23,7 +23,7 @@ import {
 import QRCode from "@/components/qr-code"
 import { getCurrentLocationWithName } from "@/lib/geocoding" // Import the geocoding utility
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
-import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
+import { ChevronLeft, Search, User, Users, Globe, Lock, X, Timer } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LocationEditorModal } from "@/components/location-editor-modal"
@@ -90,6 +90,8 @@ export default function NewPostPage() {
   const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false)
   const [showShareGroupModal, setShowShareGroupModal] = useState(false)
   const [pendingGroup, setPendingGroup] = useState<Group | null>(null)
+  const [expiresAt, setExpiresAt] = useState<Date | null>(null)
+  const [showExpirationPicker, setShowExpirationPicker] = useState(false)
 
   useEffect(() => {
     if (isAnonymous) {
@@ -265,6 +267,7 @@ export default function NewPostPage() {
               city: currentLocation?.displayName || currentLocation?.name || null, // Use displayName or fallback to name
               funding_r_hash: fundingRHash,
               funding_payment_request: fundingPaymentRequest!,
+              expires_at: expiresAt ? expiresAt.toISOString() : null,
             }
 
             const creationResult = await createFundedAnonymousPostAction(postDetails)
@@ -370,6 +373,15 @@ export default function NewPostPage() {
     const btcAmount = sats / 100000000
     const usdValue = btcAmount * bitcoinPrice
     return usdValue.toFixed(2)
+  }
+
+  const formatAbbreviatedTimeRemaining = (date: Date): string => {
+    const diff = Math.floor((date.getTime() - Date.now()) / 1000)
+    if (diff <= 0) return 'soon'
+    if (diff < 3600) return `${Math.floor(diff / 60)}m`
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d`
+    return `${Math.floor(diff / 604800)}w`
   }
 
   const handleCapture = async (imageSrc: string) => {
@@ -691,6 +703,7 @@ export default function NewPostPage() {
         assigned_to: assignedTo, // Individual assignment
         city: currentLocation?.displayName || currentLocation?.name || null, // Use displayName or fallback to name
         is_anonymous: false,
+        expires_at: expiresAt ? expiresAt.toISOString() : null,
       }
 
       if (supabase) {
@@ -1388,6 +1401,46 @@ export default function NewPostPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Expiration Picker */}
+              <div className="space-y-2">
+                {!showExpirationPicker ? (
+                  <button
+                    type="button"
+                    onClick={() => { 
+                      setShowExpirationPicker(true)
+                      setExpiresAt(new Date(Date.now() + 3 * 86400_000))
+                    }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Timer className="w-3.5 h-3.5" />
+                    {expiresAt ? `Expires ${formatAbbreviatedTimeRemaining(expiresAt)}` : '+ Add expiration'}
+                  </button>
+                ) : (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {[{ label: '1 hr', hrs: 1 }, { label: '12 hrs', hrs: 12 }, { label: '1 day', hrs: 24 },
+                      { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
+                      <button key={label} type="button"
+                        onClick={() => setExpiresAt(new Date(Date.now() + hrs * 3600_000))}
+                        className={`px-3 py-1 rounded-full text-xs border transition-colors ${
+                          expiresAt && Math.abs(expiresAt.getTime() - Date.now() - hrs * 3600_000) < 60_000
+                            ? 'bg-green-600 text-white border-green-600'
+                            : 'border-gray-300 text-muted-foreground hover:border-gray-400'
+                        }`}
+                      >{label}</button>
+                    ))}
+                    <input type="datetime-local"
+                      min={new Date(Date.now() + 3600_000).toISOString().slice(0,16)}
+                      max={new Date(Date.now() + 365 * 86400_000).toISOString().slice(0,16)}
+                      onChange={e => e.target.value && setExpiresAt(new Date(e.target.value))}
+                      className="text-xs border border-gray-300 rounded px-2 py-1"
+                    />
+                    <button type="button" onClick={() => { setExpiresAt(null); setShowExpirationPicker(false) }}
+                      className="text-xs text-muted-foreground hover:text-red-500"
+                    >Remove</button>
+                  </div>
+                )}
               </div>
 
               <Button type="submit" className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" disabled={isSubmitting || isAwaitingPayment}>
