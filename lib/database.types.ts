@@ -88,6 +88,9 @@ export interface Database {
           anonymous_reward_payment_lock: string | null // UUID lock to prevent race conditions
           // Individual assignment
           assigned_to: string | null // UUID of user this job is assigned to
+          // Expiration
+          expires_at: string | null
+          expiry_warning_sent_at: string | null
         }
         Insert: {
           id?: string
@@ -135,6 +138,9 @@ export interface Database {
           anonymous_reward_payment_lock?: string | null
           // Individual assignment
           assigned_to?: string | null
+          // Expiration
+          expires_at?: string | null
+          expiry_warning_sent_at?: string | null
         }
         Update: {
           id?: string
@@ -182,6 +188,9 @@ export interface Database {
           anonymous_reward_payment_lock?: string | null
           // Individual assignment
           assigned_to?: string | null
+          // Expiration
+          expires_at?: string | null
+          expiry_warning_sent_at?: string | null
         }
       }
       groups: {
