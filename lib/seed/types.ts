@@ -44,6 +44,9 @@ export interface SeedPost {
   fixed_image_url?: string;
   fixer_note?: string;
   is_anonymous?: boolean;
+  expires_at?: string | null;
+  expiry_warning_sent_at?: string | null;
+  under_review?: boolean;
 }
 
 /**
