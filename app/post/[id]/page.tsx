@@ -22,8 +22,8 @@ import type { Post } from "@/lib/types"
 import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
-import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
-import { User } from "lucide-react"
+import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction, updatePostExpirationAction } from "@/app/actions/post-actions"
+import { User, Timer } from "lucide-react"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
 import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submission-modal"
 import { v4 as uuidv4 } from "uuid"
@@ -86,6 +86,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeletingPost, setIsDeletingPost] = useState(false)
   const [familyMembers, setFamilyMembers] = useState<{ id: string; username: string; name: string; avatar_url: string | null; balance?: number }[]>([])
+  
+  // Expiration management state
+  const [showExpirationEdit, setShowExpirationEdit] = useState(false)
+  const [isSavingExpiration, setIsSavingExpiration] = useState(false)
+  const [editExpiresAt, setEditExpiresAt] = useState<string | null>(null)
   
   // Group admin status - allows group admins to approve fixes for any post in their group
   const [isGroupAdmin, setIsGroupAdmin] = useState(false)
@@ -442,6 +447,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     }
     fetchPost()
   }, [params.id, toast, supabase])
+
+  // Initialize editExpiresAt from post data
+  useEffect(() => {
+    if (post?.expires_at) setEditExpiresAt(post.expires_at)
+  }, [post?.expires_at])
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -1176,6 +1186,26 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     } finally {
       setIsDeletingPost(false)
       setShowDeleteConfirm(false)
+    }
+  }
+
+  // Handle update expiration
+  const handleUpdateExpiration = async (newExpiresAt: string | null) => {
+    const effectiveUserId = activeUserId || user?.id
+    if (!effectiveUserId || !post) return
+    setIsSavingExpiration(true)
+    try {
+      const result = await updatePostExpirationAction(post.id, effectiveUserId, newExpiresAt)
+      if (result.success) {
+        setPost(prev => prev ? { ...prev, expires_at: newExpiresAt } : prev)
+        setEditExpiresAt(newExpiresAt)
+        setShowExpirationEdit(false)
+        toast.success(newExpiresAt ? 'Expiration updated' : 'Expiration removed')
+      } else {
+        toast.error('Error', { description: result.error || 'Failed to update expiration' })
+      }
+    } finally {
+      setIsSavingExpiration(false)
     }
   }
 
@@ -2152,6 +2182,47 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )}
           {!post.fixed && !post.under_review && !post.deleted_at && (
             <Button className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" onClick={() => setShowCamera(true)}>Start</Button>
+          )}
+          
+          {/* Expiration management - only visible to original poster */}
+          {isOriginalPoster && !post.fixed && !post.deleted_at && (
+            <div className="mt-4">
+              {post.expires_at && !showExpirationEdit ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Timer className="w-4 h-4" />
+                  <span>Expires {formatDistanceToNow(new Date(post.expires_at), { addSuffix: true })}</span>
+                  <button type="button" onClick={() => setShowExpirationEdit(true)}
+                    className="text-xs underline hover:text-foreground">Edit</button>
+                  <button type="button" onClick={() => handleUpdateExpiration(null)}
+                    className="text-xs text-red-500 hover:text-red-600"
+                    disabled={isSavingExpiration}>Remove</button>
+                </div>
+              ) : !post.expires_at && !showExpirationEdit ? (
+                <button type="button" onClick={() => setShowExpirationEdit(true)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+                  <Timer className="w-3.5 h-3.5" /> Add expiration
+                </button>
+              ) : null}
+              {showExpirationEdit && (
+                <div className="flex flex-wrap gap-2 items-center mt-2">
+                  {[{label:'1 hr',hrs:1},{label:'12 hrs',hrs:12},{label:'1 day',hrs:24},
+                    {label:'3 days',hrs:72},{label:'7 days',hrs:168}].map(({label,hrs}) => (
+                    <button key={label} type="button"
+                      onClick={() => setEditExpiresAt(new Date(Date.now()+hrs*3600_000).toISOString())}
+                      className="px-3 py-1 rounded-full text-xs border border-gray-300 hover:border-gray-400">
+                      {label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => handleUpdateExpiration(editExpiresAt)}
+                    disabled={isSavingExpiration}
+                    className="px-3 py-1 rounded-full text-xs bg-green-600 text-white">
+                    {isSavingExpiration ? 'Saving...' : 'Save'}
+                  </button>
+                  <button type="button" onClick={() => setShowExpirationEdit(false)}
+                    className="text-xs text-muted-foreground">Cancel</button>
+                </div>
+              )}
+            </div>
           )}
           
           {/* Mark Complete button - only visible to original poster */}
