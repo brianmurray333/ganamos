@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/update-bitcoin-price",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/expire-posts",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
