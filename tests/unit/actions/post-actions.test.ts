@@ -13,7 +13,7 @@ vi.mock('next/headers', () => ({
 
 // Mock uuid
 vi.mock('uuid', () => ({
-  v4: vi.fn(),
+  v4: vi.fn(() => 'default-test-uuid'),
 }))
 
 // Mock global fetch for Nostr/Sphinx publishing
@@ -36,7 +36,7 @@ vi.mock('@/lib/sms-alerts', () => ({
 
 // @/lib/supabase mock provided by tests/setup.ts
 
-import { createFundedAnonymousPostAction, createPostWithRewardAction } from '@/app/actions/post-actions'
+import { createFundedAnonymousPostAction, createPostWithRewardAction, updatePostExpirationAction } from '@/app/actions/post-actions'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
 import { createMockPostData } from '@/tests/unit/helpers/posts-api-mocks'
@@ -56,9 +56,8 @@ describe('createFundedAnonymousPostAction', () => {
     vi.setSystemTime(new Date(MOCK_TIMESTAMP))
     
     // Mock UUID generation
-    vi.mocked(uuidv4)
-      .mockReturnValueOnce(TEST_POST_ID)
-      .mockReturnValueOnce(TEST_ACTIVITY_ID)
+    vi.mocked(uuidv4).mockReturnValueOnce(TEST_POST_ID as any)
+    vi.mocked(uuidv4).mockReturnValueOnce(TEST_ACTIVITY_ID as any)
   })
 
   afterEach(() => {
@@ -288,10 +287,10 @@ describe('createFundedAnonymousPostAction', () => {
       const activityId2 = 'activity-uuid-2'
       
       vi.mocked(uuidv4)
-        .mockReturnValueOnce(postId1)
-        .mockReturnValueOnce(activityId1)
-        .mockReturnValueOnce(postId2)
-        .mockReturnValueOnce(activityId2)
+        .mockReturnValueOnce(postId1 as any)
+        .mockReturnValueOnce(activityId1 as any)
+        .mockReturnValueOnce(postId2 as any)
+        .mockReturnValueOnce(activityId2 as any)
 
       const postData = createMockPostData({ reward: 1000 })
 
@@ -943,6 +942,1153 @@ describe('createPostWithRewardAction', () => {
       // ASSERT
       expect(result.success).toBe(false)
       expect(result.error).toBe('Insufficient balance')
+    })
+  })
+})
+
+describe('createFundedAnonymousPostAction with expires_at', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(MOCK_TIMESTAMP))
+    vi.mocked(uuidv4).mockReturnValueOnce(TEST_POST_ID as any)
+    vi.mocked(uuidv4).mockReturnValueOnce(TEST_ACTIVITY_ID as any)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('should persist expires_at when provided', async () => {
+    // ARRANGE
+    const expiresAt = new Date(Date.now() + 24 * 3600_000).toISOString() // 1 day from now
+    const postData = createMockPostData({
+      description: 'Test post with expiration',
+      reward: 1000,
+      funding_r_hash: 'test-hash',
+      funding_payment_request: 'lnbc10n1test',
+      expires_at: expiresAt,
+    })
+
+    let capturedPostInsert: any = null
+    const postQueryBuilder = {
+      insert: vi.fn((data) => {
+        capturedPostInsert = data
+        return postQueryBuilder
+      }),
+      select: vi.fn(() => postQueryBuilder),
+      single: vi.fn().mockResolvedValue({
+        data: { id: TEST_POST_ID },
+        error: null
+      })
+    }
+
+    const activityQueryBuilder = {
+      insert: vi.fn(() => activityQueryBuilder),
+    }
+
+    const mockClient: any = {
+      from: vi.fn((table: string) => {
+        if (table === 'posts') return postQueryBuilder
+        if (table === 'activities') return activityQueryBuilder
+        return {}
+      }),
+    }
+
+    vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+    // ACT
+    const result = await createFundedAnonymousPostAction(postData)
+
+    // ASSERT
+    expect(result.success).toBe(true)
+    expect(capturedPostInsert).toBeDefined()
+    expect(capturedPostInsert.expires_at).toBe(expiresAt)
+  })
+
+  it('should set expires_at to null when not provided', async () => {
+    // ARRANGE
+    const postData = createMockPostData({
+      description: 'Test post without expiration',
+      reward: 1000,
+      funding_r_hash: 'test-hash',
+      funding_payment_request: 'lnbc10n1test',
+      // expires_at not provided
+    })
+
+    let capturedPostInsert: any = null
+    const postQueryBuilder = {
+      insert: vi.fn((data) => {
+        capturedPostInsert = data
+        return postQueryBuilder
+      }),
+      select: vi.fn(() => postQueryBuilder),
+      single: vi.fn().mockResolvedValue({
+        data: { id: TEST_POST_ID },
+        error: null
+      })
+    }
+
+    const activityQueryBuilder = {
+      insert: vi.fn(() => activityQueryBuilder),
+    }
+
+    const mockClient: any = {
+      from: vi.fn((table: string) => {
+        if (table === 'posts') return postQueryBuilder
+        if (table === 'activities') return activityQueryBuilder
+        return {}
+      }),
+    }
+
+    vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+    // ACT
+    const result = await createFundedAnonymousPostAction(postData)
+
+    // ASSERT
+    expect(result.success).toBe(true)
+    expect(capturedPostInsert).toBeDefined()
+    expect(capturedPostInsert.expires_at).toBeNull()
+  })
+})
+
+describe('updatePostExpirationAction', () => {
+  const TEST_USER_ID = 'test-user-123'
+  const TEST_POST_ID = 'test-post-456'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2024-01-01T12:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  describe('Success Path', () => {
+    it('should update expires_at and reset expiry_warning_sent_at', async () => {
+      // ARRANGE
+      const expiresAt = new Date(Date.now() + 3 * 24 * 3600_000).toISOString() // 3 days from now
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      let capturedUpdate: any = null
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn((data) => {
+            capturedUpdate = data
+            return {
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }
+          }),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, expiresAt)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+      expect(result.error).toBeUndefined()
+      expect(capturedUpdate).toEqual({
+        expires_at: expiresAt,
+        expiry_warning_sent_at: null,
+      })
+    })
+
+    it('should clear expires_at when null is provided', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      let capturedUpdate: any = null
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn((data) => {
+            capturedUpdate = data
+            return {
+              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }
+          }),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+      expect(capturedUpdate).toEqual({
+        expires_at: null,
+        expiry_warning_sent_at: null,
+      })
+    })
+
+    it('should allow connected account to update expiration', async () => {
+      // ARRANGE
+      const CONNECTED_USER_ID = 'connected-user-789'
+      const expiresAt = new Date(Date.now() + 2 * 3600_000).toISOString() // 2 hours from now
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'parent@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({
+                      data: { id: 'connection-123' }, // Connection exists
+                      error: null
+                    }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: CONNECTED_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, CONNECTED_USER_ID, expiresAt)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe('Authorization Failures', () => {
+    it('should reject unauthenticated requests', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: { session: null },
+            error: { message: 'Not authenticated' },
+          }),
+        },
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Not authenticated')
+    })
+
+    it('should reject if user is not post owner or connected account', async () => {
+      // ARRANGE
+      const OTHER_USER_ID = 'other-user-999'
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, OTHER_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Unauthorized')
+    })
+
+    it('should reject if post not found', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: null,
+                    error: { message: 'Post not found' },
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Post not found')
+    })
+
+    it('should reject if post belongs to different user', async () => {
+      // ARRANGE
+      const OTHER_USER_ID = 'other-user-999'
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: OTHER_USER_ID, // Different owner
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Only the original poster can update post expiration')
+    })
+  })
+
+  describe('Post State Rejections', () => {
+    it('should reject if post is fixed', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: true, // Fixed
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Cannot update expiration for a post that has been marked as fixed')
+    })
+
+    it('should reject if post is under review', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: true, // Under review
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Cannot update expiration for a post that is under review')
+    })
+
+    it('should reject if post is deleted', async () => {
+      // ARRANGE
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: '2024-01-01T00:00:00.000Z', // Deleted
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, null)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Cannot update expiration for a deleted post')
+    })
+  })
+
+  describe('Date Validation', () => {
+    it('should reject expiration date in the past', async () => {
+      // ARRANGE
+      const pastDate = new Date(Date.now() - 3600_000).toISOString() // 1 hour ago
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, pastDate)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Expiration date must be at least 1 hour in the future')
+    })
+
+    it('should reject expiration date less than 1 hour in the future', async () => {
+      // ARRANGE
+      const tooSoon = new Date(Date.now() + 30 * 60_000).toISOString() // 30 minutes from now
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, tooSoon)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Expiration date must be at least 1 hour in the future')
+    })
+
+    it('should reject expiration date more than 1 year in the future', async () => {
+      // ARRANGE
+      const tooFar = new Date(Date.now() + 366 * 24 * 3600_000).toISOString() // 366 days from now
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, tooFar)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Expiration date cannot be more than 1 year in the future')
+    })
+
+    it('should reject invalid date format', async () => {
+      // ARRANGE
+      const invalidDate = 'not-a-date'
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, invalidDate)
+
+      // ASSERT
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Invalid expiration date format')
+    })
+
+    it('should accept valid date exactly 1 hour in the future', async () => {
+      // ARRANGE
+      const validDate = new Date(Date.now() + 3600_000 + 1000).toISOString() // 1 hour + 1 second
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, validDate)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+    })
+
+    it('should accept valid date exactly 1 year in the future', async () => {
+      // ARRANGE
+      const validDate = new Date(Date.now() + 365 * 24 * 3600_000 - 1000).toISOString() // 1 year - 1 second
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, validDate)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+    })
+  })
+
+  describe('Admin Client Usage', () => {
+    it('should use admin client to update expiration and reset warning flag', async () => {
+      // ARRANGE
+      const expiresAt = new Date(Date.now() + 24 * 3600_000).toISOString()
+
+      const mockUserClient: any = {
+        auth: {
+          getSession: vi.fn().mockResolvedValue({
+            data: {
+              session: {
+                user: { id: TEST_USER_ID, email: 'test@example.com' },
+              }
+            },
+            error: null,
+          }),
+        },
+        from: vi.fn((table: string) => {
+          if (table === 'connected_accounts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  eq: vi.fn(() => ({
+                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+                  })),
+                })),
+              })),
+            }
+          }
+          if (table === 'posts') {
+            return {
+              select: vi.fn(() => ({
+                eq: vi.fn(() => ({
+                  single: vi.fn().mockResolvedValue({
+                    data: {
+                      id: TEST_POST_ID,
+                      user_id: TEST_USER_ID,
+                      fixed: false,
+                      under_review: false,
+                      deleted_at: null,
+                    },
+                    error: null,
+                  }),
+                })),
+              })),
+            }
+          }
+          return {}
+        }),
+      }
+
+      const mockAdminClient: any = {
+        from: vi.fn(() => ({
+          update: vi.fn(() => ({
+            eq: vi.fn().mockResolvedValue({ data: null, error: null }),
+          })),
+        })),
+      }
+
+      vi.mocked(createServerSupabaseClient)
+        .mockReturnValueOnce(mockUserClient)
+        .mockReturnValueOnce(mockAdminClient)
+
+      // ACT
+      const result = await updatePostExpirationAction(TEST_POST_ID, TEST_USER_ID, expiresAt)
+
+      // ASSERT
+      expect(result.success).toBe(true)
+
+      // Verify admin client was created with service role key
+      expect(createServerSupabaseClient).toHaveBeenCalledTimes(2)
+      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(2, {
+        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+      })
+
+      // Verify admin client was used for update
+      expect(mockAdminClient.from).toHaveBeenCalledWith('posts')
     })
   })
 })
