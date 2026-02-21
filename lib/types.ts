@@ -47,6 +47,8 @@ export interface Post {
     id: string
     name: string
   } | null
+  expires_at?: string | null
+  expiry_warning_sent_at?: string | null
   // Fraud detection fields
   fraud_check_flags?: Record<string, any> | null
   exif_verified?: boolean | null
