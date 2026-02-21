@@ -14,6 +14,7 @@ export function createMockPostData(overrides: {
   city?: string | null
   funding_r_hash?: string
   funding_payment_request?: string
+  expires_at?: string | null
 } = {}) {
   return {
     description: 'Fix broken streetlight on Main St',

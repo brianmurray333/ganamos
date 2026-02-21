@@ -574,6 +574,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
   city: string | null
   funding_r_hash: string // Renamed from fundingRHash
   funding_payment_request: string // Added this
+  expires_at?: string | null
 }): Promise<{ success: boolean; postId?: string; error?: string }> {
   const supabase = createServerSupabaseClient(await getCookieStore())
   const postId = uuidv4()
@@ -621,6 +622,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
         funding_r_hash: postDetails.funding_r_hash,
         funding_payment_request: postDetails.funding_payment_request,
         funding_status: "paid",
+        expires_at: postDetails.expires_at ?? null,
       })
       .select("id")
       .single()
@@ -2265,6 +2267,136 @@ export async function deletePostAction(
     return { success: true }
   } catch (error) {
     console.error('Error in deletePostAction:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'An unexpected error occurred',
+    }
+  }
+}
+
+/**
+ * Updates the expiration date for a post
+ * Only the original poster can update expiration
+ * 
+ * @param postId - The ID of the post to update
+ * @param effectiveUserId - The user updating the post (poster or their connected account)
+ * @param expiresAt - The new expiration date (ISO string) or null to clear expiration
+ */
+export async function updatePostExpirationAction(
+  postId: string,
+  effectiveUserId: string,
+  expiresAt: string | null
+): Promise<{ success: boolean; error?: string }> {
+  'use server'
+
+  try {
+    const cookieStore = await getCookieStore()
+    const supabase = createServerSupabaseClient({ cookieStore })
+
+    // Get session
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
+      return { success: false, error: 'Not authenticated' }
+    }
+
+    // SECURITY: Verify effectiveUserId is session user OR a connected account
+    const isOwnAccount = session.user.id === effectiveUserId
+    const isConnectedAccount = await supabase
+      .from('connected_accounts')
+      .select('id')
+      .eq('primary_user_id', session.user.id)
+      .eq('connected_user_id', effectiveUserId)
+      .maybeSingle()
+
+    if (!isOwnAccount && !isConnectedAccount.data) {
+      console.error('SECURITY ALERT: Unauthorized update post expiration attempt', {
+        authenticatedUserId: session.user.id,
+        requestedUserId: effectiveUserId,
+        postId
+      })
+      return { success: false, error: 'Unauthorized' }
+    }
+
+    // Fetch the post
+    const { data: post, error: postError } = await supabase
+      .from('posts')
+      .select('id, user_id, fixed, under_review, deleted_at')
+      .eq('id', postId)
+      .single()
+
+    if (postError || !post) {
+      return { success: false, error: 'Post not found' }
+    }
+
+    // Verify the effective user is the original poster
+    if (post.user_id !== effectiveUserId) {
+      return { success: false, error: 'Only the original poster can update post expiration' }
+    }
+
+    // Verify post can be updated
+    if (post.fixed) {
+      return { success: false, error: 'Cannot update expiration for a post that has been marked as fixed' }
+    }
+
+    if (post.under_review) {
+      return { success: false, error: 'Cannot update expiration for a post that is under review' }
+    }
+
+    if (post.deleted_at) {
+      return { success: false, error: 'Cannot update expiration for a deleted post' }
+    }
+
+    // Validate expiresAt if provided
+    if (expiresAt !== null) {
+      const expiryDate = new Date(expiresAt)
+      const now = new Date()
+      const oneHourFromNow = new Date(now.getTime() + 3600_000)
+      const oneYearFromNow = new Date(now.getTime() + 365 * 86400_000)
+
+      // Check if valid date
+      if (isNaN(expiryDate.getTime())) {
+        return { success: false, error: 'Invalid expiration date format' }
+      }
+
+      // Check if at least 1 hour in the future
+      if (expiryDate < oneHourFromNow) {
+        return { success: false, error: 'Expiration date must be at least 1 hour in the future' }
+      }
+
+      // Check if not more than 1 year in the future
+      if (expiryDate > oneYearFromNow) {
+        return { success: false, error: 'Expiration date cannot be more than 1 year in the future' }
+      }
+    }
+
+    // IMPORTANT: Use admin supabase to update expiration
+    // This ensures we can reset expiry_warning_sent_at even if RLS would block it
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
+    // Update expires_at and reset expiry_warning_sent_at
+    const { error: updateError } = await adminSupabase
+      .from('posts')
+      .update({
+        expires_at: expiresAt,
+        expiry_warning_sent_at: null, // Reset warning flag so new warning can be sent
+      })
+      .eq('id', postId)
+
+    if (updateError) {
+      console.error('Error updating post expiration:', updateError)
+      return { success: false, error: 'Failed to update post expiration' }
+    }
+
+    console.log(`Post expiration updated: ${postId} by user ${effectiveUserId}, new expiration: ${expiresAt || 'null'}`)
+    return { success: true }
+  } catch (error) {
+    console.error('Error in updatePostExpirationAction:', error)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'An unexpected error occurred',
