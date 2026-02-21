@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter, usePathname } from "next/navigation"
-import { User, Menu, X, Gift, Wallet, LogOut, UserCircle } from "lucide-react"
+import { User, Menu, X, Gift, Wallet, LogOut, UserCircle, MapPin } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useAuth } from "@/components/auth-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -379,8 +379,9 @@ export function DesktopHeader() {
               <>
                 <Link 
                   href="/map" 
-                  className="text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                 >
+                  <MapPin className="w-4 h-4" />
                   Map
                 </Link>
                 <button
