@@ -1256,11 +1256,11 @@ function MapViewComponent({
         />
       </div>
 
-      {/* Floating New Issue Button - Always show on map (uses onNewIssue if provided, otherwise navigates to /post/new) */}
+      {/* Floating New Issue Button - Hidden on mobile (bottom nav has its own + button), shown on desktop/modal */}
       {!hideSearchOverlay && (
         <button
           onClick={onNewIssue || handleNewPost}
-          className="absolute right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg"
+          className={`absolute right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg ${isModal ? '' : 'hidden lg:flex'}`}
           style={{ bottom: isModal ? 24 : BOTTOM_NAV_CLEARANCE }}
           aria-label="New Issue"
         >
@@ -1268,13 +1268,12 @@ function MapViewComponent({
         </button>
       )}
 
-      {/* Lower Right Button Stack - Donate + View Mode Toggle - Positioned above the + button */}
+      {/* Lower Right Button Stack - Donate + View Mode Toggle
+          On mobile (non-modal): sits just above bottom nav (no floating + button on mobile)
+          On desktop (non-modal): sits above the floating + button
+          On modal (desktop side panel): sits above the floating + button */}
       <div 
-        className="absolute z-20 flex flex-col gap-3"
-        style={{ 
-          bottom: isModal ? 100 : (BOTTOM_NAV_CLEARANCE + 76),
-          right: 24
-        }}
+        className={`absolute z-20 flex flex-col gap-3 right-6 ${isModal ? 'bottom-[100px]' : 'bottom-[100px] lg:bottom-[176px]'}`}
       >
         {/* Donate Button */}
         <button
