@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { X, RefreshCw, AlertCircle, Heart, Plus, Clock, Gift, Earth, Map } from "lucide-react"
+import { X, RefreshCw, AlertCircle, Heart, Plus, Clock, Gift, Earth, Map, Timer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Post } from "@/lib/types"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
@@ -299,6 +299,16 @@ function MapViewComponent({
     } catch (error) {
       return "Recently"
     }
+  }
+
+  // Format expiration time
+  const formatExpiresIn = (expiresAt: string): string => {
+    const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
+    if (diff <= 0) return 'expired'
+    if (diff < 3600) return `expires ${Math.floor(diff / 60)}m`
+    if (diff < 86400) return `expires ${Math.floor(diff / 3600)}h`
+    if (diff < 604800) return `expires ${Math.floor(diff / 86400)}d`
+    return `expires ${Math.floor(diff / 604800)}w`
   }
 
   // Initialize map when component mounts
@@ -1232,6 +1242,12 @@ function MapViewComponent({
                     <Clock className="w-3 h-3" />
                     {formatPostDate(selectedPost)}
                   </div>
+                  {selectedPost.expires_at && (
+                    <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <Timer className="w-3 h-3" />
+                      {formatExpiresIn(selectedPost.expires_at)}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

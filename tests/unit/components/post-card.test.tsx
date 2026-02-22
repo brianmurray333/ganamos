@@ -1,5 +1,58 @@
-import { describe, it, expect } from 'vitest'
-import { abbreviateLocation } from '@/components/post-card'
+/**
+ * @vitest-environment jsdom
+ */
+import React from 'react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render } from '@testing-library/react'
+import { PostCard, abbreviateLocation } from '@/components/post-card'
+import type { Post } from '@/lib/types'
+
+// Mock IntersectionObserver
+class IntersectionObserverMock {
+  observe = vi.fn()
+  disconnect = vi.fn()
+  unobserve = vi.fn()
+}
+
+global.IntersectionObserver = IntersectionObserverMock as any
+
+// Mock next/navigation
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}))
+
+// Mock next/image
+vi.mock('next/image', () => ({
+  default: ({ src, alt, ...props }: any) => {
+    return React.createElement('img', { src, alt, ...props })
+  },
+}))
+
+// Mock geocoding functions
+vi.mock('@/lib/geocoding', () => ({
+  reverseGeocode: vi.fn(),
+  getTravelTimes: vi.fn().mockResolvedValue({ walking: null, driving: null }),
+  getCurrentLocationWithName: vi.fn().mockResolvedValue(null),
+}))
+
+const mockPost: Post = {
+  id: 'test-post-1',
+  title: 'Test Post',
+  description: 'Test description',
+  reward: 100,
+  user_id: 'user-1',
+  created_at: new Date().toISOString(),
+  location: 'Austin, Texas',
+  latitude: 30.2672,
+  longitude: -97.7431,
+  image_url: 'https://example.com/image.jpg',
+  fixed: false,
+  deleted_at: null,
+  under_review: false,
+}
 
 describe('abbreviateLocation', () => {
   describe('full state name abbreviation', () => {
@@ -244,6 +297,94 @@ describe('abbreviateLocation', () => {
         expect(abbreviateLocation(fullName)).toBe(abbreviation)
         expect(abbreviateLocation(`City, ${fullName}`)).toBe(`City, ${abbreviation}`)
       })
+    })
+  })
+
+  describe('expiration display', () => {
+    it('should render expiration time when expires_at is set to a future date', () => {
+      const futureDate = new Date(Date.now() + 2 * 86400_000).toISOString() // 2 days from now
+      const postWithExpiry: Post = {
+        ...mockPost,
+        expires_at: futureDate,
+      }
+
+      const { container } = render(<PostCard post={postWithExpiry} />)
+      
+      // Should show "expires 2d" or similar
+      expect(container.textContent).toMatch(/expires \d+d/)
+    })
+
+    it('should render "expired" when expires_at is in the past', () => {
+      const pastDate = new Date(Date.now() - 3600_000).toISOString() // 1 hour ago
+      const postWithExpiry: Post = {
+        ...mockPost,
+        expires_at: pastDate,
+      }
+
+      const { container } = render(<PostCard post={postWithExpiry} />)
+      
+      expect(container.textContent).toContain('expired')
+    })
+
+    it('should render minutes when expiring within an hour', () => {
+      const soonDate = new Date(Date.now() + 30 * 60_000).toISOString() // 30 minutes
+      const postWithExpiry: Post = {
+        ...mockPost,
+        expires_at: soonDate,
+      }
+
+      const { container } = render(<PostCard post={postWithExpiry} />)
+      
+      expect(container.textContent).toMatch(/expires \d+m/)
+    })
+
+    it('should render hours when expiring within a day', () => {
+      const hoursDate = new Date(Date.now() + 12 * 3600_000).toISOString() // 12 hours
+      const postWithExpiry: Post = {
+        ...mockPost,
+        expires_at: hoursDate,
+      }
+
+      const { container } = render(<PostCard post={postWithExpiry} />)
+      
+      expect(container.textContent).toMatch(/expires \d+h/)
+    })
+
+    it('should render weeks when expiring beyond a week', () => {
+      const weeksDate = new Date(Date.now() + 14 * 86400_000).toISOString() // 2 weeks
+      const postWithExpiry: Post = {
+        ...mockPost,
+        expires_at: weeksDate,
+      }
+
+      const { container } = render(<PostCard post={postWithExpiry} />)
+      
+      expect(container.textContent).toMatch(/expires \d+w/)
+    })
+
+    it('should NOT render expiration when expires_at is null', () => {
+      const postWithoutExpiry: Post = {
+        ...mockPost,
+        expires_at: null,
+      }
+
+      const { container } = render(<PostCard post={postWithoutExpiry} />)
+      
+      // Should not contain any expiration-related text
+      expect(container.textContent).not.toMatch(/expires/)
+      expect(container.textContent).not.toMatch(/expired/)
+    })
+
+    it('should NOT render expiration when expires_at is undefined', () => {
+      const postWithoutExpiry: Post = {
+        ...mockPost,
+        // expires_at not set
+      }
+
+      const { container } = render(<PostCard post={postWithoutExpiry} />)
+      
+      expect(container.textContent).not.toMatch(/expires/)
+      expect(container.textContent).not.toMatch(/expired/)
     })
   })
 })

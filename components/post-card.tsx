@@ -1,14 +1,12 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardFooter } from "@/components/ui/card"
 import type { Post } from "@/lib/types"
 import { formatTimeAgo } from "@/lib/utils"
 import { reverseGeocode, getTravelTimes, getCurrentLocationWithName, type TravelTimes } from "@/lib/geocoding"
-import { Car, Footprints, CheckCircle, Clock, Circle } from "lucide-react"
+import { Car, Footprints, CheckCircle, Clock, Circle, Timer } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 // State abbreviation mapping
@@ -333,6 +331,16 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
     }
   }
 
+  // Format expiration time
+  const formatExpiresIn = (expiresAt: string): string => {
+    const diff = Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000)
+    if (diff <= 0) return 'expired'
+    if (diff < 3600) return `expires ${Math.floor(diff / 60)}m`
+    if (diff < 86400) return `expires ${Math.floor(diff / 3600)}h`
+    if (diff < 604800) return `expires ${Math.floor(diff / 86400)}d`
+    return `expires ${Math.floor(diff / 604800)}w`
+  }
+
   // Get the image URL, handling both imageUrl and image_url properties
   const getImageUrl = () => {
     return post.imageUrl || post.image_url || "/placeholder.svg"
@@ -528,6 +536,15 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
                   </svg>
                   <span className="text-xs text-muted-foreground">{formatAbbreviatedTimeAgo()}</span>
                 </div>
+                {/* Expiration info - only show if post has expires_at set */}
+                {post.expires_at && (
+                  <div className="flex items-center ml-2">
+                    <Timer width={14} height={14} className="mr-1 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatExpiresIn(post.expires_at)}
+                    </span>
+                  </div>
+                )}
                 {/* Group info - only show if post has a group */}
                 {post.group && (
                   <div className="flex items-center ml-2">
