@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GET } from '@/app/api/cron/expire-posts/route'
 import { NextRequest } from 'next/server'
 import { getServiceClient } from './helpers/db-client'
+import { seedUser } from './helpers/test-isolation'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/database.types'
 import * as transactionEmails from '@/lib/transaction-emails'
@@ -16,54 +17,37 @@ vi.mock('@/lib/transaction-emails', () => ({
 describe('POST Expiration Cron - Integration Tests', () => {
   let testSupabase: SupabaseClient<Database>
   let testUserId: string
+  let testUserEmail: string
   let testFixerId: string
+  let testFixerEmail: string
 
-  beforeAll(async () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+
     // Initialize Supabase client using the helper
     testSupabase = getServiceClient()
 
-    // Create test users
-    const { data: userData } = await testSupabase
-      .from('profiles')
-      .insert({
-        email: 'test-poster@example.com',
-        name: 'Test Poster',
-        balance: 5000,
-      })
-      .select()
-      .single()
+    const timestamp = Date.now()
 
-    testUserId = (userData as any)?.id
+    // Create test users via seedUser (creates auth.users + profiles properly)
+    const poster = await seedUser({
+      email: `test-poster-${timestamp}@example.com`,
+      name: 'Test Poster',
+      balance: 5000,
+    })
+    testUserId = poster.id
+    testUserEmail = poster.email
 
-    const { data: fixerData } = await testSupabase
-      .from('profiles')
-      .insert({
-        email: 'test-fixer@example.com',
-        name: 'Test Fixer',
-        balance: 0,
-      })
-      .select()
-      .single()
-
-    testFixerId = (fixerData as any)?.id
+    const fixer = await seedUser({
+      email: `test-fixer-${timestamp}@example.com`,
+      name: 'Test Fixer',
+      balance: 0,
+    })
+    testFixerId = fixer.id
+    testFixerEmail = fixer.email
   })
 
-  afterAll(async () => {
-    // Clean up test data
-    if (testUserId) {
-      await testSupabase.from('posts').delete().eq('user_id', testUserId)
-      await testSupabase.from('transactions').delete().eq('user_id', testUserId)
-      await testSupabase.from('activities').delete().eq('user_id', testUserId)
-      await testSupabase.from('profiles').delete().eq('id', testUserId)
-    }
-    if (testFixerId) {
-      await testSupabase.from('profiles').delete().eq('id', testFixerId)
-    }
-  })
-
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  // Cleanup is handled automatically by setup-db.ts afterEach
 
   describe('End-to-End Expiration Flow', () => {
     it('should expire post and update database', async () => {
@@ -168,7 +152,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
 
       // Verify confirmation email was sent
       expect(transactionEmails.sendPostExpiredConfirmationEmail).toHaveBeenCalledWith({
-        toEmail: 'test-poster@example.com',
+        toEmail: testUserEmail,
         userName: 'Test Poster',
         postTitle: 'Integration Test Post',
         refundAmountSats: 1000,
@@ -213,7 +197,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Verify warning email was sent
       expect(transactionEmails.sendPostExpiryWarningEmail).toHaveBeenCalledWith(
         expect.objectContaining({
-          toEmail: 'test-poster@example.com',
+          toEmail: testUserEmail,
           userName: 'Test Poster',
           postTitle: 'Warning Test Post',
           postId: (post as any)?.id,
@@ -228,9 +212,6 @@ describe('POST Expiration Cron - Integration Tests', () => {
         .single()
 
       expect(updatedPost?.expiry_warning_sent_at).not.toBeNull()
-
-      // Clean up
-      await testSupabase.from('posts').delete().eq('id', (post as any)?.id)
     })
 
     it('should clear assignment and notify fixer on expiration', async () => {
@@ -273,7 +254,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
 
       // Verify fixer email was sent
       expect(transactionEmails.sendPostExpiredFixerEmail).toHaveBeenCalledWith({
-        toEmail: 'test-fixer@example.com',
+        toEmail: testFixerEmail,
         fixerName: 'Test Fixer',
         postTitle: 'Assigned Post',
         postId: (post as any)?.id,
@@ -318,9 +299,6 @@ describe('POST Expiration Cron - Integration Tests', () => {
         .single()
 
       expect(updatedPost?.deleted_at).toBeFalsy() // Should still be null/undefined (not deleted)
-
-      // Clean up
-      await testSupabase.from('posts').delete().eq('id', (post as any)?.id)
     })
   })
 
