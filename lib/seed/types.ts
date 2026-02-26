@@ -26,7 +26,8 @@ export interface SeedPost {
   user_id: string;
   title: string;
   description: string;
-  image_url: string;
+  image_url: string | null;
+  has_image?: boolean;
   location: string;
   latitude: number;
   longitude: number;
