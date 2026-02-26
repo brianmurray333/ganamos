@@ -6,6 +6,7 @@ export interface Post {
   description: string
   imageUrl?: string
   image_url?: string
+  has_image?: boolean
   location?: string // Make optional
   latitude?: number // Add optional latitude
   longitude?: number // Add optional longitude
