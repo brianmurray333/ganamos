@@ -1667,10 +1667,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <div>
                 <div 
                   className="relative w-full h-40 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                  onClick={() => openFullscreenImage(post.imageUrl || post.image_url || "/placeholder.svg")}
+                  onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg'))}
                 >
                   <Image
-                    src={post.imageUrl || post.image_url || "/placeholder.svg"}
+                    src={post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')}
                     alt="Before"
                     fill
                     className="object-cover"
@@ -1754,10 +1754,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           ) : (
             <div 
               className="relative w-full h-64 mb-4 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-95"
-              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || "/placeholder.svg")}
+              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg'))}
             >
               <Image
-                src={post.imageUrl || post.image_url || "/placeholder.svg"}
+                src={post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')}
                 alt={post.title}
                 fill
                 className="object-cover"
@@ -2180,6 +2180,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               }}
             />
           )}
+          {/* Info banner for image-less posts */}
+          {!post.has_image && !post.fixed && !post.under_review && !post.deleted_at && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-4 text-sm text-muted-foreground">
+              📋 This post has no before photo — your fix will require approval from the original poster.
+            </div>
+          )}
+          
           {!post.fixed && !post.under_review && !post.deleted_at && (
             <Button className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" onClick={() => setShowCamera(true)}>Start</Button>
           )}

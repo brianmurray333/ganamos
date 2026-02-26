@@ -343,7 +343,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
 
   // Get the image URL, handling both imageUrl and image_url properties
   const getImageUrl = () => {
-    return post.imageUrl || post.image_url || "/placeholder.svg"
+    return post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')
   }
 
   const getInitials = () => {
