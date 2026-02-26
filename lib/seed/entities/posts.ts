@@ -197,6 +197,49 @@ function generatePostData(): SeedPost[] {
     under_review: true, // Cron should skip this
   });
 
+  // Image-less post #1: Open, no fix submitted
+  posts.push({
+    user_id: MOCK_USER_ID,
+    title: 'Put a rubber duck on the fountain in Central Park',
+    description: 'Someone needs to place a rubber duck on top of the Bethesda Fountain in Central Park, NYC. Document it with a photo!',
+    image_url: null,
+    has_image: false,
+    location: 'Central Park, New York, USA',
+    latitude: 40.7812,
+    longitude: -73.9665,
+    city: 'New York',
+    reward: 2000,
+    original_reward: 2000,
+    claimed: false,
+    fixed: false,
+    under_review: false,
+    created_by: MOCK_USER_NAME,
+    created_at: new Date().toISOString(),
+  });
+
+  // Image-less post #2: Fix submitted, pending poster approval
+  posts.push({
+    user_id: MOCK_USER_ID,
+    title: 'Tape a sticky note saying "Hello World" to the Hollywood sign',
+    description: 'Classic programmer challenge. Needs photographic proof.',
+    image_url: null,
+    has_image: false,
+    location: 'Hollywood, Los Angeles, USA',
+    latitude: 34.1341,
+    longitude: -118.3215,
+    city: 'Los Angeles',
+    reward: 3000,
+    original_reward: 3000,
+    claimed: true,
+    fixed: false,
+    under_review: true,
+    claimed_by: 'Test Fixer',
+    fixed_image_url: PLACEHOLDER_IMAGES.FIXED,
+    fixer_note: 'Done! Check the photo.',
+    created_by: MOCK_USER_NAME,
+    created_at: new Date().toISOString(),
+  });
+
   return posts;
 }
 
