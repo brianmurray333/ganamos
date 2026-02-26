@@ -54,6 +54,93 @@ const mockPost: Post = {
   under_review: false,
 }
 
+describe('PostCard image handling', () => {
+  it('should use Earth placeholder when has_image is false and image_url is null', () => {
+    const postWithoutImage: Post = {
+      ...mockPost,
+      image_url: null,
+      has_image: false,
+    }
+
+    const { container } = render(<PostCard post={postWithoutImage} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('/images/earth-placeholder.jpg')
+  })
+
+  it('should use Earth placeholder when has_image is false and image_url is empty string', () => {
+    const postWithoutImage: Post = {
+      ...mockPost,
+      image_url: '',
+      has_image: false,
+    }
+
+    const { container } = render(<PostCard post={postWithoutImage} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('/images/earth-placeholder.jpg')
+  })
+
+  it('should use generic placeholder when has_image is true and image_url is null', () => {
+    const postWithMissingImage: Post = {
+      ...mockPost,
+      image_url: null,
+      has_image: true,
+    }
+
+    const { container } = render(<PostCard post={postWithMissingImage} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('/placeholder.svg')
+  })
+
+  it('should use existing image_url when present regardless of has_image', () => {
+    const postWithImage: Post = {
+      ...mockPost,
+      image_url: 'https://example.com/image.jpg',
+      has_image: true,
+    }
+
+    const { container } = render(<PostCard post={postWithImage} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('https://example.com/image.jpg')
+  })
+
+  it('should use existing image_url even when has_image is false (data inconsistency)', () => {
+    const postWithInconsistentData: Post = {
+      ...mockPost,
+      image_url: 'https://example.com/image.jpg',
+      has_image: false,
+    }
+
+    const { container } = render(<PostCard post={postWithInconsistentData} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('https://example.com/image.jpg')
+  })
+
+  it('should use imageUrl (camelCase) if present instead of image_url', () => {
+    const postWithCamelCaseUrl: Post = {
+      ...mockPost,
+      imageUrl: 'https://example.com/camel-case.jpg',
+      image_url: 'https://example.com/snake-case.jpg',
+      has_image: true,
+    }
+
+    const { container } = render(<PostCard post={postWithCamelCaseUrl} />)
+    const img = container.querySelector('img')
+    
+    expect(img).toBeTruthy()
+    expect(img?.src).toContain('https://example.com/camel-case.jpg')
+  })
+})
+
 describe('abbreviateLocation', () => {
   describe('full state name abbreviation', () => {
     it('should abbreviate full US state names to two-letter codes', () => {

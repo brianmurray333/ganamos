@@ -155,6 +155,11 @@ export const PLACEHOLDER_IMAGES = {
 } as const;
 
 /**
+ * Earth placeholder image for image-less posts
+ */
+export const EARTH_PLACEHOLDER_IMAGE = '/images/earth-placeholder.jpg';
+
+/**
  * Reward amounts in sats
  */
 export const REWARD_AMOUNTS = [250, 300, 400, 500, 600, 750, 1000] as const;
