@@ -576,13 +576,7 @@ export default function NewPostPage() {
       return
     }
 
-    if (!image) {
-      toast.error("Image required", {
-        description: "Please take a photo of the issue",
-      })
-      setIsSubmitting(false)
-      return
-    }
+    // Image is now optional - removed validation check
 
     if (!description) {
       toast.error("Missing information", {
@@ -692,6 +686,7 @@ export default function NewPostPage() {
         title: description.substring(0, 50),
         description,
         image_url: finalImageUrl,
+        has_image: finalImageUrl != null,
         location: currentLocation?.name || null, // Use geocoded name
         latitude: currentLocation?.lat || null,
         longitude: currentLocation?.lng || null,
@@ -889,11 +884,27 @@ export default function NewPostPage() {
       )}
 
       {step === "photo" && cameraActive ? (
-        <DynamicCameraCapture 
-          key="camera-active"
-          onCapture={handleCapture}
-          onGalleryClick={() => document.getElementById('photo-upload')?.click()}
-        />
+        <>
+          <DynamicCameraCapture 
+            key="camera-active"
+            onCapture={handleCapture}
+            onGalleryClick={() => document.getElementById('photo-upload')?.click()}
+          />
+          {/* Skip photo button */}
+          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50">
+            <button
+              type="button"
+              onClick={() => {
+                setImage(null)
+                setStep("details")
+                setCameraActive(false)
+              }}
+              className="text-sm text-white/60 underline hover:text-white/80 transition-colors"
+            >
+              Skip photo
+            </button>
+          </div>
+        </>
       ) : (
         <>
           {!showCreateAccountPrompt && (
