@@ -130,19 +130,94 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Create the game session with host as first player
+    // 5. Before creating a new game, check if a group member already has an active lobby
+    if (groupIds.length > 0) {
+      const { data: existingGroupGames } = await supabase
+        .from("pickleball_games")
+        .select("*")
+        .in("status", ["lobby"])
+        .neq("host_device_id", deviceId)
+        .gt("lobby_expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(5)
+
+      if (existingGroupGames && existingGroupGames.length > 0) {
+        for (const existingGame of existingGroupGames) {
+          const { data: hostInGroup } = await supabase
+            .from("group_members")
+            .select("id")
+            .in("group_id", groupIds)
+            .eq("user_id", existingGame.host_user_id)
+            .eq("status", "approved")
+            .limit(1)
+            .single()
+
+          if (hostInGroup) {
+            const players = (existingGame.players as any[]) || []
+            const alreadyJoined = players.some((p: any) => p.deviceId === deviceId)
+
+            if (!alreadyJoined && players.length < 4) {
+              const sideAssignments = [
+                { side: "left", position: "top" },
+                { side: "right", position: "top" },
+                { side: "right", position: "bottom" },
+                { side: "left", position: "bottom" },
+              ]
+              const assignment = sideAssignments[players.length]
+
+              const joiningPlayer = {
+                userId: device.user_id,
+                deviceId: device.id,
+                petName: device.pet_name,
+                petInitial: device.pet_name.charAt(0).toUpperCase(),
+                macAddress,
+                side: assignment.side,
+                position: assignment.position,
+                joinedAt: new Date().toISOString(),
+              }
+
+              const updatedPlayers = [...players, joiningPlayer]
+
+              await supabase
+                .from("pickleball_games")
+                .update({ players: updatedPlayers, updated_at: new Date().toISOString() })
+                .eq("id", existingGame.id)
+
+              const hostPlayer = players[0]
+
+              console.log(`[Pickleball] Device ${deviceId} auto-joined existing game ${existingGame.id} as player ${players.length}`)
+
+              return NextResponse.json({
+                success: true,
+                action: "join",
+                gameId: existingGame.id,
+                hostMac: hostPlayer?.macAddress || "",
+                hostPetName: hostPlayer?.petName || "Someone",
+                playerIndex: players.length,
+                yourSide: assignment.side,
+                yourPosition: assignment.position,
+                players: updatedPlayers,
+                playerCount: updatedPlayers.length,
+              })
+            }
+          }
+        }
+      }
+    }
+
+    // 6. No existing lobby found — create a new game session
     const hostPlayer = {
       userId: device.user_id,
       deviceId: device.id,
       petName: device.pet_name,
       petInitial: device.pet_name.charAt(0).toUpperCase(),
       macAddress: macAddress,
-      side: "left",    // Host always starts on left
-      position: "top", // Host starts top-left
+      side: "left",
+      position: "top",
       joinedAt: new Date().toISOString(),
     }
 
-    const lobbyExpiresAt = new Date(Date.now() + 60 * 1000).toISOString() // 60 second lobby
+    const lobbyExpiresAt = new Date(Date.now() + 60 * 1000).toISOString()
 
     const { data: game, error: gameError } = await supabase
       .from("pickleball_games")
@@ -168,6 +243,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      action: "host",
       gameId: game.id,
       lobbyExpiresAt,
       potentialPlayers: potentialPlayers.length,
