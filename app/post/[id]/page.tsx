@@ -561,6 +561,89 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         console.log("✅ Fix image uploaded successfully")
       }
 
+      // Image-less post: skip AI verification entirely and route to manual review
+      if (!post.has_image) {
+        console.log("🔍 FIX SUBMISSION - Image-less post detected, skipping AI verification")
+        
+        if (user) {
+          // Logged-in user: submit for review
+          const userId = activeUserId || user.id
+          const result = await submitLoggedInFixForReviewAction({
+            postId: post.id,
+            userId,
+            fixImageUrl: finalFixImageUrl || '',
+            fixerNote: fixerNote,
+            aiConfidence: null,
+            aiAnalysis: null,
+          })
+
+          if (result.success) {
+            setPost((prevPost) =>
+              prevPost
+                ? {
+                    ...prevPost,
+                    claimed: true,
+                    under_review: true,
+                    submitted_fix_image_url: finalFixImageUrl || "",
+                    submitted_fix_note: fixerNote || "",
+                    submitted_fix_by: userId,
+                    submitted_fix_by_name: profile?.name || user.email || "Unknown",
+                    submitted_fix_by_avatar: profile?.avatar_url || null,
+                    ai_confidence_score: null,
+                    ai_analysis: null,
+                    fixed: false,
+                    fixed_by_is_anonymous: false,
+                  }
+                : null,
+            )
+            toast.success("Fix Submitted for Review", {
+              description: "The post owner will be notified to review your fix.",
+            })
+          } else {
+            toast.error("Error Submitting for Review", {
+              description: result.error || "Could not submit your fix for review.",
+            })
+          }
+        } else {
+          // Anonymous fixer: submit for review (do NOT auto-approve)
+          const actionResult = await submitAnonymousFixForReviewAction(
+            post.id,
+            finalFixImageUrl || "",
+            fixerNote,
+            null, // aiConfidence is null for image-less posts
+            null, // aiAnalysis is null for image-less posts
+          )
+
+          if (actionResult.success) {
+            setPost((prevPost) =>
+              prevPost
+                ? {
+                    ...prevPost,
+                    claimed: true,
+                    under_review: true,
+                    submitted_fix_image_url: finalFixImageUrl || "",
+                    submitted_fix_note: fixerNote || "",
+                    submitted_fix_by_name: "Anonymous Fixer (Pending Review)",
+                    ai_confidence_score: null,
+                    ai_analysis: null,
+                    fixed: false,
+                    fixed_by_is_anonymous: false,
+                  }
+                : null,
+            )
+            // Show modal to prompt for Lightning address or account creation
+            setPendingAnonymousFixPostId(post.id)
+            setShowAnonymousFixSubmissionModal(true)
+          } else {
+            toast.error("Error Submitting for Review", {
+              description: actionResult.error || "Could not submit your anonymous fix for review.",
+            })
+          }
+        }
+        setSubmittingFix(false)
+        return // Early return - skip AI verification flow
+      }
+
       console.log("🔍 FIX SUBMISSION - Starting AI verification process")
       const verificationResponse = await fetch("/api/verify-fix", {
         method: "POST",
