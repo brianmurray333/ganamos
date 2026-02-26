@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
       description,
       reward: jobReward, // Use the validated job reward
       image_url: image_url || null,
+      has_image: typeof image_url === 'string' && image_url.length > 0,
       location: location || null,
       latitude: latitude || null,
       longitude: longitude || null,

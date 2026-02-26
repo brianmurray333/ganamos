@@ -568,6 +568,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
   description: string
   reward: number
   image_url: string | null // Renamed from image to image_url to match DB
+  has_image?: boolean // Optional: whether post has an image
   location: string | null // Renamed from locationName
   latitude: number | null
   longitude: number | null
@@ -609,6 +610,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
         title: postDetails.description.substring(0, 50),
         description: postDetails.description,
         image_url: postDetails.image_url || "/placeholder.jpg", // Use placeholder only if no image provided
+        has_image: postDetails.has_image ?? (postDetails.image_url != null && postDetails.image_url.length > 0),
         location: postDetails.location,
         latitude: postDetails.latitude,
         longitude: postDetails.longitude,
