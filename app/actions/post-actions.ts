@@ -874,7 +874,7 @@ export async function submitAnonymousFixForReviewAction(
   postId: string,
   fixImageUrl: string,
   fixerNote: string | null,
-  aiConfidence: number,
+  aiConfidence: number | null,
   aiAnalysis: string | null,
 ): Promise<{ success: boolean; error?: string }> {
   if (!postId || !fixImageUrl) {
@@ -886,9 +886,10 @@ export async function submitAnonymousFixForReviewAction(
     // SECURITY: Check if this is an anonymous post BEFORE claiming
     // For anonymous posts (no owner), only high-confidence AI can approve
     // Low-confidence fixes should be rejected since there's no one to manually review them
+    // EXCEPTION: Image-less posts (aiConfidence === null) are allowed for manual review
     const { data: postCheck, error: postCheckError } = await supabase
       .from("posts")
-      .select("user_id")
+      .select("user_id, has_image")
       .eq("id", postId)
       .single()
 
@@ -897,7 +898,7 @@ export async function submitAnonymousFixForReviewAction(
       return { success: false, error: "Post not found." }
     }
 
-    if (!postCheck.user_id && aiConfidence < 7) {
+    if (!postCheck.user_id && aiConfidence !== null && aiConfidence < 7 && postCheck.has_image !== false) {
       console.log(`[Security] Rejecting low-confidence fix for anonymous post ${postId}. AI confidence: ${aiConfidence}`)
       return {
         success: false,
@@ -1048,7 +1049,7 @@ export async function submitLoggedInFixForReviewAction(params: {
   userId: string
   fixImageUrl: string
   fixerNote: string | null
-  aiConfidence: number
+  aiConfidence: number | null
   aiAnalysis: string | null
 }): Promise<{ success: boolean; error?: string }> {
   'use server'
@@ -1096,9 +1097,10 @@ export async function submitLoggedInFixForReviewAction(params: {
     // SECURITY: Check if this is an anonymous post BEFORE claiming
     // For anonymous posts (no owner), only high-confidence AI can approve
     // Low-confidence fixes should be rejected since there's no one to manually review them
+    // EXCEPTION: Image-less posts (aiConfidence === null) are allowed for manual review
     const { data: postCheck, error: postCheckError } = await supabase
       .from('posts')
-      .select('user_id')
+      .select('user_id, has_image')
       .eq('id', postId)
       .single()
 
@@ -1107,7 +1109,7 @@ export async function submitLoggedInFixForReviewAction(params: {
       return { success: false, error: 'Post not found.' }
     }
 
-    if (!postCheck.user_id && aiConfidence < 7) {
+    if (!postCheck.user_id && aiConfidence !== null && aiConfidence < 7 && postCheck.has_image !== false) {
       console.log(`[Security] Rejecting low-confidence fix for anonymous post ${postId}. AI confidence: ${aiConfidence}`)
       return {
         success: false,
