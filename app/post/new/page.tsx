@@ -1445,7 +1445,7 @@ export default function NewPostPage() {
                   className={`h-12 w-12 flex items-center justify-center rounded-lg border transition-colors ${
                     expiresAt
                       ? 'border-green-600 text-green-600 bg-green-50 dark:bg-green-950/30'
-                      : 'border-gray-300 text-muted-foreground hover:border-gray-400 hover:text-foreground'
+                      : 'border-muted-foreground text-muted-foreground hover:border-white hover:text-white'
                   }`}
                   title={expiresAt ? `Expires ${formatAbbreviatedTimeRemaining(expiresAt)}` : 'Add expiration'}
                 >
