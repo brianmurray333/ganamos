@@ -101,6 +101,8 @@ export async function GET(request: NextRequest) {
       lobbyExpiresAt: game.lobby_expires_at,
       scoreLeft: game.score_left,
       scoreRight: game.score_right,
+      wagerAmount: game.wager_amount || 0,
+      wagerStatus: game.wager_status || "none",
     })
   } catch (error) {
     console.error("[Pickleball] State error:", error)

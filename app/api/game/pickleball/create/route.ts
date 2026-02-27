@@ -15,7 +15,15 @@ export const dynamic = "force-dynamic"
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { deviceId, macAddress } = body
+    const { deviceId, macAddress, wagerAmount: rawWager } = body
+    const wagerAmount = Number(rawWager) || 0
+
+    if (wagerAmount !== 0 && wagerAmount !== 100 && wagerAmount !== 500 && wagerAmount !== 1000) {
+      return NextResponse.json(
+        { success: false, error: "Wager must be 0, 100, 500, or 1000" },
+        { status: 400 }
+      )
+    }
 
     if (!deviceId) {
       return NextResponse.json(
@@ -65,6 +73,22 @@ export async function POST(request: NextRequest) {
       .from("devices")
       .update({ mac_address: macAddress })
       .eq("id", deviceId)
+
+    // 2b. If wager > 0, verify host has sufficient balance
+    if (wagerAmount > 0) {
+      const { data: hostProfile } = await supabase
+        .from("profiles")
+        .select("balance")
+        .eq("id", device.user_id)
+        .single()
+
+      if (!hostProfile || hostProfile.balance < wagerAmount) {
+        return NextResponse.json(
+          { success: false, error: "Insufficient balance for wager" },
+          { status: 400 }
+        )
+      }
+    }
 
     // 3. Check for existing active game from this device
     const { data: existingGame } = await supabase
@@ -165,6 +189,18 @@ export async function POST(request: NextRequest) {
               ]
               const assignment = sideAssignments[players.length]
 
+              // Check joiner's balance against the game's wager
+              const gameWager = existingGame.wager_amount || 0
+              let joinerWagerAccepted = true
+              if (gameWager > 0) {
+                const { data: joinerProfile } = await supabase
+                  .from("profiles")
+                  .select("balance")
+                  .eq("id", device.user_id)
+                  .single()
+                joinerWagerAccepted = !!(joinerProfile && joinerProfile.balance >= gameWager)
+              }
+
               const joiningPlayer = {
                 userId: device.user_id,
                 deviceId: device.id,
@@ -174,16 +210,28 @@ export async function POST(request: NextRequest) {
                 side: assignment.side,
                 position: assignment.position,
                 joinedAt: new Date().toISOString(),
+                wagerAccepted: joinerWagerAccepted,
               }
 
               const updatedPlayers = [...players, joiningPlayer]
 
+              const gameUpdate: Record<string, any> = {
+                players: updatedPlayers,
+                updated_at: new Date().toISOString(),
+              }
+              if (!joinerWagerAccepted && existingGame.wager_status === "active") {
+                gameUpdate.wager_status = "declined"
+              }
+
               await supabase
                 .from("pickleball_games")
-                .update({ players: updatedPlayers, updated_at: new Date().toISOString() })
+                .update(gameUpdate)
                 .eq("id", existingGame.id)
 
               const hostPlayer = players[0]
+              const updatedWagerStatus = joinerWagerAccepted
+                ? (existingGame.wager_status || "none")
+                : "declined"
 
               console.log(`[Pickleball] Device ${deviceId} auto-joined existing game ${existingGame.id} as player ${players.length}`)
 
@@ -198,6 +246,9 @@ export async function POST(request: NextRequest) {
                 yourPosition: assignment.position,
                 players: updatedPlayers,
                 playerCount: updatedPlayers.length,
+                wagerAmount: gameWager,
+                wagerAccepted: joinerWagerAccepted,
+                wagerStatus: updatedWagerStatus,
               })
             }
           }
@@ -215,6 +266,7 @@ export async function POST(request: NextRequest) {
       side: "left",
       position: "top",
       joinedAt: new Date().toISOString(),
+      wagerAccepted: wagerAmount > 0 ? true : undefined,
     }
 
     const lobbyExpiresAt = new Date(Date.now() + 60 * 1000).toISOString()
@@ -227,6 +279,8 @@ export async function POST(request: NextRequest) {
         status: "lobby",
         players: [hostPlayer],
         lobby_expires_at: lobbyExpiresAt,
+        wager_amount: wagerAmount,
+        wager_status: wagerAmount > 0 ? "active" : "none",
       })
       .select("id")
       .single()
@@ -247,6 +301,8 @@ export async function POST(request: NextRequest) {
       gameId: game.id,
       lobbyExpiresAt,
       potentialPlayers: potentialPlayers.length,
+      wagerAmount,
+      wagerStatus: wagerAmount > 0 ? "active" : "none",
     })
   } catch (error) {
     console.error("[Pickleball] Create error:", error)
