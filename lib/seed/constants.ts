@@ -154,10 +154,7 @@ export const PLACEHOLDER_IMAGES = {
   DEVICE: 'https://placehold.co/400x400/png?text=Pet',
 } as const;
 
-/**
- * Earth placeholder image for image-less posts
- */
-export const EARTH_PLACEHOLDER_IMAGE = '/images/earth-placeholder.jpg';
+export { EARTH_PLACEHOLDER_IMAGE } from '@/lib/constants';
 
 /**
  * Reward amounts in sats
