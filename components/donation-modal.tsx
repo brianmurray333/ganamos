@@ -7,8 +7,13 @@ import { Label } from "@/components/ui/label"
 import { createDonationInvoice, checkDonationPayment } from "@/app/actions/donation-actions"
 import QRCode from "@/components/qr-code"
 import { LocationInput } from "@/components/location-input"
-import { MapView } from "@/components/map-view"
+import dynamic from "next/dynamic"
 import { Heart, Bitcoin, Copy, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react"
+
+const MapView = dynamic(
+  () => import("@/components/map-view").then((mod) => mod.MapView),
+  { ssr: false }
+)
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import type { Post } from "@/lib/types"
 
