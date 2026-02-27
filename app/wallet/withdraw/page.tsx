@@ -352,9 +352,6 @@ function WithdrawPageContent() {
 
   // Debounced username search - only triggers when NOT a lightning invoice
   useEffect(() => {
-    // Clear selected profile when input changes (user is typing something new)
-    setModalSelectedProfile(null)
-    // Clear any previous error when input changes
     setModalInputError(null)
     
     const cleanQuery = modalInputValue.startsWith('@') ? modalInputValue.substring(1) : modalInputValue
@@ -363,6 +360,7 @@ function WithdrawPageContent() {
     if (cleanQuery.toLowerCase().startsWith('ln')) {
       setUsernameSearchResults([])
       setHasSearchedUsername(false)
+      setModalSelectedProfile(null)
       return
     }
     
@@ -370,20 +368,20 @@ function WithdrawPageContent() {
     if (cleanQuery.length < 2) {
       setUsernameSearchResults([])
       setHasSearchedUsername(false)
+      setModalSelectedProfile(null)
       return
     }
 
     const timeoutId = setTimeout(async () => {
       setIsSearchingUsername(true)
+      setModalSelectedProfile(null)
       
-      // Check if it looks like a UUID (user might have pasted their user ID)
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       const isUUID = uuidRegex.test(cleanQuery)
       
       let data, error
       
       if (isUUID) {
-        // Search by user ID
         const result = await supabase
           .from('profiles')
           .select('id, username, name, avatar_url')
@@ -392,7 +390,6 @@ function WithdrawPageContent() {
         data = result.data
         error = result.error
       } else {
-        // Search by username prefix
         const result = await supabase
           .from('profiles')
           .select('id, username, name, avatar_url')
@@ -972,9 +969,9 @@ function WithdrawPageContent() {
                     {/* Username typeahead results */}
                     {modalInputValue.length >= 2 && !modalInputValue.toLowerCase().startsWith('ln') && (
                       <div className="space-y-1">
-                        {isSearchingUsername ? (
+                        {isSearchingUsername && usernameSearchResults.length === 0 ? (
                           <p className="text-sm text-muted-foreground px-1">Searching...</p>
-                        ) : hasSearchedUsername && usernameSearchResults.length === 0 ? (
+                        ) : hasSearchedUsername && usernameSearchResults.length === 0 && !isSearchingUsername ? (
                           <p className="text-sm text-red-500 px-1">No matching users</p>
                         ) : usernameSearchResults.length > 0 ? (
                           <div className="space-y-1 max-h-48 overflow-y-auto">
