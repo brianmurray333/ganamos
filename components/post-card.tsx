@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardFooter } from "@/components/ui/card"
 import type { Post } from "@/lib/types"
+import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { formatTimeAgo } from "@/lib/utils"
 import { reverseGeocode, getTravelTimes, getCurrentLocationWithName, type TravelTimes } from "@/lib/geocoding"
 import { Car, Footprints, CheckCircle, Clock, Circle, Timer } from "lucide-react"
@@ -343,7 +344,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
 
   // Get the image URL, handling both imageUrl and image_url properties
   const getImageUrl = () => {
-    return post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')
+    return post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')
   }
 
   const getInitials = () => {

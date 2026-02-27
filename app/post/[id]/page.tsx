@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { Post } from "@/lib/types"
+import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
@@ -1750,10 +1751,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <div>
                 <div 
                   className="relative w-full h-40 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                  onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg'))}
+                  onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg'))}
                 >
                   <Image
-                    src={post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')}
+                    src={post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
                     alt="Before"
                     fill
                     className="object-cover"
@@ -1837,10 +1838,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           ) : (
             <div 
               className="relative w-full h-64 mb-4 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-95"
-              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg'))}
+              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg'))}
             >
               <Image
-                src={post.imageUrl || post.image_url || (post.has_image === false ? '/images/earth-placeholder.jpg' : '/placeholder.svg')}
+                src={post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
                 alt={post.title}
                 fill
                 className="object-cover"

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { X, RefreshCw, AlertCircle, Heart, Plus, Clock, Gift, Earth, Map, Timer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Post } from "@/lib/types"
+import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
@@ -1225,7 +1226,7 @@ function MapViewComponent({
 
             <div className="flex gap-3">
               <img
-                src={selectedPost.imageUrl || selectedPost.image_url || "/placeholder.svg"}
+                src={selectedPost.imageUrl || selectedPost.image_url || (selectedPost.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
                 alt="Issue"
                 className="w-16 h-16 rounded-lg object-cover bg-gray-100 flex-shrink-0"
               />
