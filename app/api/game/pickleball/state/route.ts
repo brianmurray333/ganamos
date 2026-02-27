@@ -182,6 +182,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, status: "playing" })
     }
 
+    if (action === "set_wager") {
+      const wagerAmount = Number(body.wagerAmount) || 0
+      if (wagerAmount !== 0 && wagerAmount !== 100 && wagerAmount !== 500 && wagerAmount !== 1000) {
+        return NextResponse.json(
+          { success: false, error: "Wager must be 0, 100, 500, or 1000" },
+          { status: 400 }
+        )
+      }
+
+      // Verify host has sufficient balance
+      if (wagerAmount > 0) {
+        const { data: hostProfile } = await supabase
+          .from("profiles")
+          .select("balance")
+          .eq("id", game.host_user_id)
+          .single()
+
+        if (!hostProfile || hostProfile.balance < wagerAmount) {
+          return NextResponse.json(
+            { success: false, error: "Insufficient balance for wager" },
+            { status: 400 }
+          )
+        }
+      }
+
+      // Update host player's wagerAccepted in the players array
+      const updatedPlayers = players.map((p: any, i: number) =>
+        i === 0 ? { ...p, wagerAccepted: wagerAmount > 0 ? true : undefined } : p
+      )
+
+      await supabase
+        .from("pickleball_games")
+        .update({
+          wager_amount: wagerAmount,
+          wager_status: wagerAmount > 0 ? "active" : "none",
+          players: updatedPlayers,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", gameId)
+
+      console.log(`[Pickleball] Game ${gameId} wager set to ${wagerAmount} by host`)
+      return NextResponse.json({ success: true, wagerAmount, wagerStatus: wagerAmount > 0 ? "active" : "none" })
+    }
+
     if (action === "cancel") {
       await supabase
         .from("pickleball_games")
