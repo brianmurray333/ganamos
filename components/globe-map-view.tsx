@@ -25,7 +25,6 @@ interface GlobeMapViewProps {
 // Inactivity timeout before resuming auto-rotation (10 seconds)
 const INACTIVITY_TIMEOUT = 10000
 
-// Dynamic import for globe.gl since it requires window
 const GlobeMapViewComponent = ({
   posts,
   userLocation,
@@ -40,6 +39,8 @@ const GlobeMapViewComponent = ({
   const [selectedPost, setSelectedPost] = useState<Post | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [Globe, setGlobe] = useState<any>(null)
+  const [isVisible, setIsVisible] = useState(true)
+  const wasRotatingBeforePause = useRef(false)
 
   // Load globe.gl dynamically (client-side only)
   useEffect(() => {
@@ -47,6 +48,43 @@ const GlobeMapViewComponent = ({
       setGlobe(() => mod.default)
     })
   }, [])
+
+  // Pause/resume globe rendering based on visibility (IntersectionObserver)
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting)
+      },
+      { threshold: 0.1 }
+    )
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const globe = globeRef.current
+    if (!globe) return
+
+    const controls = globe.controls()
+    const renderer = globe.renderer?.()
+
+    if (!isVisible) {
+      wasRotatingBeforePause.current = controls.autoRotate
+      controls.autoRotate = false
+      if (renderer) {
+        renderer.setAnimationLoop(null)
+      }
+    } else {
+      controls.autoRotate = wasRotatingBeforePause.current
+      if (renderer) {
+        renderer.setAnimationLoop(() => renderer.render(globe.scene(), globe.camera()))
+      }
+      globe.resumeAnimation?.()
+    }
+  }, [isVisible])
 
   // Memoize posts with valid coordinates to prevent re-renders when typing in search
   const postsWithLocation = useMemo(() => 

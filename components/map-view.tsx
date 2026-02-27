@@ -12,7 +12,19 @@ import { loadGoogleMaps } from "@/lib/google-maps-loader"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { DonationModal } from "@/components/donation-modal"
 import { getCurrentLocationWithName } from "@/lib/geocoding"
-import { GlobeMapView } from "./globe-map-view"
+import dynamic from "next/dynamic"
+
+const GlobeMapView = dynamic(
+  () => import("./globe-map-view").then((mod) => mod.GlobeMapView),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full flex items-center justify-center bg-background">
+        <div className="w-12 h-12 border-4 border-amber-500/30 border-t-amber-500 rounded-full animate-spin" />
+      </div>
+    ),
+  }
+)
 
 const containerStyle = {
   width: "100%",
@@ -1256,22 +1268,17 @@ function MapViewComponent({
         </div>
       )}
 
-      {/* 3D Globe View - Always rendered for preloading, hidden when not active */}
-      <div 
-        className="absolute inset-0 transition-opacity duration-300"
-        style={{ 
-          opacity: viewMode === "globe" ? 1 : 0,
-          visibility: viewMode === "globe" ? "visible" : "hidden",
-          pointerEvents: viewMode === "globe" ? "auto" : "none"
-        }}
-      >
-        <GlobeMapView
-          posts={postsWithLocation}
-          userLocation={userLocation ? { latitude: userLocation.latitude, longitude: userLocation.longitude } : null}
-          showPreviewCard={showPreviewCard}
-          searchedLocation={searchedLocation}
-        />
-      </div>
+      {/* 3D Globe View - Only mounted when active to avoid continuous WebGL rendering */}
+      {viewMode === "globe" && (
+        <div className="absolute inset-0">
+          <GlobeMapView
+            posts={postsWithLocation}
+            userLocation={userLocation ? { latitude: userLocation.latitude, longitude: userLocation.longitude } : null}
+            showPreviewCard={showPreviewCard}
+            searchedLocation={searchedLocation}
+          />
+        </div>
+      )}
 
       {/* Floating New Issue Button - Hidden on mobile (bottom nav has its own + button), shown on desktop/modal */}
       {!hideSearchOverlay && (
