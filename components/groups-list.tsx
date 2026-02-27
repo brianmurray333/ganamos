@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateGroupDialog } from "@/components/create-group-dialog";
@@ -198,59 +197,57 @@ export function GroupsList({ userId, prefetchedGroups, onGroupsFetched }: Groups
           <GroupSkeleton />
         </div>
       ) : groups.length > 0 ? (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {groups.map((group) => (
-            <Card
+            <button
               key={group.id}
-              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              className="w-full text-left rounded-xl bg-white dark:bg-card border border-gray-200 dark:border-gray-700 px-4 py-3 hover:border-gray-300 dark:hover:border-gray-600 active:scale-[0.98] transition-all"
               onClick={() => handleGroupClick(group.id)}
             >
-              <CardContent className="p-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <h3 className="font-medium">{group.name}</h3>
-                      <span className="text-xs text-muted-foreground">
-                        {group.memberCount}{" "}
-                        {group.memberCount === 1 ? "member" : "members"}
-                      </span>
-                      {group.hasPendingRequests && (
-                        <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-                      )}
-                      {(group.pendingCount || 0) > 0 &&
-                        group.created_by === userId && (
-                          <Badge className="bg-red-100 text-red-800 hover:bg-red-200 border-red-200 text-[10px] px-1.5 py-0.5 h-5">
-                            {group.pendingCount} pending
-                          </Badge>
-                        )}
-                    </div>
-                    {(group.description || group.created_by === userId) && (
-                      <p className="text-sm text-muted-foreground line-clamp-1 mt-1">
-                        {group.description}
-                        {group.description &&
-                          group.created_by === userId &&
-                          " · "}
-                        {group.created_by === userId && "Admin"}
-                      </p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm truncate">{group.name}</h3>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {group.memberCount}{" "}
+                      {group.memberCount === 1 ? "member" : "members"}
+                    </span>
+                    {group.hasPendingRequests && (
+                      <span className="w-2 h-2 bg-red-500 rounded-full shrink-0"></span>
                     )}
+                    {(group.pendingCount || 0) > 0 &&
+                      group.created_by === userId && (
+                        <Badge className="bg-red-100 text-red-800 hover:bg-red-200 border-red-200 text-[10px] px-1.5 py-0.5 h-5 shrink-0">
+                          {group.pendingCount} pending
+                        </Badge>
+                      )}
                   </div>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-muted-foreground"
-                  >
-                    <path d="m9 18 6-6-6-6" />
-                  </svg>
+                  {(group.description || group.created_by === userId) && (
+                    <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
+                      {group.description}
+                      {group.description &&
+                        group.created_by === userId &&
+                        " · "}
+                      {group.created_by === userId && "Admin"}
+                    </p>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="text-muted-foreground shrink-0"
+                >
+                  <path d="m9 18 6-6-6-6" />
+                </svg>
+              </div>
+            </button>
           ))}
         </div>
       ) : (
@@ -293,17 +290,17 @@ export function GroupsList({ userId, prefetchedGroups, onGroupsFetched }: Groups
 
 function GroupSkeleton() {
   return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="flex justify-between items-start">
-          <div className="w-full">
-            <Skeleton className="h-5 w-1/3 mb-2" />
-            <Skeleton className="h-4 w-2/3 mb-3" />
-            <Skeleton className="h-4 w-20" />
+    <div className="rounded-xl border border-gray-200 dark:border-gray-700 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-1">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3 w-16" />
           </div>
-          <Skeleton className="h-4 w-4" />
+          <Skeleton className="h-3 w-32" />
         </div>
-      </CardContent>
-    </Card>
+        <Skeleton className="h-4 w-4 shrink-0" />
+      </div>
+    </div>
   );
 }
