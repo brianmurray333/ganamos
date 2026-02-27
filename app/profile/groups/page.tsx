@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/components/auth-provider";
 import { toast } from "sonner";
 import { LoadingSpinner } from "@/components/loading-spinner";
@@ -64,35 +63,30 @@ export default function GroupsPage() {
       </div>
 
       <div className="container px-4 py-6 mx-auto max-w-md pb-24">
-        {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
-          <Button
-            onClick={() => router.push("/groups/search")}
-            variant="outline"
-            className="flex-1 rounded-xl h-12 border-gray-200 dark:border-gray-700"
-          >
-            <Search className="w-4 h-4 mr-2" />
-            Find Group
-          </Button>
-          <Button
-            onClick={() => setShowCreateGroupDialog(true)}
-            className="flex-1 rounded-xl h-12"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Create Group
-          </Button>
-        </div>
+        {/* Search Bar */}
+        <button
+          onClick={() => router.push("/groups/search")}
+          className="w-full flex items-center gap-3 px-4 h-11 rounded-full bg-white dark:bg-card border border-gray-200 dark:border-gray-700 text-muted-foreground text-sm mb-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+        >
+          <Search className="w-4 h-4 shrink-0" />
+          <span>Find a group...</span>
+        </button>
+
+        {/* Create Group Button */}
+        <Button
+          onClick={() => setShowCreateGroupDialog(true)}
+          className="w-full rounded-full h-11 mb-6 font-semibold"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Create Group
+        </Button>
 
         {/* Groups List */}
-        <Card className="shadow-lg rounded-2xl border-0 bg-white dark:bg-card">
-          <CardContent className="p-4">
-            <GroupsList 
-              userId={activeUserId || user.id} 
-              prefetchedGroups={prefetchedGroups}
-              onGroupsFetched={setPrefetchedGroups}
-            />
-          </CardContent>
-        </Card>
+        <GroupsList 
+          userId={activeUserId || user.id} 
+          prefetchedGroups={prefetchedGroups}
+          onGroupsFetched={setPrefetchedGroups}
+        />
 
         {/* Create Group Dialog */}
         <CreateGroupDialog
