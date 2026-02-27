@@ -127,16 +127,20 @@ export async function POST(request: NextRequest) {
     ]
     const assignment = assignments[players.length]
 
-    // 5b. Check joiner's balance against game wager
+    // 5b. Check joiner's balance against game wager — reject if insufficient
     const gameWager = game.wager_amount || 0
-    let wagerAccepted = true
     if (gameWager > 0) {
       const { data: joinerProfile } = await supabase
         .from("profiles")
         .select("balance")
         .eq("id", device.user_id)
         .single()
-      wagerAccepted = !!(joinerProfile && joinerProfile.balance >= gameWager)
+      if (!joinerProfile || joinerProfile.balance < gameWager) {
+        return NextResponse.json(
+          { success: false, error: "Insufficient balance for wager", wagerAmount: gameWager },
+          { status: 400 }
+        )
+      }
     }
 
     const newPlayer = {
@@ -148,23 +152,18 @@ export async function POST(request: NextRequest) {
       side: assignment.side,
       position: assignment.position,
       joinedAt: new Date().toISOString(),
-      wagerAccepted: gameWager > 0 ? wagerAccepted : undefined,
+      wagerAccepted: gameWager > 0 ? true : undefined,
     }
 
     const updatedPlayers = [...players, newPlayer]
 
-    // 6. Update game with new player (and wager_status if declined)
-    const gameUpdate: Record<string, any> = {
-      players: updatedPlayers,
-      updated_at: new Date().toISOString(),
-    }
-    if (!wagerAccepted && game.wager_status === "active") {
-      gameUpdate.wager_status = "declined"
-    }
-
+    // 6. Update game with new player
     const { error: updateError } = await supabase
       .from("pickleball_games")
-      .update(gameUpdate)
+      .update({
+        players: updatedPlayers,
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", gameId)
 
     if (updateError) {
@@ -175,11 +174,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const updatedWagerStatus = !wagerAccepted && game.wager_status === "active"
-      ? "declined"
-      : (game.wager_status || "none")
-
-    console.log(`[Pickleball] Device ${deviceId} (${device.pet_name}) joined game ${gameId}. Players: ${updatedPlayers.length}. Wager accepted: ${wagerAccepted}`)
+    console.log(`[Pickleball] Device ${deviceId} (${device.pet_name}) joined game ${gameId}. Players: ${updatedPlayers.length}`)
 
     return NextResponse.json({
       success: true,
@@ -188,8 +183,8 @@ export async function POST(request: NextRequest) {
       yourSide: assignment.side,
       yourPosition: assignment.position,
       wagerAmount: gameWager,
-      wagerAccepted,
-      wagerStatus: updatedWagerStatus,
+      wagerAccepted: true,
+      wagerStatus: game.wager_status || "none",
     })
   } catch (error) {
     console.error("[Pickleball] Join error:", error)
