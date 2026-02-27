@@ -6,11 +6,11 @@ export const dynamic = "force-dynamic"
 
 /**
  * POST /api/game/pickleball/create
- * Called by host device to create a new pickleball game lobby.
- * Finds all group members with paired devices and creates a game session.
+ * Called by a device to create or join a pickleball game lobby.
+ * Auto-joins an existing lobby if one is available, otherwise creates a new one.
  * 
- * Body: { deviceId, macAddress }
- * Returns: { success, gameId, groupMembers[] }
+ * Body: { deviceId, macAddress, wagerAmount? }
+ * Returns: { success, gameId, action: "host"|"join", ... }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -106,152 +106,82 @@ export async function POST(request: NextRequest) {
         .eq("id", existingGame.id)
     }
 
-    // 4. Find all group members who have paired devices
-    //    Get user's groups first
-    const { data: memberships } = await supabase
-      .from("group_members")
-      .select("group_id")
-      .eq("user_id", device.user_id)
-      .eq("status", "approved")
+    // 4. Before creating a new game, check if any active lobby exists to join
+    const { data: existingLobbies } = await supabase
+      .from("pickleball_games")
+      .select("*")
+      .in("status", ["lobby"])
+      .neq("host_device_id", deviceId)
+      .gt("lobby_expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(5)
 
-    const groupIds = memberships?.map(m => m.group_id) || []
+    if (existingLobbies && existingLobbies.length > 0) {
+      for (const existingGame of existingLobbies) {
+        const players = (existingGame.players as any[]) || []
+        const alreadyJoined = players.some((p: any) => p.deviceId === deviceId)
 
-    // Find other users in these groups who also have paired devices
-    let potentialPlayers: Array<{
-      userId: string
-      deviceId: string
-      petName: string
-      petInitial: string
-    }> = []
+        if (!alreadyJoined && players.length < 4) {
+          const sideAssignments = [
+            { side: "left", position: "top" },
+            { side: "right", position: "top" },
+            { side: "right", position: "bottom" },
+            { side: "left", position: "bottom" },
+          ]
+          const assignment = sideAssignments[players.length]
 
-    if (groupIds.length > 0) {
-      // Get all approved members in user's groups (excluding self)
-      const { data: groupMembers } = await supabase
-        .from("group_members")
-        .select("user_id")
-        .in("group_id", groupIds)
-        .eq("status", "approved")
-        .neq("user_id", device.user_id)
-
-      const memberUserIds = [...new Set(groupMembers?.map(m => m.user_id) || [])]
-
-      if (memberUserIds.length > 0) {
-        // Find paired devices for these users
-        const { data: memberDevices } = await supabase
-          .from("devices")
-          .select("id, user_id, pet_name")
-          .in("user_id", memberUserIds)
-          .eq("status", "paired")
-
-        if (memberDevices) {
-          potentialPlayers = memberDevices.map(d => ({
-            userId: d.user_id,
-            deviceId: d.id,
-            petName: d.pet_name,
-            petInitial: d.pet_name.charAt(0).toUpperCase(),
-          }))
-        }
-      }
-    }
-
-    // 5. Before creating a new game, check if a group member already has an active lobby
-    if (groupIds.length > 0) {
-      const { data: existingGroupGames } = await supabase
-        .from("pickleball_games")
-        .select("*")
-        .in("status", ["lobby"])
-        .neq("host_device_id", deviceId)
-        .gt("lobby_expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false })
-        .limit(5)
-
-      if (existingGroupGames && existingGroupGames.length > 0) {
-        for (const existingGame of existingGroupGames) {
-          const { data: hostInGroup } = await supabase
-            .from("group_members")
-            .select("id")
-            .in("group_id", groupIds)
-            .eq("user_id", existingGame.host_user_id)
-            .eq("status", "approved")
-            .limit(1)
-            .single()
-
-          if (hostInGroup) {
-            const players = (existingGame.players as any[]) || []
-            const alreadyJoined = players.some((p: any) => p.deviceId === deviceId)
-
-            if (!alreadyJoined && players.length < 4) {
-              const sideAssignments = [
-                { side: "left", position: "top" },
-                { side: "right", position: "top" },
-                { side: "right", position: "bottom" },
-                { side: "left", position: "bottom" },
-              ]
-              const assignment = sideAssignments[players.length]
-
-              // Check joiner's balance against the game's wager
-              const gameWager = existingGame.wager_amount || 0
-              let joinerWagerAccepted = true
-              if (gameWager > 0) {
-                const { data: joinerProfile } = await supabase
-                  .from("profiles")
-                  .select("balance")
-                  .eq("id", device.user_id)
-                  .single()
-                joinerWagerAccepted = !!(joinerProfile && joinerProfile.balance >= gameWager)
-              }
-
-              const joiningPlayer = {
-                userId: device.user_id,
-                deviceId: device.id,
-                petName: device.pet_name,
-                petInitial: device.pet_name.charAt(0).toUpperCase(),
-                macAddress,
-                side: assignment.side,
-                position: assignment.position,
-                joinedAt: new Date().toISOString(),
-                wagerAccepted: joinerWagerAccepted,
-              }
-
-              const updatedPlayers = [...players, joiningPlayer]
-
-              const gameUpdate: Record<string, any> = {
-                players: updatedPlayers,
-                updated_at: new Date().toISOString(),
-              }
-              if (!joinerWagerAccepted && existingGame.wager_status === "active") {
-                gameUpdate.wager_status = "declined"
-              }
-
-              await supabase
-                .from("pickleball_games")
-                .update(gameUpdate)
-                .eq("id", existingGame.id)
-
-              const hostPlayer = players[0]
-              const updatedWagerStatus = joinerWagerAccepted
-                ? (existingGame.wager_status || "none")
-                : "declined"
-
-              console.log(`[Pickleball] Device ${deviceId} auto-joined existing game ${existingGame.id} as player ${players.length}`)
-
-              return NextResponse.json({
-                success: true,
-                action: "join",
-                gameId: existingGame.id,
-                hostMac: hostPlayer?.macAddress || "",
-                hostPetName: hostPlayer?.petName || "Someone",
-                playerIndex: players.length,
-                yourSide: assignment.side,
-                yourPosition: assignment.position,
-                players: updatedPlayers,
-                playerCount: updatedPlayers.length,
-                wagerAmount: gameWager,
-                wagerAccepted: joinerWagerAccepted,
-                wagerStatus: updatedWagerStatus,
-              })
+          // Check joiner's balance against the game's wager
+          const gameWager = existingGame.wager_amount || 0
+          if (gameWager > 0) {
+            const { data: joinerProfile } = await supabase
+              .from("profiles")
+              .select("balance")
+              .eq("id", device.user_id)
+              .single()
+            if (!joinerProfile || joinerProfile.balance < gameWager) {
+              // Insufficient balance for this wager game — skip it, try next lobby
+              continue
             }
           }
+
+          const joiningPlayer = {
+            userId: device.user_id,
+            deviceId: device.id,
+            petName: device.pet_name,
+            petInitial: device.pet_name.charAt(0).toUpperCase(),
+            macAddress,
+            side: assignment.side,
+            position: assignment.position,
+            joinedAt: new Date().toISOString(),
+            wagerAccepted: gameWager > 0 ? true : undefined,
+          }
+
+          const updatedPlayers = [...players, joiningPlayer]
+
+          await supabase
+            .from("pickleball_games")
+            .update({ players: updatedPlayers, updated_at: new Date().toISOString() })
+            .eq("id", existingGame.id)
+
+          const hostPlayer = players[0]
+
+          console.log(`[Pickleball] Device ${deviceId} auto-joined existing game ${existingGame.id} as player ${players.length}`)
+
+          return NextResponse.json({
+            success: true,
+            action: "join",
+            gameId: existingGame.id,
+            hostMac: hostPlayer?.macAddress || "",
+            hostPetName: hostPlayer?.petName || "Someone",
+            playerIndex: players.length,
+            yourSide: assignment.side,
+            yourPosition: assignment.position,
+            players: updatedPlayers,
+            playerCount: updatedPlayers.length,
+            wagerAmount: gameWager,
+            wagerAccepted: true,
+            wagerStatus: existingGame.wager_status || "none",
+          })
         }
       }
     }
@@ -293,14 +223,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[Pickleball] Game ${game.id} created by device ${deviceId}. ${potentialPlayers.length} potential players in group.`)
+    console.log(`[Pickleball] Game ${game.id} created by device ${deviceId}.`)
 
     return NextResponse.json({
       success: true,
       action: "host",
       gameId: game.id,
       lobbyExpiresAt,
-      potentialPlayers: potentialPlayers.length,
       wagerAmount,
       wagerStatus: wagerAmount > 0 ? "active" : "none",
     })
