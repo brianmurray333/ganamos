@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
       wagerAccepted: wagerAmount > 0 ? true : undefined,
     }
 
-    const lobbyExpiresAt = new Date(Date.now() + 60 * 1000).toISOString()
+    const lobbyExpiresAt = new Date(Date.now() + 100 * 1000).toISOString()
 
     const { data: game, error: gameError } = await supabase
       .from("pickleball_games")
