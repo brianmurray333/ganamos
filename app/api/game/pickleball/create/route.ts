@@ -206,7 +206,7 @@ export async function POST(request: NextRequest) {
       .insert({
         host_device_id: deviceId,
         host_user_id: device.user_id,
-        status: "lobby",
+        status: "setup",
         players: [hostPlayer],
         lobby_expires_at: lobbyExpiresAt,
         wager_amount: wagerAmount,
