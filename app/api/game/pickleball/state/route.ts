@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
 
     // Check if lobby expired and auto-cancel
     if (
-      game.status === "lobby" &&
+      (game.status === "lobby" || game.status === "setup") &&
       new Date(game.lobby_expires_at) < new Date()
     ) {
       const players = (game.players as any[]) || []
@@ -212,17 +212,20 @@ export async function POST(request: NextRequest) {
         i === 0 ? { ...p, wagerAccepted: wagerAmount > 0 ? true : undefined } : p
       )
 
+      const newExpiry = new Date(Date.now() + 100 * 1000).toISOString()
       await supabase
         .from("pickleball_games")
         .update({
+          status: "lobby",
           wager_amount: wagerAmount,
           wager_status: wagerAmount > 0 ? "active" : "none",
           players: updatedPlayers,
+          lobby_expires_at: newExpiry,
           updated_at: new Date().toISOString(),
         })
         .eq("id", gameId)
 
-      console.log(`[Pickleball] Game ${gameId} wager set to ${wagerAmount} by host`)
+      console.log(`[Pickleball] Game ${gameId} wager set to ${wagerAmount}, status → lobby`)
       return NextResponse.json({ success: true, wagerAmount, wagerStatus: wagerAmount > 0 ? "active" : "none" })
     }
 
