@@ -419,7 +419,7 @@ export default function NewPostPage() {
     // Since the photo is being taken right now, the issue is at the user's current location
     setIsGettingLocation(true)
     try {
-      const locationInfo = await getCurrentLocationWithName({ useCache: true }) // Real-time location for post precision; useCache only as fallback on error
+      const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false })
 
       if (locationInfo) {
         setCurrentLocation({
