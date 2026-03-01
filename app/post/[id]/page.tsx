@@ -23,8 +23,8 @@ import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
-import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction, updatePostExpirationAction } from "@/app/actions/post-actions"
-import { User, Timer } from "lucide-react"
+import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
+import { User } from "lucide-react"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
 import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submission-modal"
 import { v4 as uuidv4 } from "uuid"
@@ -66,7 +66,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const supabase = createBrowserSupabaseClient()
   const [displayLocation, setDisplayLocation] = useState<string>("")
   const [isReviewing, setIsReviewing] = useState(false)
-  const [showFullAnalysis, setShowFullAnalysis] = useState(false)
   const [showLightningModal, setShowLightningModal] = useState(false)
   const [showAnonymousFixSubmissionModal, setShowAnonymousFixSubmissionModal] = useState(false)
   const [pendingAnonymousFixPostId, setPendingAnonymousFixPostId] = useState<string | null>(null)
@@ -88,10 +87,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [isDeletingPost, setIsDeletingPost] = useState(false)
   const [familyMembers, setFamilyMembers] = useState<{ id: string; username: string; name: string; avatar_url: string | null; balance?: number }[]>([])
   
-  // Expiration management state
-  const [showExpirationEdit, setShowExpirationEdit] = useState(false)
-  const [isSavingExpiration, setIsSavingExpiration] = useState(false)
-  const [editExpiresAt, setEditExpiresAt] = useState<string | null>(null)
   
   // Group admin status - allows group admins to approve fixes for any post in their group
   const [isGroupAdmin, setIsGroupAdmin] = useState(false)
@@ -449,10 +444,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     fetchPost()
   }, [params.id, toast, supabase])
 
-  // Initialize editExpiresAt from post data
-  useEffect(() => {
-    if (post?.expires_at) setEditExpiresAt(post.expires_at)
-  }, [post?.expires_at])
 
   useEffect(() => {
     const handleStorageChange = () => {
@@ -1273,25 +1264,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     }
   }
 
-  // Handle update expiration
-  const handleUpdateExpiration = async (newExpiresAt: string | null) => {
-    const effectiveUserId = activeUserId || user?.id
-    if (!effectiveUserId || !post) return
-    setIsSavingExpiration(true)
-    try {
-      const result = await updatePostExpirationAction(post.id, effectiveUserId, newExpiresAt)
-      if (result.success) {
-        setPost(prev => prev ? { ...prev, expires_at: newExpiresAt } : prev)
-        setEditExpiresAt(newExpiresAt)
-        setShowExpirationEdit(false)
-        toast.success(newExpiresAt ? 'Expiration updated' : 'Expiration removed')
-      } else {
-        toast.error('Error', { description: result.error || 'Failed to update expiration' })
-      }
-    } finally {
-      setIsSavingExpiration(false)
-    }
-  }
 
   // Handle reject device-submitted fix
   // This is for when a fixer was pre-selected (from device email) but the poster determines it's not actually fixed  
@@ -2067,46 +2039,26 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </div>
           )}
           
-          {!post.fixed && post.under_review && post.submitted_fix_image_url && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-6">
-              <div className="flex items-center mb-1">
-                {" "}
-                <p className="text-sm font-medium">AI Review</p>{" "}
-              </div>
-              <div className="text-sm text-muted-foreground">
-                {showFullAnalysis ? (
-                  <div>
-                    {post.ai_analysis || "The AI analysis is not available for this submission."}
-                    <button onClick={() => setShowFullAnalysis(false)} className="text-white hover:underline ml-1">
-                      {" "}
-                      Show less{" "}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="line-clamp-3">
-                    {post.ai_analysis && post.ai_analysis.length > 150 ? (
-                      <>
-                        {post.ai_analysis.slice(0, 150)}
-                        <button onClick={() => setShowFullAnalysis(true)} className="text-white hover:underline">
-                          {" "}
-                          ...see more{" "}
-                        </button>
-                      </>
-                    ) : (
-                      post.ai_analysis || "The AI analysis is not available for this submission."
-                    )}
-                  </div>
-                )}
-              </div>
-              {post.ai_confidence_score && (
-                <div className="mt-2 text-xs text-muted-foreground">Confidence Score: {post.ai_confidence_score}/10</div>
-              )}
-            </div>
-          )}
           {post.fixed && post.fixer_note && (
             <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border">
               <h3 className="font-medium mb-2">Fixer's note:</h3>
               <p className="text-sm text-muted-foreground">{post.fixer_note}</p>
+            </div>
+          )}
+          {/* AI Review - only visible to post owner or group admin when a fix is under review */}
+          {!post.fixed &&
+          post.under_review &&
+          post.submitted_fix_image_url &&
+          post.ai_analysis &&
+          user &&
+          post.user_id != null &&
+          (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-6">
+              <p className="text-sm font-medium mb-1">AI Review</p>
+              <p className="text-sm text-muted-foreground whitespace-pre-line">{post.ai_analysis}</p>
+              {post.ai_confidence_score && (
+                <div className="mt-2 text-xs text-muted-foreground">Confidence Score: {post.ai_confidence_score}/10</div>
+              )}
             </div>
           )}
           {/* Check if this is the post owner or group admin viewing a fix under review */}
@@ -2116,7 +2068,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           user &&
           post.user_id != null &&
           (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) ? (
-            // Show review interface for post owner or group admin
             <div className="space-y-4 mb-6">
               {post.submitted_fix_note && (
                 <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
@@ -2264,57 +2215,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               }}
             />
           )}
-          {/* Info banner for image-less posts */}
-          {!post.has_image && !post.fixed && !post.under_review && !post.deleted_at && (
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-4 text-sm text-muted-foreground">
-              📋 This post has no before photo — your fix will require approval from the original poster.
-            </div>
-          )}
           
           {!post.fixed && !post.under_review && !post.deleted_at && (
             <Button className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" onClick={() => setShowCamera(true)}>Start</Button>
           )}
           
-          {/* Expiration management - only visible to original poster */}
-          {isOriginalPoster && !post.fixed && !post.deleted_at && (
-            <div className="mt-4">
-              {post.expires_at && !showExpirationEdit ? (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Timer className="w-4 h-4" />
-                  <span>Expires {formatDistanceToNow(new Date(post.expires_at), { addSuffix: true })}</span>
-                  <button type="button" onClick={() => setShowExpirationEdit(true)}
-                    className="text-xs underline hover:text-foreground">Edit</button>
-                  <button type="button" onClick={() => handleUpdateExpiration(null)}
-                    className="text-xs text-red-500 hover:text-red-600"
-                    disabled={isSavingExpiration}>Remove</button>
-                </div>
-              ) : !post.expires_at && !showExpirationEdit ? (
-                <button type="button" onClick={() => setShowExpirationEdit(true)}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-                  <Timer className="w-3.5 h-3.5" /> Add expiration
-                </button>
-              ) : null}
-              {showExpirationEdit && (
-                <div className="flex flex-wrap gap-2 items-center mt-2">
-                  {[{label:'1 hr',hrs:1},{label:'12 hrs',hrs:12},{label:'1 day',hrs:24},
-                    {label:'3 days',hrs:72},{label:'7 days',hrs:168}].map(({label,hrs}) => (
-                    <button key={label} type="button"
-                      onClick={() => setEditExpiresAt(new Date(Date.now()+hrs*3600_000).toISOString())}
-                      className="px-3 py-1 rounded-full text-xs border border-gray-300 hover:border-gray-400">
-                      {label}
-                    </button>
-                  ))}
-                  <button type="button" onClick={() => handleUpdateExpiration(editExpiresAt)}
-                    disabled={isSavingExpiration}
-                    className="px-3 py-1 rounded-full text-xs bg-green-600 text-white">
-                    {isSavingExpiration ? 'Saving...' : 'Save'}
-                  </button>
-                  <button type="button" onClick={() => setShowExpirationEdit(false)}
-                    className="text-xs text-muted-foreground">Cancel</button>
-                </div>
-              )}
-            </div>
-          )}
           
           {/* Mark Complete button - only visible to original poster */}
           {canCloseIssue && (

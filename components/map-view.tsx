@@ -1281,16 +1281,14 @@ function MapViewComponent({
       )}
 
       {/* Floating New Issue Button - Hidden on mobile (bottom nav has its own + button), shown on desktop/modal */}
-      {!hideSearchOverlay && (
-        <button
-          onClick={onNewIssue || handleNewPost}
-          className={`absolute right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg ${isModal ? '' : 'hidden lg:flex'}`}
-          style={{ bottom: isModal ? 24 : BOTTOM_NAV_CLEARANCE }}
-          aria-label="New Issue"
-        >
-          <Plus className="w-6 h-6 text-white stroke-[2.5]" />
-        </button>
-      )}
+      <button
+        onClick={onNewIssue || handleNewPost}
+        className={`absolute right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg ${isModal ? '' : 'hidden lg:flex'}`}
+        style={{ bottom: isModal ? 24 : BOTTOM_NAV_CLEARANCE }}
+        aria-label="New Issue"
+      >
+        <Plus className="w-6 h-6 text-white stroke-[2.5]" />
+      </button>
 
       {/* Lower Right Button Stack - Donate + View Mode Toggle
           On mobile (non-modal): sits just above bottom nav (no floating + button on mobile)
