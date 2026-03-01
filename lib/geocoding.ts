@@ -412,7 +412,11 @@ export async function getCurrentLocationWithName(options?: {
         
         reject(error)
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }, // Use 5-minute cache for position
+      {
+        enableHighAccuracy: true,
+        timeout: forceRefresh ? 15000 : 10000,
+        maximumAge: forceRefresh ? 0 : 300000,
+      },
     )
   })
 
