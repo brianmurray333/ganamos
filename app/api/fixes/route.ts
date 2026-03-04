@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { post_id, proof_text, proof_image_url, note } = body
+    const { post_id, proof_text, proof_image_url, note, payout_invoice } = body
 
     if (!post_id || typeof post_id !== 'string') {
       return corsResponse(
@@ -109,6 +109,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (payout_invoice && typeof payout_invoice !== 'string') {
+      return corsResponse(
+        NextResponse.json({ error: 'payout_invoice must be a string (BOLT11 invoice or Lightning address)' }, { status: 400 })
+      )
+    }
+
     // Submit fix for review (all API-submitted fixes go to manual review)
     const result = await submitAnonymousFixForReviewAction(
       post_id,
@@ -117,6 +123,8 @@ export async function POST(request: NextRequest) {
       null, // aiConfidence: null signals manual review
       null, // aiAnalysis: null
       proof_text || null,
+      verification.paymentHash || null,
+      payout_invoice || null,
     )
 
     if (!result.success) {
@@ -125,12 +133,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'
+
     return corsResponse(
       NextResponse.json({
         success: true,
         post_id,
-        message: 'Fix submitted for review',
+        message: 'Fix submitted for review. Poll status_url with your L402 token to track approval.',
         payment_hash: verification.paymentHash,
+        status_url: `${appUrl}/api/fixes/${post_id}`,
       }, { status: 201 })
     )
 
@@ -192,6 +203,7 @@ export async function GET() {
       message: 'Fix Submissions API',
       endpoints: {
         'POST /api/fixes': 'Submit a fix for a post (requires L402 payment)',
+        'GET /api/fixes/{post_id}': 'Poll fix status (reuse your L402 token, no extra payment)',
       },
       l402_info: {
         fee: `${API_ACCESS_FEE} sat (anti-spam)`,
@@ -202,8 +214,10 @@ export async function GET() {
         proof_text: 'string (required*) - text proof: URLs, description of work done',
         proof_image_url: 'string (required*) - URL of proof image',
         note: 'string (optional) - additional note from fixer',
+        payout_invoice: 'string (optional) - BOLT11 invoice or Lightning address for reward payout on approval',
       },
       notes: '*At least one of proof_text or proof_image_url must be provided.',
+      status_polling: 'After submitting, reuse your L402 token (Authorization header) to GET /api/fixes/{post_id} for status updates. No additional payment required.',
     })
   )
 }

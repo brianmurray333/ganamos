@@ -265,7 +265,7 @@ export function expectPostCreatedResponse(response: Response, data: any) {
   expect(response.status).toBe(201)
   expect(data).toHaveProperty('success', true)
   expect(data).toHaveProperty('post_id')
-  expect(data).toHaveProperty('message', 'Job posted successfully')
+  expect(data.message).toContain('Job posted successfully')
   expect(data).toHaveProperty('job_reward')
   expect(data).toHaveProperty('api_fee', 10)
   expect(data).toHaveProperty('total_paid')
@@ -380,10 +380,9 @@ export function expectApiDocumentationResponse(data: any) {
   expect(data).toHaveProperty('l402_info')
   
   // Verify endpoints structure
-  expect(data.endpoints).toEqual({
-    'POST /api/posts': 'Create a new post (requires L402 payment)',
-    'GET /api/posts': 'List posts (free)'
-  })
+  expect(data.endpoints).toHaveProperty('POST /api/posts')
+  expect(data.endpoints).toHaveProperty('GET /api/posts')
+  expect(data.endpoints).toHaveProperty('GET /api/posts/{id}')
   
   // Verify L402 info structure
   expect(data.l402_info).toMatchObject({

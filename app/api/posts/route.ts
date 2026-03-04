@@ -157,14 +157,17 @@ export async function POST(request: NextRequest) {
       return postErrorResponse
     }
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'
+
     const successResponse = NextResponse.json({
       success: true,
       post_id: postResult.postId,
-      message: 'Job posted successfully',
+      message: 'Job posted successfully. Poll status_url with your L402 token to track fix submissions.',
       job_reward: jobReward,
       api_fee: API_ACCESS_FEE,
       total_paid: expectedTotalPayment,
-      payment_hash: verification.paymentHash
+      payment_hash: verification.paymentHash,
+      status_url: `${appUrl}/api/posts/${postResult.postId}`,
     }, { status: 201 })
     
     // Add CORS headers for development only
@@ -253,7 +256,8 @@ export async function GET(request: NextRequest) {
     message: 'Posts API endpoint',
     endpoints: {
       'POST /api/posts': 'Create a new post (requires L402 payment)',
-      'GET /api/posts': 'List posts (free)'
+      'GET /api/posts/{id}': 'Poll post status (reuse your L402 token, no extra payment)',
+      'GET /api/posts': 'API docs (this page)',
     },
     l402_info: {
       api_fee: `${API_ACCESS_FEE} sats (fixed)`,
@@ -261,7 +265,8 @@ export async function GET(request: NextRequest) {
       total_cost: `Job reward + ${API_ACCESS_FEE} sats API fee`,
       currency: 'satoshis',
       documentation: 'https://docs.lightning.engineering/the-lightning-network/l402'
-    }
+    },
+    status_polling: 'After creating a post, reuse your L402 token (Authorization header) to GET /api/posts/{id} for status updates (fix submissions, approvals). No additional payment required — the token is a persistent bearer instrument.',
   })
   
   // Add CORS headers for development only

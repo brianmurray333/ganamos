@@ -878,6 +878,8 @@ export async function submitAnonymousFixForReviewAction(
   aiConfidence: number | null,
   aiAnalysis: string | null,
   fixProofText: string | null = null,
+  l402PaymentHash: string | null = null,
+  payoutInvoice: string | null = null,
 ): Promise<{ success: boolean; error?: string }> {
   if (!postId || (!fixImageUrl && !fixProofText)) {
     return { success: false, error: "Post ID and either a fix image or proof text are required." }
@@ -941,6 +943,21 @@ export async function submitAnonymousFixForReviewAction(
       
       // Job was already claimed/fixed/under_review
       return { success: false, error: "This job has already been claimed by someone else." }
+    }
+
+    // Store L402 payment hash and payout invoice for agent status polling
+    if (l402PaymentHash || payoutInvoice) {
+      const { error: l402Error } = await supabase
+        .from("posts")
+        .update({
+          ...(l402PaymentHash && { submitted_fix_payment_hash: l402PaymentHash }),
+          ...(payoutInvoice && { submitted_fix_payout_invoice: payoutInvoice }),
+        })
+        .eq("id", postId)
+
+      if (l402Error) {
+        console.error("Error storing L402 payment hash / payout invoice:", l402Error)
+      }
     }
 
     // Claim succeeded - now fetch post data for email notifications
