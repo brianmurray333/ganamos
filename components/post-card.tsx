@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardFooter } from "@/components/ui/card"
 import type { Post } from "@/lib/types"
-import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { formatTimeAgo } from "@/lib/utils"
+import { renderTextWithLinks } from "@/lib/linkify"
 import { reverseGeocode, getTravelTimes, getCurrentLocationWithName, type TravelTimes } from "@/lib/geocoding"
 import { Car, Footprints, CheckCircle, Clock, Circle, Timer } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -342,9 +342,11 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
     return `expires ${Math.floor(diff / 604800)}w`
   }
 
+  const isImageless = !post.imageUrl && !post.image_url && post.has_image === false
+
   // Get the image URL, handling both imageUrl and image_url properties
   const getImageUrl = () => {
-    return post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')
+    return post.imageUrl || post.image_url || '/placeholder.svg'
   }
 
   const getInitials = () => {
@@ -365,7 +367,13 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
         onMouseEnter={handleMouseEnter}
       >
         <div className="relative w-full h-48">
-          {imageError ? (
+          {isImageless ? (
+            <div className="w-full h-full flex items-start p-5 bg-gray-900 rounded-t-2xl">
+              <p className="text-white text-base leading-relaxed line-clamp-5">
+                {renderTextWithLinks(post.description)}
+              </p>
+            </div>
+          ) : imageError ? (
             <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -411,10 +419,12 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
           <div className="flex items-start justify-between w-full h-full">
             {/* Left side: Fixed positioned content to prevent shifting */}
             <div className="flex-1 relative h-full">
-              {/* Description - fixed position */}
-              <div className="absolute top-0 left-0 right-0 pr-4">
-                <p className="text-base truncate">{post.description}</p>
-              </div>
+              {/* Description - fixed position (hidden for imageless posts since text is in image area) */}
+              {!isImageless && (
+                <div className="absolute top-0 left-0 right-0 pr-4">
+                  <p className="text-base truncate">{renderTextWithLinks(post.description)}</p>
+                </div>
+              )}
 
               {/* Location and Travel Times row - fixed position */}
               <div className="absolute top-9 left-0 right-0 flex items-center overflow-hidden">

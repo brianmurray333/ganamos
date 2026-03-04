@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { Post } from "@/lib/types"
-import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
+import { renderTextWithLinks } from "@/lib/linkify"
 import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
@@ -1706,7 +1706,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         {post && (
           <>
             {/* Desktop: Side-by-side layout | Mobile: Single column */}
-            <div className="lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-white dark:bg-gray-900">
+            <div className="min-h-[100dvh] lg:min-h-0 lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-white dark:bg-gray-900">
               {/* Left Panel - Post Details (scrollable) */}
               <div className="w-full lg:w-[380px] xl:w-[420px] lg:flex-shrink-0 lg:overflow-y-auto lg:border-r lg:border-gray-200 lg:dark:border-gray-800">
                 <div className="container px-4 pt-4 pb-6 lg:pt-4 lg:pb-8 mx-auto max-w-md lg:max-w-none">
@@ -1723,14 +1723,24 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <div>
                 <div 
                   className="relative w-full h-40 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-90"
-                  onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg'))}
+                  onClick={() => {
+                    if (post.imageUrl || post.image_url) {
+                      openFullscreenImage(post.imageUrl || post.image_url || '/placeholder.svg')
+                    }
+                  }}
                 >
-                  <Image
-                    src={post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
-                    alt="Before"
-                    fill
-                    className="object-cover"
-                  />
+                  {post.has_image === false && !post.imageUrl && !post.image_url ? (
+                    <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
+                      <Image src="/favicon.png" alt="Before" width={64} height={64} className="rounded-lg" />
+                    </div>
+                  ) : (
+                    <Image
+                      src={post.imageUrl || post.image_url || '/placeholder.svg'}
+                      alt="Before"
+                      fill
+                      className="object-cover"
+                    />
+                  )}
                   <div className="absolute top-2 left-2">
                     <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">Before</span>
                   </div>
@@ -1807,13 +1817,76 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 </div>
               </div>
             </div>
+          ) : !post.imageUrl && !post.image_url && post.has_image === false ? (
+            <div className="mb-4">
+              {/* Action buttons row - not overlaid since there's no image */}
+              <div className="flex justify-end gap-2 mb-3">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleShare()
+                  }}
+                  className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 p-2"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+                    <polyline points="16 6 12 2 8 6" />
+                    <line x1="12" x2="12" y1="2" y2="15" />
+                  </svg>
+                  <span className="sr-only">Share</span>
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    router.push("/dashboard")
+                  }}
+                  className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 p-2"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                  <span className="sr-only">Close</span>
+                </Button>
+              </div>
+              {/* Description text in place of image */}
+              <div className="p-5 bg-gray-900 rounded-lg">
+                <p className="text-white text-lg leading-relaxed" style={{ overflowWrap: 'anywhere' }}>
+                  {renderTextWithLinks(post.title)}
+                </p>
+              </div>
+            </div>
           ) : (
             <div 
               className="relative w-full h-64 mb-4 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-95"
-              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg'))}
+              onClick={() => openFullscreenImage(post.imageUrl || post.image_url || '/placeholder.svg')}
             >
               <Image
-                src={post.imageUrl || post.image_url || (post.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
+                src={post.imageUrl || post.image_url || '/placeholder.svg'}
                 alt={post.title}
                 fill
                 className="object-cover"
@@ -1876,7 +1949,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )}
           <div className="mb-8 flex items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold mb-1">{post.title}</h2>
+              {!(post.has_image === false && !post.imageUrl && !post.image_url) && (
+                <h2 className="text-xl font-bold mb-1" style={{ overflowWrap: 'anywhere' }}>{renderTextWithLinks(post.title)}</h2>
+              )}
               <div className="flex flex-col gap-1">
               {/* First line: Status, Time ago, and Creator */}
               <div className="flex items-center text-sm text-muted-foreground flex-wrap gap-x-2">

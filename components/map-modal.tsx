@@ -8,7 +8,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Loader2, X, RefreshCw, MapPin, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { Post } from "@/lib/types"
-import { EARTH_PLACEHOLDER_IMAGE } from "@/lib/constants"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
 
@@ -481,9 +480,9 @@ export function MapModal({ isOpen, onClose, posts, centerPost }: MapModalProps) 
 
                 <div className="flex gap-3">
                   <img
-                    src={selectedPost.imageUrl || selectedPost.image_url || (selectedPost.has_image === false ? EARTH_PLACEHOLDER_IMAGE : '/placeholder.svg')}
+                    src={selectedPost.imageUrl || selectedPost.image_url || (selectedPost.has_image === false ? '/favicon.png' : '/placeholder.svg')}
                     alt="Issue"
-                    className="w-16 h-16 rounded-lg object-cover bg-gray-100 flex-shrink-0"
+                    className={`w-16 h-16 rounded-lg flex-shrink-0 ${selectedPost.has_image === false && !selectedPost.imageUrl && !selectedPost.image_url ? 'object-contain p-2 bg-white' : 'object-cover bg-gray-100'}`}
                   />
                   <div className="flex-1 min-w-0 pr-6">
                     <p className="font-medium text-sm text-gray-900 line-clamp-2 mb-2">

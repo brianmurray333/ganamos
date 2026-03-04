@@ -55,7 +55,7 @@ const mockPost: Post = {
 }
 
 describe('PostCard image handling', () => {
-  it('should use Earth placeholder when has_image is false and image_url is null', () => {
+  it('should show description text instead of image when has_image is false and image_url is null', () => {
     const postWithoutImage: Post = {
       ...mockPost,
       image_url: null,
@@ -63,13 +63,13 @@ describe('PostCard image handling', () => {
     }
 
     const { container } = render(<PostCard post={postWithoutImage} />)
-    const img = container.querySelector('img')
+    const textArea = container.querySelector('.bg-gray-900')
     
-    expect(img).toBeTruthy()
-    expect(img?.src).toContain('/images/earth-placeholder.jpg')
+    expect(textArea).toBeTruthy()
+    expect(textArea?.textContent).toContain(postWithoutImage.description)
   })
 
-  it('should use Earth placeholder when has_image is false and image_url is empty string', () => {
+  it('should show description text instead of image when has_image is false and image_url is empty string', () => {
     const postWithoutImage: Post = {
       ...mockPost,
       image_url: '',
@@ -77,10 +77,10 @@ describe('PostCard image handling', () => {
     }
 
     const { container } = render(<PostCard post={postWithoutImage} />)
-    const img = container.querySelector('img')
+    const textArea = container.querySelector('.bg-gray-900')
     
-    expect(img).toBeTruthy()
-    expect(img?.src).toContain('/images/earth-placeholder.jpg')
+    expect(textArea).toBeTruthy()
+    expect(textArea?.textContent).toContain(postWithoutImage.description)
   })
 
   it('should use generic placeholder when has_image is true and image_url is null', () => {
