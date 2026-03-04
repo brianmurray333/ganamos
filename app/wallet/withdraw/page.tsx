@@ -862,7 +862,7 @@ function WithdrawPageContent() {
 
           {/* Simple Input Modal - No complex components */}
           {showPasteInput && (
-            <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-[15vh] p-4">
               <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-sm">
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
