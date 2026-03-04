@@ -9,10 +9,12 @@ import { useMobile } from "@/hooks/use-mobile"
 
 export function CameraCapture({ 
   onCapture, 
-  onGalleryClick 
+  onGalleryClick,
+  onSkip,
 }: { 
   onCapture: (imageSrc: string) => void
   onGalleryClick?: () => void
+  onSkip?: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -408,13 +410,13 @@ export function CameraCapture({
               <span className="sr-only">Take Photo</span>
             </Button>
           </div>
-          {/* Back button */}
+          {/* Close button */}
           <Button
             type="button"
             variant="outline"
             size="icon"
             onClick={() => window.history.back()}
-            className="absolute top-6 left-4 bg-black/30 border-0 hover:bg-black/40 text-white/70"
+            className="absolute top-6 left-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
             style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)` }}
           >
             <svg
@@ -428,9 +430,9 @@ export function CameraCapture({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="m15 18-6-6 6-6" />
+              <path d="M18 6L6 18M6 6l12 12" />
             </svg>
-            <span className="sr-only">Back</span>
+            <span className="sr-only">Close</span>
           </Button>
           {isMobile && (
             <Button
@@ -438,7 +440,7 @@ export function CameraCapture({
               variant="outline"
               size="icon"
               onClick={switchCamera}
-              className="absolute right-4 bg-black/30 border-0 hover:bg-black/40 text-white/70"
+              className="absolute right-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
               style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)` }}
             >
               <svg
@@ -458,20 +460,20 @@ export function CameraCapture({
               <span className="sr-only">Switch Camera</span>
             </Button>
           )}
-          {/* Gallery/Upload button - lower right */}
+          {/* Gallery/Upload button - lower left */}
           {onGalleryClick && (
             <Button
               type="button"
               variant="outline"
               size="icon"
               onClick={onGalleryClick}
-              className="absolute right-4 w-16 h-16 bg-black/30 border-0 hover:bg-black/40 text-white/70"
-              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 24px)` }}
+              className="absolute left-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
+              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 32px)` }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                width="36"
-                height="36"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -484,6 +486,32 @@ export function CameraCapture({
                 <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
               </svg>
               <span className="sr-only">Upload from Gallery</span>
+            </Button>
+          )}
+          {/* Skip button - lower right */}
+          {onSkip && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onSkip}
+              className="absolute right-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
+              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 32px)` }}
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+              <span className="sr-only">Skip</span>
             </Button>
           )}
         </div>
