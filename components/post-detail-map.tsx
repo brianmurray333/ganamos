@@ -1,6 +1,8 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
+import { Plus, Gift } from "lucide-react"
 import type { Post } from "@/lib/types"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
 
@@ -15,6 +17,7 @@ declare global {
 }
 
 function PostDetailMapComponent({ post }: PostDetailMapProps) {
+  const router = useRouter()
   const mapRef = useRef<HTMLDivElement>(null)
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null)
   const [mapInitialized, setMapInitialized] = useState(false)
@@ -239,7 +242,7 @@ function PostDetailMapComponent({ post }: PostDetailMapProps) {
         disableDefaultUI: true,
         zoomControl: true,
         zoomControlOptions: {
-          position: window.google.maps.ControlPosition.RIGHT_CENTER,
+          position: window.google.maps.ControlPosition.RIGHT_BOTTOM,
         },
         styles: [
           {
@@ -280,8 +283,25 @@ function PostDetailMapComponent({ post }: PostDetailMapProps) {
 
   return (
     <div className="relative w-full h-full">
-      {/* Map container with rounded edges */}
       <div ref={mapRef} className="absolute inset-0 rounded-r-xl" />
+
+      {/* Floating action buttons */}
+      <div className="absolute z-20 flex flex-col gap-3 right-6 bottom-6">
+        <button
+          onClick={() => router.push('/donate')}
+          className="flex items-center justify-center w-12 h-12 rounded-full bg-white dark:bg-gray-900/80 dark:backdrop-blur-sm shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 transform hover:scale-105"
+          aria-label="Donate"
+        >
+          <Gift className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+        </button>
+        <button
+          onClick={() => router.push('/post/new')}
+          className="flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg"
+          aria-label="New Issue"
+        >
+          <Plus className="w-6 h-6 text-white stroke-[2.5]" />
+        </button>
+      </div>
     </div>
   )
 }
