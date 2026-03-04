@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyL402Token, parseL402Header } from '@/lib/l402'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { extractInvoiceAmount } from '@/lib/lightning-validation'
 
 export const dynamic = 'force-dynamic'
 
@@ -196,6 +197,15 @@ async function payFixer(
     }
 
     invoiceToPay = invoiceData.pr
+  }
+
+  // Guard: reject invoices that exceed the post reward to prevent draining
+  const invoiceAmount = extractInvoiceAmount(invoiceToPay)
+  if (invoiceAmount !== null && invoiceAmount > reward) {
+    return {
+      success: false,
+      error: `Payout invoice amount (${invoiceAmount} sats) exceeds post reward (${reward} sats). Refusing to pay.`,
+    }
   }
 
   const { payInvoice } = await import('@/lib/lightning')

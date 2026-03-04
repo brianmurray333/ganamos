@@ -12,6 +12,10 @@ vi.mock('@/lib/lightning', () => ({
   payInvoice: vi.fn(),
 }))
 
+vi.mock('@/lib/lightning-validation', () => ({
+  extractInvoiceAmount: vi.fn().mockReturnValue(null),
+}))
+
 const mockSingle = vi.fn()
 const mockEq = vi.fn().mockReturnThis()
 const mockSelect = vi.fn().mockReturnValue({ eq: mockEq })
@@ -275,6 +279,24 @@ describe('POST /api/posts/[id]/approve - Poster Approves Fix', () => {
       expect(data.success).toBe(true)
       expect(data.reward_paid).toBe(false)
       expect(data.message).toContain('payout failed')
+    })
+
+    it('should refuse payout when invoice amount exceeds post reward', async () => {
+      mockL402Success()
+      mockPostData({ submitted_fix_payout_invoice: 'lnbc100000n1malicious', reward: 100 })
+
+      const validation = await import('@/lib/lightning-validation')
+      vi.mocked(validation.extractInvoiceAmount).mockReturnValue(100000)
+
+      const { POST } = await import('@/app/api/posts/[id]/approve/route')
+      const request = createMockRequest(true)
+      const response = await POST(request, { params: Promise.resolve({ id: 'test-post-id' }) })
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(data.reward_paid).toBe(false)
+      expect(data.reward_error).toContain('exceeds post reward')
     })
   })
 })

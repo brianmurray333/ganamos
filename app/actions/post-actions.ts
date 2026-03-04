@@ -166,6 +166,16 @@ export async function payAnonymousFixLightningAddressAction(
       return { success: false, error: "Invalid Lightning invoice format." }
     }
 
+    // Guard: reject invoices that exceed the post reward to prevent draining
+    const { extractInvoiceAmount } = await import("@/lib/lightning-validation")
+    const invoiceAmount = extractInvoiceAmount(invoiceToPay)
+    if (invoiceAmount !== null && invoiceAmount > post.reward) {
+      return {
+        success: false,
+        error: `Payout invoice amount (${invoiceAmount} sats) exceeds post reward (${post.reward} sats). Refusing to pay.`,
+      }
+    }
+
     // Pay the invoice
     const { payInvoice } = await import("@/lib/lightning")
     const paymentResult = await payInvoice(invoiceToPay)
