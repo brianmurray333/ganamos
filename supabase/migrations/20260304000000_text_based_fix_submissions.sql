@@ -4,7 +4,9 @@
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS submitted_fix_proof_text TEXT;
 ALTER TABLE posts ADD COLUMN IF NOT EXISTS fix_proof_text TEXT;
 
--- Recreate atomic_claim_job with the new p_fix_proof_text parameter
+-- Drop the old 9-parameter version to avoid overload ambiguity, then recreate with p_fix_proof_text
+DROP FUNCTION IF EXISTS atomic_claim_job(UUID, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, NUMERIC, TEXT);
+
 CREATE OR REPLACE FUNCTION atomic_claim_job(
   p_job_id UUID,
   p_fixer_id TEXT,
