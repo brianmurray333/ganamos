@@ -4,7 +4,7 @@ import { submitAnonymousFixForReviewAction } from '@/app/actions/post-actions'
 
 export const dynamic = 'force-dynamic'
 
-const API_ACCESS_FEE = 1 // 1 sat anti-spam fee for fix submissions
+const API_ACCESS_FEE = 10 // 10 sat anti-spam fee for fix submissions
 
 /**
  * POST /api/fixes - Submit a fix for a post via L402-protected API
