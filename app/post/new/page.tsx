@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
 import { v4 as uuidv4 } from "@/lib/uuid"
@@ -867,7 +868,7 @@ export default function NewPostPage() {
     <div className={step === "photo" && cameraActive ? "" : "container px-4 py-6 mx-auto max-w-md"}>
       {step === "photo" && cameraActive && (
         <>
-          <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '40px' }}>
             <div className="bg-black/50 text-white/70 px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
               Take photo of the issue
             </div>
@@ -889,21 +890,12 @@ export default function NewPostPage() {
             key="camera-active"
             onCapture={handleCapture}
             onGalleryClick={() => document.getElementById('photo-upload')?.click()}
+            onSkip={() => {
+              setImage(null)
+              setStep("details")
+              setCameraActive(false)
+            }}
           />
-          {/* Skip photo button */}
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50">
-            <button
-              type="button"
-              onClick={() => {
-                setImage(null)
-                setStep("details")
-                setCameraActive(false)
-              }}
-              className="text-sm text-white/60 underline hover:text-white/80 transition-colors"
-            >
-              Skip photo
-            </button>
-          </div>
         </>
       ) : (
         <>
@@ -1025,34 +1017,28 @@ export default function NewPostPage() {
               </div>
 
               {!isAnonymous && (
-                  <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
                     <Select
-                      key={assignedTo || selectedGroupId || "public"} // Force re-render when assignment changes
+                      key={assignedTo || selectedGroupId || "public"}
                       value={assignedTo ? `person:${assignedTo}` : selectedGroupId || "public"}
                       onValueChange={(value: string) => {
-                        setGroupPickerHighlighted(false) // Clear highlight when user interacts
+                        setGroupPickerHighlighted(false)
                         if (value === "create-group") {
-                          // Open the create group dialog instead of navigating away
                           setShowCreateGroupDialog(true)
                         } else if (value === "find-username") {
-                          // Store current value before opening modal
                           previousSelectValueRef.current = assignedTo ? `person:${assignedTo}` : selectedGroupId || "public"
-                          // Open modal - don't change assignment state
                           setShowUsernameSearch(true)
-                          // The Select's value prop will stay at the current value (controlled component)
-                          // When user selects from modal, state will update and Select will re-render
                         } else if (value.startsWith("person:")) {
                           const personId = value.replace("person:", "")
-                          // Check both family members and assignedToProfile (for search results)
                           const person = familyMembers.find(m => m.id === personId) || 
                                        (assignedToProfile && assignedToProfile.id === personId ? assignedToProfile : null)
                           if (person) {
                             setAssignedTo(personId)
-                            // Only update profile if not already set (from search modal)
                             if (!assignedToProfile || assignedToProfile.id !== personId) {
                               setAssignedToProfile(person)
                             }
-                            setSelectedGroupId(null) // Clear group when assigning to person
+                            setSelectedGroupId(null)
                           }
                         } else if (value === "public") {
                           setSelectedGroupId(null)
@@ -1060,7 +1046,7 @@ export default function NewPostPage() {
                           setAssignedToProfile(null)
                         } else {
                           setSelectedGroupId(value)
-                          setAssignedTo(null) // Clear person when assigning to group
+                          setAssignedTo(null)
                           setAssignedToProfile(null)
                         }
                       }}
@@ -1203,6 +1189,41 @@ export default function NewPostPage() {
                         </div>
                       </SelectContent>
                     </Select>
+                    </div>
+                    <Popover open={showExpirationPicker} onOpenChange={setShowExpirationPicker}>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          className="h-12 w-12 flex-shrink-0 flex items-center justify-center rounded-md border border-input bg-background transition-colors hover:bg-accent"
+                          title={expiresAt ? `Expires ${formatAbbreviatedTimeRemaining(expiresAt)}` : 'Add expiration'}
+                        >
+                          <Timer className={`w-5 h-5 ${expiresAt ? 'text-green-600' : 'text-muted-foreground'}`} />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="end" className="w-auto p-1">
+                        <div className="flex flex-col">
+                          {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
+                            { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
+                            <button key={label} type="button"
+                              onClick={() => { setExpiresAt(new Date(Date.now() + hrs * 3600_000)); setShowExpirationPicker(false) }}
+                              className={`flex items-center px-3 py-2 text-sm rounded-sm transition-colors ${
+                                expiresAt && Math.abs(expiresAt.getTime() - Date.now() - hrs * 3600_000) < 60_000
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'hover:bg-accent hover:text-accent-foreground'
+                              }`}
+                            >{label}</button>
+                          ))}
+                          {expiresAt && (
+                            <>
+                              <div className="h-px bg-muted my-1" />
+                              <button type="button" onClick={() => { setExpiresAt(null); setShowExpirationPicker(false) }}
+                                className="flex items-center px-3 py-2 text-sm rounded-sm text-red-500 hover:bg-accent transition-colors"
+                              >Remove</button>
+                            </>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 )}
                 
@@ -1414,44 +1435,10 @@ export default function NewPostPage() {
                 </div>
               </div>
 
-              {/* Expiration options row (shown when picker is open) */}
-              {showExpirationPicker && (
-                <div className="flex flex-wrap gap-2 items-center">
-                  {[{ label: '1 hr', hrs: 1 }, { label: '12 hrs', hrs: 12 }, { label: '1 day', hrs: 24 },
-                    { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
-                    <button key={label} type="button"
-                      onClick={() => { setExpiresAt(new Date(Date.now() + hrs * 3600_000)); setShowExpirationPicker(false) }}
-                      className={`px-3 py-1 rounded-full text-xs border transition-colors ${
-                        expiresAt && Math.abs(expiresAt.getTime() - Date.now() - hrs * 3600_000) < 60_000
-                          ? 'bg-green-600 text-white border-green-600'
-                          : 'border-gray-300 text-muted-foreground hover:border-gray-400'
-                      }`}
-                    >{label}</button>
-                  ))}
-                  <button type="button" onClick={() => { setExpiresAt(null); setShowExpirationPicker(false) }}
-                    className="text-xs text-muted-foreground hover:text-red-500"
-                  >Remove</button>
-                </div>
-              )}
-
-              {/* Submit + expiration button row */}
-              <div className="flex items-center gap-2">
-                <Button type="submit" className="flex-1 h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" disabled={isSubmitting || isAwaitingPayment}>
-                  {isAwaitingPayment ? "Awaiting Payment..." : isSubmitting ? "Processing..." : "Post"}
-                </Button>
-                <button
-                  type="button"
-                  onClick={() => setShowExpirationPicker(!showExpirationPicker)}
-                  className={`h-12 w-12 flex items-center justify-center rounded-lg border transition-colors ${
-                    expiresAt
-                      ? 'border-green-600 text-green-600 bg-green-50 dark:bg-green-950/30'
-                      : 'border-muted-foreground text-muted-foreground hover:border-white hover:text-white'
-                  }`}
-                  title={expiresAt ? `Expires ${formatAbbreviatedTimeRemaining(expiresAt)}` : 'Add expiration'}
-                >
-                  <Timer className="w-5 h-5" />
-                </button>
-              </div>
+              {/* Submit button */}
+              <Button type="submit" className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" disabled={isSubmitting || isAwaitingPayment}>
+                {isAwaitingPayment ? "Awaiting Payment..." : isSubmitting ? "Processing..." : "Post"}
+              </Button>
             </form>
           )}
         </>
