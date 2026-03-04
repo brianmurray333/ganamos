@@ -80,8 +80,9 @@ export function decodeLightningInvoice(invoice: string): DecodedInvoice {
     // Find the separator '1' - the LAST '1' in the invoice is the separator
     // because bech32 charset (used for the data part) doesn't include '1'
     // The amount portion can contain '1' (e.g., lnbc100u1...), so we use lastIndexOf
+    // When separatorIndex === prefix.length, the amount part is empty (valid any-amount invoice)
     const separatorIndex = trimmed.lastIndexOf('1')
-    if (separatorIndex === -1 || separatorIndex <= prefix.length) return result
+    if (separatorIndex === -1 || separatorIndex < prefix.length) return result
 
     // Extract amount string (between prefix and '1')
     const amountPart = trimmed.substring(prefix.length, separatorIndex)
