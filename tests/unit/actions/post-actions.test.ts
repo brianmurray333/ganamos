@@ -196,7 +196,7 @@ describe('createFundedAnonymousPostAction', () => {
 
       // ASSERT
       expect(result.success).toBe(true)
-      expect(capturedPostInsert.image_url).toBe('/placeholder.jpg')
+      expect(capturedPostInsert.image_url).toBeNull()
     })
 
     it('should use provided image_url when not null', async () => {
