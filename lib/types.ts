@@ -38,7 +38,9 @@ export interface Post {
   submitted_fix_image_url?: string | null
   fixed_image_url?: string | null
   submitted_fix_note?: string | null
+  submitted_fix_proof_text?: string | null
   submitted_fix_lightning_address?: string | null
+  fix_proof_text?: string | null
   city?: string | null
   ai_confidence_score?: number | null
   deleted_at?: string | null

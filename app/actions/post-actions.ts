@@ -711,13 +711,14 @@ export async function createFundedAnonymousPostAction(postDetails: {
  */
 export async function markPostFixedAnonymouslyAction(
   postId: string,
-  fixImageUrl: string,
+  fixImageUrl: string | null,
   fixerNote: string | null,
   aiConfidence: number,
   aiAnalysis: string | null,
+  fixProofText: string | null = null,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!postId || !fixImageUrl) {
-    return { success: false, error: "Post ID and Fix Image URL are required." }
+  if (!postId || (!fixImageUrl && !fixProofText)) {
+    return { success: false, error: "Post ID and either a fix image or proof text are required." }
   }
 
   const supabase = createServerSupabaseClient(await getCookieStore())
@@ -872,13 +873,14 @@ export async function submitAnonymousFixLightningAddressAction(
  */
 export async function submitAnonymousFixForReviewAction(
   postId: string,
-  fixImageUrl: string,
+  fixImageUrl: string | null,
   fixerNote: string | null,
   aiConfidence: number | null,
   aiAnalysis: string | null,
+  fixProofText: string | null = null,
 ): Promise<{ success: boolean; error?: string }> {
-  if (!postId || !fixImageUrl) {
-    return { success: false, error: "Post ID and Fix Image URL are required." }
+  if (!postId || (!fixImageUrl && !fixProofText)) {
+    return { success: false, error: "Post ID and either a fix image or proof text are required." }
   }
   const supabase = createServerSupabaseClient(await getCookieStore())
 
@@ -916,6 +918,7 @@ export async function submitAnonymousFixForReviewAction(
         p_fixer_avatar: null,
         p_fix_note: fixerNote,
         p_fix_image_url: fixImageUrl,
+        p_fix_proof_text: fixProofText,
         p_lightning_address: null,
         p_ai_confidence: aiConfidence,
         p_ai_analysis: aiAnalysis
@@ -1047,17 +1050,18 @@ export async function submitAnonymousFixForReviewAction(
 export async function submitLoggedInFixForReviewAction(params: {
   postId: string
   userId: string
-  fixImageUrl: string
+  fixImageUrl: string | null
   fixerNote: string | null
   aiConfidence: number | null
   aiAnalysis: string | null
+  fixProofText?: string | null
 }): Promise<{ success: boolean; error?: string }> {
   'use server'
   
-  const { postId, userId, fixImageUrl, fixerNote, aiConfidence, aiAnalysis } = params
+  const { postId, userId, fixImageUrl, fixerNote, aiConfidence, aiAnalysis, fixProofText } = params
 
-  if (!postId || !userId || !fixImageUrl) {
-    return { success: false, error: "Post ID, User ID, and Fix Image URL are required." }
+  if (!postId || !userId || (!fixImageUrl && !fixProofText)) {
+    return { success: false, error: "Post ID, User ID, and either a fix image or proof text are required." }
   }
 
   try {
@@ -1134,6 +1138,7 @@ export async function submitLoggedInFixForReviewAction(params: {
         p_fixer_avatar: userProfile?.avatar_url || null,
         p_fix_note: fixerNote,
         p_fix_image_url: fixImageUrl,
+        p_fix_proof_text: fixProofText || null,
         p_lightning_address: null,
         p_ai_confidence: aiConfidence,
         p_ai_analysis: aiAnalysis
