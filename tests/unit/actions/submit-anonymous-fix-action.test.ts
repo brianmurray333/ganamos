@@ -325,7 +325,7 @@ describe('submitAnonymousFixForReviewAction', () => {
       // ASSERT
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      expect(result.error).toContain('Image URL')
+      expect(result.error).toContain('fix image or proof text')
     })
 
     it('handles null postId parameter', async () => {
