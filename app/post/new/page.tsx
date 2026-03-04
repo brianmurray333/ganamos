@@ -867,7 +867,7 @@ export default function NewPostPage() {
     <div className={step === "photo" && cameraActive ? "" : "container px-4 py-6 mx-auto max-w-md"}>
       {step === "photo" && cameraActive && (
         <>
-          <div className="absolute top-12 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '40px' }}>
             <div className="bg-black/50 text-white/70 px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
               Take photo of the issue
             </div>
@@ -889,21 +889,12 @@ export default function NewPostPage() {
             key="camera-active"
             onCapture={handleCapture}
             onGalleryClick={() => document.getElementById('photo-upload')?.click()}
+            onSkip={() => {
+              setImage(null)
+              setStep("details")
+              setCameraActive(false)
+            }}
           />
-          {/* Skip photo button */}
-          <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-50">
-            <button
-              type="button"
-              onClick={() => {
-                setImage(null)
-                setStep("details")
-                setCameraActive(false)
-              }}
-              className="text-sm text-white/60 underline hover:text-white/80 transition-colors"
-            >
-              Skip photo
-            </button>
-          </div>
         </>
       ) : (
         <>
