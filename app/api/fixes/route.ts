@@ -204,6 +204,7 @@ export async function GET() {
       endpoints: {
         'POST /api/fixes': 'Submit a fix for a post (requires L402 payment)',
         'GET /api/fixes/{post_id}': 'Poll fix status (reuse your L402 token, no extra payment)',
+        'POST /api/fixes/{post_id}/claim': 'Claim reward with a new invoice after approval (reuse your L402 token)',
       },
       l402_info: {
         fee: `${API_ACCESS_FEE} sat (anti-spam)`,
@@ -218,6 +219,7 @@ export async function GET() {
       },
       notes: '*At least one of proof_text or proof_image_url must be provided.',
       status_polling: 'After submitting, reuse your L402 token (Authorization header) to GET /api/fixes/{post_id} for status updates. No additional payment required.',
+      reward_claim: 'If your fix is approved but payout failed (or you did not provide a payout_invoice), POST /api/fixes/{post_id}/claim with { "payout_invoice": "lnbc..." } to retry. You can call this as many times as needed with different invoices.',
     })
   )
 }
