@@ -11,7 +11,7 @@ export function renderTextWithLinks(text: string) {
           href={part}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-semibold hover:underline"
+          className="font-semibold underline"
           onClick={(e) => e.stopPropagation()}
         >
           {part}

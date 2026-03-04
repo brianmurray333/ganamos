@@ -369,7 +369,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
         <div className="relative w-full h-48">
           {isImageless ? (
             <div className="w-full h-full flex items-start p-5 bg-gray-900 rounded-t-2xl">
-              <p className="text-white text-base leading-relaxed line-clamp-5">
+              <p className="text-white text-base leading-relaxed line-clamp-5 break-all">
                 {renderTextWithLinks(post.description)}
               </p>
             </div>

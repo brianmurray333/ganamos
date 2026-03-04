@@ -61,6 +61,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [fixerProfile, setFixerProfile] = useState<{ name: string; username: string; avatar_url: string | null } | null>(null)
   const [fixerNote, setFixerNote] = useState("")
   const [showNoteDialog, setShowNoteDialog] = useState(false)
+  const [showTextProofForm, setShowTextProofForm] = useState(false)
+  const [fixProofText, setFixProofText] = useState("")
   const router = useRouter()
   const { user, profile, updateBalance, activeUserId, refreshProfile, connectedAccounts, mainAccountProfile, sessionLoaded } = useAuth() // user can be null for anonymous
   const supabase = createBrowserSupabaseClient()
@@ -297,7 +299,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
 
   // Force hide bottom nav when camera is shown
   useEffect(() => {
-    if (showCamera || showBeforeAfter) {
+    if (showCamera || showBeforeAfter || showTextProofForm) {
       document.body.classList.add("camera-active")
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href)
@@ -325,7 +327,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     return () => {
       document.body.classList.remove("camera-active")
     }
-  }, [showCamera, showBeforeAfter])
+  }, [showCamera, showBeforeAfter, showTextProofForm])
 
   // Cleanup: ensure body scroll is restored when component unmounts
   useEffect(() => {
@@ -517,6 +519,112 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     toast.success("Note saved", {
       description: "Your note has been added to the fix",
     })
+  }
+
+  const handleSubmitTextProof = async () => {
+    if (!fixProofText.trim()) {
+      toast.error("Proof required", {
+        description: "Please describe how you completed this task, including any relevant links.",
+      })
+      return
+    }
+    if (!post) {
+      toast.error("Error", { description: "Post data not loaded." })
+      return
+    }
+
+    setSubmittingFix(true)
+    try {
+      if (user) {
+        const userId = activeUserId || user.id
+        const result = await submitLoggedInFixForReviewAction({
+          postId: post.id,
+          userId,
+          fixImageUrl: null,
+          fixerNote: fixerNote || null,
+          aiConfidence: null,
+          aiAnalysis: null,
+          fixProofText: fixProofText.trim(),
+        })
+
+        if (result.success) {
+          const nowIso = new Date().toISOString()
+          setPost((prevPost) =>
+            prevPost
+              ? {
+                  ...prevPost,
+                  claimed: true,
+                  under_review: true,
+                  submitted_fix_image_url: null,
+                  submitted_fix_note: fixerNote || "",
+                  submitted_fix_proof_text: fixProofText.trim(),
+                  submitted_fix_by: userId,
+                  submitted_fix_by_name: profile?.name || user.email || "Unknown",
+                  submitted_fix_by_avatar: profile?.avatar_url || null,
+                  submitted_fix_at: nowIso,
+                  ai_confidence_score: null,
+                  ai_analysis: null,
+                  fixed: false,
+                  fixed_by_is_anonymous: false,
+                }
+              : null,
+          )
+          setShowTextProofForm(false)
+          toast.success("Fix Submitted for Review", {
+            description: "The post owner will be notified to review your fix.",
+          })
+        } else {
+          toast.error("Error Submitting for Review", {
+            description: result.error || "Could not submit your fix for review.",
+          })
+        }
+      } else {
+        const actionResult = await submitAnonymousFixForReviewAction(
+          post.id,
+          null,
+          fixerNote || null,
+          null,
+          null,
+          fixProofText.trim(),
+        )
+
+        if (actionResult.success) {
+          const nowIso = new Date().toISOString()
+          setPost((prevPost) =>
+            prevPost
+              ? {
+                  ...prevPost,
+                  claimed: true,
+                  under_review: true,
+                  submitted_fix_image_url: null,
+                  submitted_fix_note: fixerNote || "",
+                  submitted_fix_proof_text: fixProofText.trim(),
+                  submitted_fix_by_name: "Anonymous Fixer (Pending Review)",
+                  submitted_fix_at: nowIso,
+                  ai_confidence_score: null,
+                  ai_analysis: null,
+                  fixed: false,
+                  fixed_by_is_anonymous: false,
+                }
+              : null,
+          )
+          setShowTextProofForm(false)
+          setPendingAnonymousFixPostId(post.id)
+          setShowAnonymousFixSubmissionModal(true)
+        } else {
+          toast.error("Error Submitting for Review", {
+            description: actionResult.error || "Could not submit your anonymous fix for review.",
+          })
+        }
+      }
+    } catch (error) {
+      console.error("Error submitting text proof:", error)
+      toast.error("Error", {
+        description: "An unexpected error occurred. Please try again.",
+      })
+    } finally {
+      setSubmittingFix(false)
+    }
   }
 
   const handleSubmitFix = async () => {
@@ -894,6 +1002,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               fixed_by_is_anonymous: true,
               fixed_image_url: post.submitted_fix_image_url,
               fixer_note: post.submitted_fix_note,
+              fix_proof_text: post.submitted_fix_proof_text || null,
               under_review: false,
             })
             .eq("id", post.id)
@@ -941,6 +1050,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   fixed_by_is_anonymous: true,
                   fixed_image_url: post.submitted_fix_image_url,
                   fixer_note: post.submitted_fix_note,
+                  fix_proof_text: post.submitted_fix_proof_text || null,
                   under_review: false,
                 }
               : null,
@@ -959,6 +1069,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               fixed_by_is_anonymous: isAnonymousFixer,
               fixed_image_url: post.submitted_fix_image_url,
               fixer_note: post.submitted_fix_note,
+              fix_proof_text: post.submitted_fix_proof_text || null,
               under_review: false,
             })
             .eq("id", post.id)
@@ -978,6 +1089,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   fixed_by_is_anonymous: isAnonymousFixer,
                   fixed_image_url: post.submitted_fix_image_url,
                   fixer_note: post.submitted_fix_note,
+                  fix_proof_text: post.submitted_fix_proof_text || null,
                   under_review: false,
                 }
               : null,
@@ -1045,6 +1157,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             submitted_fix_at: null,
             submitted_fix_image_url: null,
             submitted_fix_note: null,
+            submitted_fix_proof_text: null,
           })
           .eq("id", post.id)
         if (error) {
@@ -1062,6 +1175,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 submitted_fix_at: null,
                 submitted_fix_image_url: null,
                 submitted_fix_note: null,
+                submitted_fix_proof_text: null,
               }
             : null,
         )
@@ -1538,6 +1652,101 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     )
   }
 
+  if (showTextProofForm) {
+    return (
+      <div className="container px-4 py-6 mx-auto max-w-md">
+        <div className="flex items-center mb-6">
+          <Button variant="ghost" size="icon" onClick={() => setShowTextProofForm(false)} className="mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            <span className="sr-only">Back</span>
+          </Button>
+          <h1 className="text-2xl font-bold">Submit fix</h1>
+        </div>
+        <div className="space-y-6">
+          <div>
+            <h3 className="font-semibold text-lg">{post?.title}</h3>
+            {post?.description && (
+              <p className="text-sm text-muted-foreground mt-1">{post.description}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Textarea
+              placeholder="Describe how you completed this task..."
+              value={fixProofText}
+              onChange={(e) => setFixProofText(e.target.value)}
+              rows={4}
+              autoFocus
+              className="resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+            <p className="text-xs text-muted-foreground">
+              Include links, URLs, or any evidence that proves you completed the task.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Textarea
+              placeholder="Add a note (optional)..."
+              value={fixerNote}
+              onChange={(e) => setFixerNote(e.target.value)}
+              rows={2}
+              className="resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+            />
+          </div>
+
+          <div className="flex items-center p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
+            <div className="p-2 mr-3 bg-amber-100 rounded-full dark:bg-amber-950/50">
+              <BitcoinLogo size={16} />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Reward</p>
+              <p className="text-lg font-bold">{formatSatsValue(post?.reward || 0)}</p>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleSubmitTextProof}
+            disabled={submittingFix || !fixProofText.trim()}
+            className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold"
+          >
+            {submittingFix ? (
+              <div className="flex items-center">
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Submitting...
+              </div>
+            ) : (
+              "Claim Reward"
+            )}
+          </Button>
+        </div>
+
+        {pendingAnonymousFixPostId && (
+          <AnonymousFixSubmissionModal
+            open={showAnonymousFixSubmissionModal}
+            onOpenChange={setShowAnonymousFixSubmissionModal}
+            postId={pendingAnonymousFixPostId}
+            rewardAmount={post?.reward || 0}
+            onLightningAddressSubmitted={() => {
+              toast.success("Lightning Address Saved", {
+                description: "If your fix is approved, your reward will be sent to this address.",
+              })
+              setPendingAnonymousFixPostId(null)
+              router.push("/")
+            }}
+            onAccountCreationRequested={() => {
+              setPendingAnonymousFixPostId(null)
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
   // Device Fix Review - early return when reviewing a device-submitted fix
   if (showDeviceFixReview && deviceFixerProfile && post && post.user_id != null) {
     return (
@@ -1713,12 +1922,43 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             {/* Updated image display logic to handle anonymous reviews */}
             {/* Show before/after for post owner, group admins, or completed fixes */}
             {/* Fixed takes priority over under_review */}
-            {((post.fixed && post.fixed_image_url) ||
+            {((post.fixed && (post.fixed_image_url || post.fix_proof_text)) ||
             (!post.fixed && post.under_review &&
-            post.submitted_fix_image_url &&
+            (post.submitted_fix_image_url || post.submitted_fix_proof_text) &&
             user &&
             post.user_id != null &&
             (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin))) ? (
+            (post.fixed ? (!post.fixed_image_url && post.fix_proof_text) : (!post.submitted_fix_image_url && post.submitted_fix_proof_text)) ? (
+            <div className="mb-4">
+              <div 
+                className="relative w-full h-48 overflow-hidden rounded-lg cursor-pointer transition-opacity hover:opacity-90 mb-3"
+                onClick={() => {
+                  if (post.imageUrl || post.image_url) {
+                    openFullscreenImage(post.imageUrl || post.image_url || '/placeholder.svg')
+                  }
+                }}
+              >
+                {post.has_image === false && !post.imageUrl && !post.image_url ? (
+                  <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
+                    <Image src="/favicon.png" alt="Post" width={64} height={64} className="rounded-lg" />
+                  </div>
+                ) : (
+                  <Image
+                    src={post.imageUrl || post.image_url || '/placeholder.svg'}
+                    alt={post.title}
+                    fill
+                    className="object-cover"
+                  />
+                )}
+              </div>
+              <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                <p className="text-sm font-medium mb-1">Proof of completion:</p>
+                <p className="text-sm text-muted-foreground whitespace-pre-line break-words">
+                  {renderTextWithLinks((post.fixed ? post.fix_proof_text : post.submitted_fix_proof_text) || "")}
+                </p>
+              </div>
+            </div>
+            ) : (
             <div className="grid grid-cols-2 gap-2 mb-4">
               <div>
                 <div 
@@ -1817,7 +2057,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 </div>
               </div>
             </div>
-          ) : !post.imageUrl && !post.image_url && post.has_image === false ? (
+            )) : !post.imageUrl && !post.image_url && post.has_image === false ? (
             <div className="mb-4">
               {/* Action buttons row - not overlaid since there's no image */}
               <div className="flex justify-end gap-2 mb-3">
@@ -1874,8 +2114,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 </Button>
               </div>
               {/* Description text in place of image */}
-              <div className="p-5 bg-gray-900 rounded-lg">
-                <p className="text-white text-lg leading-relaxed" style={{ overflowWrap: 'anywhere' }}>
+              <div className="p-5 bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <p className="text-gray-900 dark:text-white text-lg leading-relaxed" style={{ overflowWrap: 'anywhere' }}>
                   {renderTextWithLinks(post.title)}
                 </p>
               </div>
@@ -2114,6 +2354,12 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </div>
           )}
           
+          {post.fixed && post.fix_proof_text && (
+            <div className="mb-6 p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+              <h3 className="font-medium mb-2">Proof of completion:</h3>
+              <p className="text-sm text-muted-foreground whitespace-pre-line break-words">{renderTextWithLinks(post.fix_proof_text)}</p>
+            </div>
+          )}
           {post.fixed && post.fixer_note && (
             <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border">
               <h3 className="font-medium mb-2">Fixer's note:</h3>
@@ -2123,7 +2369,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {/* AI Review - only visible to post owner or group admin when a fix is under review */}
           {!post.fixed &&
           post.under_review &&
-          post.submitted_fix_image_url &&
+          (post.submitted_fix_image_url || post.submitted_fix_proof_text) &&
           post.ai_analysis &&
           user &&
           post.user_id != null &&
@@ -2139,11 +2385,17 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {/* Check if this is the post owner or group admin viewing a fix under review */}
           {!post.fixed &&
           post.under_review &&
-          post.submitted_fix_image_url &&
+          (post.submitted_fix_image_url || post.submitted_fix_proof_text) &&
           user &&
           post.user_id != null &&
           (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) ? (
             <div className="space-y-4 mb-6">
+              {post.submitted_fix_proof_text && (
+                <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <p className="text-sm font-medium mb-1">Proof of completion:</p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line break-words">{renderTextWithLinks(post.submitted_fix_proof_text)}</p>
+                </div>
+              )}
               {post.submitted_fix_note && (
                 <div className="p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg">
                   <p className="text-sm font-medium mb-1">Fixer's note:</p>
@@ -2292,7 +2544,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )}
           
           {!post.fixed && !post.under_review && !post.deleted_at && (
-            <Button className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" onClick={() => setShowCamera(true)}>Start</Button>
+            <Button className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" onClick={() => {
+              if (post.has_image === false) {
+                setShowTextProofForm(true)
+              } else {
+                setShowCamera(true)
+              }
+            }}>Start</Button>
           )}
           
           

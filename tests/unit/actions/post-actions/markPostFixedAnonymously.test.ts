@@ -219,7 +219,7 @@ describe('markPostFixedAnonymouslyAction', () => {
       // ASSERT
       expect(result.success).toBe(false)
       expect(result.error).toBeDefined()
-      expect(result.error).toContain('Image URL')
+      expect(result.error).toContain('fix image or proof text')
       
       // Verify no database operations were attempted
       expect(mockClient.from).not.toHaveBeenCalled()
