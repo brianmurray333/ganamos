@@ -281,6 +281,53 @@ describe('POST /api/posts/[id]/approve - Poster Approves Fix', () => {
       expect(data.message).toContain('payout failed')
     })
 
+    it('should pay out when invoice amount exactly matches post reward', async () => {
+      mockL402Success()
+      mockPostData({ submitted_fix_payout_invoice: 'lnbc1000n1exact', reward: 1000 })
+
+      const validation = await import('@/lib/lightning-validation')
+      vi.mocked(validation.extractInvoiceAmount).mockReturnValue(1000)
+
+      const lightning = await import('@/lib/lightning')
+      vi.mocked(lightning.payInvoice).mockResolvedValue({
+        success: true,
+        paymentHash: 'exact-match-hash',
+      } as any)
+
+      const { POST } = await import('@/app/api/posts/[id]/approve/route')
+      const request = createMockRequest(true)
+      const response = await POST(request, { params: Promise.resolve({ id: 'test-post-id' }) })
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(data.reward_paid).toBe(true)
+      expect(data.reward_payment_hash).toBe('exact-match-hash')
+    })
+
+    it('should pay out when invoice amount is less than post reward', async () => {
+      mockL402Success()
+      mockPostData({ submitted_fix_payout_invoice: 'lnbc500n1less', reward: 1000 })
+
+      const validation = await import('@/lib/lightning-validation')
+      vi.mocked(validation.extractInvoiceAmount).mockReturnValue(500)
+
+      const lightning = await import('@/lib/lightning')
+      vi.mocked(lightning.payInvoice).mockResolvedValue({
+        success: true,
+        paymentHash: 'under-reward-hash',
+      } as any)
+
+      const { POST } = await import('@/app/api/posts/[id]/approve/route')
+      const request = createMockRequest(true)
+      const response = await POST(request, { params: Promise.resolve({ id: 'test-post-id' }) })
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+      expect(data.reward_paid).toBe(true)
+    })
+
     it('should refuse payout when invoice amount exceeds post reward', async () => {
       mockL402Success()
       mockPostData({ submitted_fix_payout_invoice: 'lnbc100000n1malicious', reward: 100 })
