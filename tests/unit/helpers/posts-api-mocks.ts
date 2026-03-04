@@ -383,6 +383,8 @@ export function expectApiDocumentationResponse(data: any) {
   expect(data.endpoints).toHaveProperty('POST /api/posts')
   expect(data.endpoints).toHaveProperty('GET /api/posts')
   expect(data.endpoints).toHaveProperty('GET /api/posts/{id}')
+  expect(data.endpoints).toHaveProperty('POST /api/posts/{id}/approve')
+  expect(data.endpoints).toHaveProperty('POST /api/posts/{id}/reject')
   
   // Verify L402 info structure
   expect(data.l402_info).toMatchObject({

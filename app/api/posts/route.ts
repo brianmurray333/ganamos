@@ -257,6 +257,8 @@ export async function GET(request: NextRequest) {
     endpoints: {
       'POST /api/posts': 'Create a new post (requires L402 payment)',
       'GET /api/posts/{id}': 'Poll post status (reuse your L402 token, no extra payment)',
+      'POST /api/posts/{id}/approve': 'Approve a submitted fix (reuse your L402 token)',
+      'POST /api/posts/{id}/reject': 'Reject a submitted fix (reuse your L402 token, optional { reason })',
       'GET /api/posts': 'API docs (this page)',
     },
     l402_info: {
@@ -266,7 +268,8 @@ export async function GET(request: NextRequest) {
       currency: 'satoshis',
       documentation: 'https://docs.lightning.engineering/the-lightning-network/l402'
     },
-    status_polling: 'After creating a post, reuse your L402 token (Authorization header) to GET /api/posts/{id} for status updates (fix submissions, approvals). No additional payment required — the token is a persistent bearer instrument.',
+    status_polling: 'After creating a post, reuse your L402 token (Authorization header) to GET /api/posts/{id} for status updates. No additional payment required — the token is a persistent bearer instrument.',
+    fix_management: 'When a fix is submitted (status changes to under_review), use POST /api/posts/{id}/approve or POST /api/posts/{id}/reject to manage it. Approval triggers automatic reward payout if the fixer provided a payout_invoice.',
   })
   
   // Add CORS headers for development only
