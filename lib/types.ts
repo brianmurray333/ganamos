@@ -40,6 +40,8 @@ export interface Post {
   submitted_fix_note?: string | null
   submitted_fix_proof_text?: string | null
   submitted_fix_lightning_address?: string | null
+  submitted_fix_payment_hash?: string | null
+  submitted_fix_payout_invoice?: string | null
   fix_proof_text?: string | null
   city?: string | null
   ai_confidence_score?: number | null

@@ -116,9 +116,10 @@ export async function createL402Challenge(
 /**
  * Verify an L402 token
  * @param token L402 token with macaroon and preimage
+ * @param options.skipExpiry If true, skip the expiry caveat check (for status polling with persistent tokens)
  * @returns Verification result with payment hash if valid
  */
-export async function verifyL402Token(token: L402Token): Promise<{
+export async function verifyL402Token(token: L402Token, options?: { skipExpiry?: boolean }): Promise<{
   success: boolean
   paymentHash?: string
   error?: string
@@ -135,10 +136,12 @@ export async function verifyL402Token(token: L402Token): Promise<{
       return { success: false, error: 'Invalid macaroon signature' }
     }
 
-    // Check expiry caveat
-    const expiryCaveat = macaroon.caveats.find(c => c.condition === 'expires')
-    if (expiryCaveat && parseInt(expiryCaveat.value) < Date.now()) {
-      return { success: false, error: 'L402 token expired' }
+    // Check expiry caveat (skipped for status polling — payment proof is permanent)
+    if (!options?.skipExpiry) {
+      const expiryCaveat = macaroon.caveats.find(c => c.condition === 'expires')
+      if (expiryCaveat && parseInt(expiryCaveat.value) < Date.now()) {
+        return { success: false, error: 'L402 token expired' }
+      }
     }
 
     // Verify that the preimage corresponds to the payment hash (macaroon identifier)
