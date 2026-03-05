@@ -24,6 +24,16 @@ vi.mock('@/lib/groq-wrapper', () => ({
   createChatCompletion: mockCreateChatCompletion,
 }))
 
+vi.mock('@/lib/env', () => ({
+  serverEnv: {
+    groq: {
+      isConfigured: true,
+      useMock: true,
+      apiKey: 'mock-groq-api-key',
+    },
+  },
+}))
+
 // Helper to create mock AI responses
 function createMockAIResponse(confidence: number, reasoning: string) {
   return {
