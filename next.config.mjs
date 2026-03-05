@@ -11,10 +11,11 @@ const nextConfig = {
   },
   async redirects() {
     return [
-      { source: '/molt', destination: '/api', permanent: true },
-      { source: '/ai', destination: '/api', permanent: true },
-      { source: '/agent', destination: '/api', permanent: true },
-      { source: '/mcp', destination: '/api', permanent: true },
+      { source: '/molt', destination: '/docs', permanent: true },
+      { source: '/ai', destination: '/docs', permanent: true },
+      { source: '/agent', destination: '/docs', permanent: true },
+      { source: '/mcp', destination: '/docs', permanent: true },
+      { source: '/developers', destination: '/docs', permanent: false },
     ]
   },
   webpack: (config, { isServer }) => {

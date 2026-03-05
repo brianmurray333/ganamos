@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Allow: /api
+Allow: /openapi.json
+Allow: /.well-known/
+
+Sitemap: https://ganamos.earth/sitemap.xml

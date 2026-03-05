@@ -51,6 +51,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url, 301) // 301 = permanent redirect (good for SEO)
   }
 
+  // Handle docs.ganamos.earth subdomain — rewrite to /docs routes
+  const isDocsDomain = host === "docs.ganamos.earth" || host === "docs.ganamos.earth:3457"
+
+  if (isDocsDomain) {
+    if (path === "/" || path === "") {
+      return NextResponse.rewrite(new URL("/docs", req.url))
+    }
+    // Static assets and well-known files pass through
+    if (path.startsWith("/openapi.json") || path.startsWith("/.well-known") || path.startsWith("/_next")) {
+      return res
+    }
+    // All other paths rewrite to /docs
+    return NextResponse.rewrite(new URL("/docs", req.url))
+  }
+
   // Handle Satoshi Pet domains - rewrite to /satoshi-pet routes
   const isSatoshiPetDomain = 
     host.includes("satoshipet.com") || 
