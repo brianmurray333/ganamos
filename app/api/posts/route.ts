@@ -129,6 +129,33 @@ export async function POST(request: NextRequest) {
       return mismatchErrorResponse
     }
 
+    // Replay protection: atomically record this payment hash as used
+    const { createServerSupabaseClient } = await import('@/lib/supabase')
+    const replaySupabase = createServerSupabaseClient()
+    const { error: replayError } = await replaySupabase
+      .from('l402_used_tokens')
+      .insert({ payment_hash: verification.paymentHash!, endpoint: 'POST /api/posts' })
+
+    if (replayError?.code === '23505') { // unique_violation (PRIMARY KEY conflict)
+      // Look up the existing post to return its ID
+      const { data: existingPost } = await replaySupabase
+        .from('posts')
+        .select('id')
+        .eq('funding_r_hash', verification.paymentHash!)
+        .maybeSingle()
+
+      const replayResponse = NextResponse.json(
+        { error: 'This L402 token has already been used to create a post. Pay for a new token to create another post.', existing_post_id: existingPost?.id || null },
+        { status: 409 }
+      )
+      if (process.env.NODE_ENV === 'development') {
+        replayResponse.headers.set('Access-Control-Allow-Origin', '*')
+        replayResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        replayResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+      }
+      return replayResponse
+    }
+
     // Create the post using existing logic
     const postResult = await createFundedAnonymousPostAction({
       description,
@@ -270,6 +297,7 @@ export async function GET(request: NextRequest) {
     },
     status_polling: 'After creating a post, reuse your L402 token (Authorization header) to GET /api/posts/{id} for status updates. No additional payment required — the token is a persistent bearer instrument.',
     fix_management: 'When a fix is submitted (status changes to under_review), use POST /api/posts/{id}/approve or POST /api/posts/{id}/reject to manage it. Approval triggers automatic reward payout if the fixer provided a payout_invoice.',
+    replay_protection: 'Each L402 token can only be used once to create a post. Attempting to reuse a token returns 409 Conflict with the existing post ID.',
   })
   
   // Add CORS headers for development only

@@ -45,6 +45,31 @@ vi.mock('@/app/actions/post-actions', () => ({
   createFundedAnonymousPostAction: vi.fn(),
 }))
 
+const mockInsert = vi.fn()
+const mockSupabaseSelect = vi.fn()
+const mockSupabaseEq = vi.fn()
+const mockSupabaseMaybeSingle = vi.fn()
+
+vi.mock('@/lib/supabase', () => ({
+  createServerSupabaseClient: vi.fn(() => ({
+    from: vi.fn((table: string) => {
+      if (table === 'l402_used_tokens') {
+        return { insert: mockInsert }
+      }
+      if (table === 'posts') {
+        return {
+          select: mockSupabaseSelect.mockReturnValue({
+            eq: mockSupabaseEq.mockReturnValue({
+              maybeSingle: mockSupabaseMaybeSingle,
+            }),
+          }),
+        }
+      }
+      return {}
+    }),
+  })),
+}))
+
 // Import mocked functions for assertions
 import * as l402 from '@/lib/l402'
 import * as lightning from '@/lib/lightning'
@@ -74,7 +99,8 @@ describe('POST /api/posts Integration Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.NODE_ENV = 'production' // Default to production for testing
+    process.env.NODE_ENV = 'production'
+    mockInsert.mockResolvedValue({ error: null })
   })
 
   afterEach(() => {
@@ -902,6 +928,115 @@ describe('POST /api/posts Integration Tests', () => {
       // Should proceed without amount verification when caveat is missing
       expect(response.status).toBe(201)
       expect(data.success).toBe(true)
+    })
+  })
+
+  describe('Replay Protection', () => {
+    it('should reject duplicate L402 token with 409 Conflict', async () => {
+      const mockPostData = createMockPostData({ reward: 1000 })
+      const mockToken = createMockL402Token()
+      const paymentHash = 'payment-hash-123'
+      const mockMacaroon = createMockMacaroon({ amount: 1010 })
+      
+      mockL402TokenParsingSuccess(l402, mockToken)
+      mockL402VerificationSuccess(l402, paymentHash, mockMacaroon)
+      
+      // Simulate unique_violation from the l402_used_tokens table
+      mockInsert.mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+      mockSupabaseMaybeSingle.mockResolvedValue({ data: { id: 'existing-post-id' }, error: null })
+
+      const authHeader = createL402AuthHeader(mockToken)
+      const request = createMockRequest(mockPostData, authHeader)
+      const response = await POST(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(data.error).toContain('already been used')
+      expect(data.existing_post_id).toBe('existing-post-id')
+      expect(postActions.createFundedAnonymousPostAction).not.toHaveBeenCalled()
+    })
+
+    it('should allow first use of L402 token', async () => {
+      const mockPostData = createMockPostData({ reward: 1000 })
+      const mockToken = createMockL402Token()
+      const paymentHash = 'payment-hash-123'
+      const mockMacaroon = createMockMacaroon({ amount: 1010 })
+      
+      mockL402TokenParsingSuccess(l402, mockToken)
+      mockL402VerificationSuccess(l402, paymentHash, mockMacaroon)
+      mockPostCreationSuccess(postActions, 'new-post-id')
+      mockInsert.mockResolvedValue({ error: null })
+
+      const authHeader = createL402AuthHeader(mockToken)
+      const request = createMockRequest(mockPostData, authHeader)
+      const response = await POST(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(201)
+      expect(data.success).toBe(true)
+      expect(data.post_id).toBe('new-post-id')
+    })
+
+    it('should include CORS headers in replay rejection in development mode', async () => {
+      process.env.NODE_ENV = 'development'
+      
+      const mockPostData = createMockPostData({ reward: 1000 })
+      const mockToken = createMockL402Token()
+      const paymentHash = 'payment-hash-123'
+      const mockMacaroon = createMockMacaroon({ amount: 1010 })
+      
+      mockL402TokenParsingSuccess(l402, mockToken)
+      mockL402VerificationSuccess(l402, paymentHash, mockMacaroon)
+      mockInsert.mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+      mockSupabaseMaybeSingle.mockResolvedValue({ data: null, error: null })
+
+      const authHeader = createL402AuthHeader(mockToken)
+      const request = createMockRequest(mockPostData, authHeader)
+      const response = await POST(request)
+
+      expect(response.status).toBe(409)
+      expectCorsHeadersPresent(response)
+    })
+
+    it('should return null existing_post_id when post lookup fails', async () => {
+      const mockPostData = createMockPostData({ reward: 1000 })
+      const mockToken = createMockL402Token()
+      const paymentHash = 'payment-hash-123'
+      const mockMacaroon = createMockMacaroon({ amount: 1010 })
+      
+      mockL402TokenParsingSuccess(l402, mockToken)
+      mockL402VerificationSuccess(l402, paymentHash, mockMacaroon)
+      mockInsert.mockResolvedValue({ error: { code: '23505', message: 'duplicate key' } })
+      mockSupabaseMaybeSingle.mockResolvedValue({ data: null, error: null })
+
+      const authHeader = createL402AuthHeader(mockToken)
+      const request = createMockRequest(mockPostData, authHeader)
+      const response = await POST(request)
+      const data = await response.json()
+
+      expect(response.status).toBe(409)
+      expect(data.existing_post_id).toBeNull()
+    })
+
+    it('should record payment hash with correct endpoint', async () => {
+      const mockPostData = createMockPostData({ reward: 1000 })
+      const mockToken = createMockL402Token()
+      const paymentHash = 'unique-hash-456'
+      const mockMacaroon = createMockMacaroon({ amount: 1010 })
+      
+      mockL402TokenParsingSuccess(l402, mockToken)
+      mockL402VerificationSuccess(l402, paymentHash, mockMacaroon)
+      mockPostCreationSuccess(postActions, 'post-123')
+      mockInsert.mockResolvedValue({ error: null })
+
+      const authHeader = createL402AuthHeader(mockToken)
+      const request = createMockRequest(mockPostData, authHeader)
+      await POST(request)
+
+      expect(mockInsert).toHaveBeenCalledWith({
+        payment_hash: paymentHash,
+        endpoint: 'POST /api/posts',
+      })
     })
   })
 

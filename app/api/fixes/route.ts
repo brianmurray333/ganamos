@@ -79,6 +79,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Replay protection: reject if this payment hash was already used
+    const { createServerSupabaseClient } = await import('@/lib/supabase')
+    const replaySupabase = createServerSupabaseClient()
+    const { error: replayError } = await replaySupabase
+      .from('l402_used_tokens')
+      .insert({ payment_hash: verification.paymentHash!, endpoint: 'POST /api/fixes' })
+
+    if (replayError?.code === '23505') { // unique_violation
+      return corsResponse(
+        NextResponse.json(
+          { error: 'This L402 token has already been used to submit a fix. Pay for a new token to submit another fix.' },
+          { status: 409 }
+        )
+      )
+    }
+
     const body = await request.json()
     const { post_id, proof_text, proof_image_url, note, payout_invoice } = body
 
@@ -220,6 +236,7 @@ export async function GET() {
       notes: '*At least one of proof_text or proof_image_url must be provided.',
       status_polling: 'After submitting, reuse your L402 token (Authorization header) to GET /api/fixes/{post_id} for status updates. No additional payment required.',
       reward_claim: 'If your fix is approved but payout failed (or you did not provide a payout_invoice), POST /api/fixes/{post_id}/claim with { "payout_invoice": "lnbc..." } to retry. You can call this as many times as needed with different invoices.',
+      replay_protection: 'Each L402 token can only be used once to submit a fix. Attempting to reuse a token returns 409 Conflict.',
     })
   )
 }
