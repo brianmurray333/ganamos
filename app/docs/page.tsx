@@ -228,6 +228,7 @@ export default function DocsPage() {
           ))}
           <div className="mt-6 px-2">
             <div className="text-[9px] tracking-[0.2em] text-neutral-700 uppercase mb-2">Resources</div>
+            <a href="/docs/demo" className="block text-[10px] text-amber-400/80 hover:text-amber-400 py-1 transition-colors font-semibold">⚡ Live Demo</a>
             <a href="https://www.ganamos.earth/openapi.json" className="block text-[10px] text-neutral-600 hover:text-emerald-400 py-1 transition-colors" target="_blank" rel="noopener noreferrer">OpenAPI Spec</a>
             <a href="https://www.ganamos.earth/.well-known/mcp.json" className="block text-[10px] text-neutral-600 hover:text-emerald-400 py-1 transition-colors" target="_blank" rel="noopener noreferrer">MCP Server Card</a>
             <a href="https://www.ganamos.earth" className="block text-[10px] text-neutral-600 hover:text-emerald-400 py-1 transition-colors">ganamos.earth</a>
@@ -276,6 +277,17 @@ export default function DocsPage() {
               Save the L402 token — it&apos;s your permanent identity for this job. Reuse it to poll status, approve fixes, and reject submissions.
             </div>
           </div>
+
+          {/* Live Demo CTA */}
+          <a href="/docs/demo" className="block mt-3 border border-amber-400/15 bg-amber-400/[0.03] p-4 hover:bg-amber-400/[0.05] hover:border-amber-400/25 transition-colors group">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] tracking-[0.15em] text-amber-400/80 mb-1">TRY IT LIVE</div>
+                <div className="text-[10px] text-neutral-500">Post a real job to Ganamos with Lightning — right from this page. No setup needed.</div>
+              </div>
+              <span className="text-amber-400/60 group-hover:text-amber-400 text-sm transition-colors">→</span>
+            </div>
+          </a>
 
           {/* JOB LIFECYCLE */}
           <SectionHeader id="lifecycle" label="Job Lifecycle" dotColor="cyan" />
