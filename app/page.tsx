@@ -74,7 +74,14 @@ export default function HomePage() {
             Sign Up
           </a>
         </div>
-        <div className="text-center mt-6">
+        <div className="text-center mt-6 flex items-center justify-center gap-3">
+          <a
+            href="/docs"
+            className="text-xs text-gray-400 hover:text-gray-500 hover:underline"
+          >
+            API
+          </a>
+          <span className="text-gray-600">·</span>
           <a
             href="/privacy"
             className="text-xs text-gray-400 hover:text-gray-500 hover:underline"
