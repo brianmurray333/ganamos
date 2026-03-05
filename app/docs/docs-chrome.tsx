@@ -1,12 +1,14 @@
 'use client'
 
 import { useEffect } from 'react'
+import { useTheme } from 'next-themes'
 
 export function DocsChrome() {
+  const { setTheme } = useTheme()
+
   useEffect(() => {
-    document.documentElement.classList.add('dark')
-    localStorage.setItem('theme', 'dark')
-  }, [])
+    setTheme('dark')
+  }, [setTheme])
 
   return null
 }
