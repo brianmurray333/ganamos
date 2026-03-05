@@ -43,11 +43,12 @@ import { getInvoiceStatus } from '@/lib/lightning'
 describe('POST /api/posts - Integration Tests', () => {
   let supabase: SupabaseClient
   const createdPostIds: string[] = []
-  const testPaymentHash = 'test-payment-hash-' + Date.now()
+  let testPaymentHash: string
 
   beforeEach(async () => {
     supabase = getServiceClient()
     vi.clearAllMocks()
+    testPaymentHash = 'test-payment-hash-' + Date.now() + '-' + Math.random().toString(36).slice(2)
 
     // Mock parseL402Header to return a valid token
     vi.mocked(parseL402Header).mockReturnValue({
@@ -90,6 +91,12 @@ describe('POST /api/posts - Integration Tests', () => {
       }
       createdPostIds.length = 0
     }
+
+    // Cleanup l402_used_tokens for replay protection
+    await supabase
+      .from('l402_used_tokens')
+      .delete()
+      .like('payment_hash', 'test-payment-hash-%')
   })
 
   describe('Successful Post Creation', () => {
