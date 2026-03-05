@@ -62,7 +62,11 @@ export async function middleware(req: NextRequest) {
     if (path.startsWith("/openapi.json") || path.startsWith("/.well-known") || path.startsWith("/_next")) {
       return res
     }
-    // Route known sub-pages under /docs
+    // If path already starts with /docs, use as-is (avoids /docs/docs/demo double-prefix)
+    if (path.startsWith("/docs")) {
+      return NextResponse.rewrite(new URL(path, req.url))
+    }
+    // Otherwise prepend /docs (e.g. /demo → /docs/demo)
     return NextResponse.rewrite(new URL(`/docs${path}`, req.url))
   }
 
