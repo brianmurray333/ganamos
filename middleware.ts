@@ -62,8 +62,8 @@ export async function middleware(req: NextRequest) {
     if (path.startsWith("/openapi.json") || path.startsWith("/.well-known") || path.startsWith("/_next")) {
       return res
     }
-    // All other paths rewrite to /docs
-    return NextResponse.rewrite(new URL("/docs", req.url))
+    // Route known sub-pages under /docs
+    return NextResponse.rewrite(new URL(`/docs${path}`, req.url))
   }
 
   // Handle Satoshi Pet domains - rewrite to /satoshi-pet routes
