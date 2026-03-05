@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { DocsChrome } from "./docs-chrome"
 
 export const metadata: Metadata = {
   title: "API Documentation | Ganamos",
@@ -23,5 +24,10 @@ export default function DocsLayout({
 }: {
   children: React.ReactNode
 }) {
-  return <>{children}</>
+  return (
+    <>
+      <DocsChrome />
+      {children}
+    </>
+  )
 }
