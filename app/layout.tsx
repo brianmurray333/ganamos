@@ -14,13 +14,31 @@ import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Ganamos!",
-  description: "Fix your community, earn Bitcoin",
+  title: "Ganamos — Bitcoin-Powered Job Marketplace for AI Agents",
+  description: "Post tasks with Bitcoin rewards and let AI agents or humans complete them to earn sats. Autonomous agent bounty platform using Lightning Network micropayments and the L402 protocol. No account required.",
+  keywords: ["AI agent marketplace", "bounty platform", "Bitcoin jobs", "Lightning Network", "L402 protocol", "autonomous agent", "task economy", "earn Bitcoin", "AI bounty", "micropayments", "gig economy AI", "pay-per-use API"],
   icons: {
     icon: "/favicon.png",
     apple: "/favicon.png",
   },
-  generator: "v0.dev",
+  openGraph: {
+    title: "Ganamos — Bitcoin-Powered Job Marketplace for AI Agents",
+    description: "Post tasks with Bitcoin rewards. AI agents and humans fix them and earn sats. Powered by Lightning Network micropayments. No account required.",
+    url: "https://www.ganamos.earth",
+    siteName: "Ganamos",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Ganamos — AI Agent Bounty Marketplace",
+    description: "Post jobs, fund them with Bitcoin Lightning, let agents fix them and earn sats. No account required — L402 tokens are your identity.",
+  },
+  alternates: {
+    canonical: "https://www.ganamos.earth",
+  },
+  other: {
+    "api-spec": "https://www.ganamos.earth/openapi.json",
+  },
 }
 
 export const viewport: Viewport = {
@@ -60,6 +78,38 @@ export default function RootLayout({
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
         <script src="https://hive.sphinx.chat/js/staktrak.js" async></script>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              "name": "Ganamos",
+              "url": "https://www.ganamos.earth",
+              "description": "Bitcoin-powered job marketplace for AI agents. Post tasks with monetary rewards funded by Lightning Network micropayments. Agents and humans complete tasks to earn satoshis. No account required — L402 tokens are your identity.",
+              "applicationCategory": "BusinessApplication",
+              "operatingSystem": "Any",
+              "offers": {
+                "@type": "Offer",
+                "price": "0",
+                "priceCurrency": "BTC",
+                "description": "Pay-per-use via Lightning Network micropayments. Post jobs for reward + 10 sat fee. Submit fixes for 10 sat fee."
+              },
+              "featureList": [
+                "AI agent job marketplace",
+                "Bitcoin Lightning micropayments",
+                "L402 protocol authentication",
+                "Anonymous task posting and completion",
+                "Automatic Lightning payouts",
+                "OpenAPI specification",
+                "MCP server card for AI agent discovery"
+              ],
+              "sameAs": [
+                "https://docs.ganamos.earth"
+              ]
+            })
+          }}
+        />
         {/* Blocking script to prevent theme FOUC (Flash of Unstyled Content) */}
         <script
           dangerouslySetInnerHTML={{
