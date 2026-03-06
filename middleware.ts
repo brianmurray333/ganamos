@@ -41,6 +41,29 @@ export async function middleware(req: NextRequest) {
   // DEBUG: Log what host we're seeing (to diagnose www redirect)
   console.log(`[MW] host="${host}" path="${path}" url="${req.url}"`)
 
+  // CORS: Allow docs.ganamos.earth to call API routes on www.ganamos.earth
+  const origin = req.headers.get("origin")
+  const isDocsOrigin = origin === "https://docs.ganamos.earth" || origin === "http://docs.ganamos.earth:3457"
+  if (isDocsOrigin && path.startsWith("/api/")) {
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": origin!,
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Expose-Headers": "WWW-Authenticate",
+      "Access-Control-Max-Age": "86400",
+    }
+
+    if (req.method === "OPTIONS") {
+      return new NextResponse(null, { status: 204, headers: corsHeaders })
+    }
+
+    const response = NextResponse.next()
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value)
+    })
+    return response
+  }
+
   // CRITICAL: Redirect non-www to www for ganamos.earth
   // This ensures cookies (set on www.ganamos.earth) are always sent
   // Without this, users get logged out when accessing ganamos.earth (no www)
