@@ -10,7 +10,22 @@ export function ConditionalThemeProvider({
 }: { children: React.ReactNode } & ThemeProviderProps) {
   const pathname = usePathname()
 
-  // Force light mode on home, login, and public job posting pages
+  // On docs.ganamos.earth, middleware rewrites / → /docs on the server, but
+  // usePathname() returns "/" (browser URL) on the client after hydration.
+  // Without this hostname check, pathname === "/" triggers forcedTheme="light",
+  // overriding the dark theme the docs page needs.
+  const isDocsDomain = typeof window !== 'undefined' &&
+    window.location.hostname === 'docs.ganamos.earth'
+  const isDocsPage = pathname === "/docs" || pathname.startsWith("/docs/")
+
+  if (isDocsPage || isDocsDomain) {
+    return (
+      <NextThemesProvider {...props} forcedTheme="dark">
+        {children}
+      </NextThemesProvider>
+    )
+  }
+
   const isLightModePage = pathname === "/" || pathname.startsWith("/auth") || pathname === "/new"
 
   if (isLightModePage) {
@@ -21,6 +36,5 @@ export function ConditionalThemeProvider({
     )
   }
 
-  // Use default theme provider with dark mode default for all other pages
   return <NextThemesProvider {...props}>{children}</NextThemesProvider>
 }
