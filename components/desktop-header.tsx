@@ -29,8 +29,15 @@ declare global {
 
 export function DesktopHeader() {
   // ALL hooks must be called before any conditional returns (React rules)
-  const pathname = usePathname()
+  const rawPathname = usePathname()
   const router = useRouter()
+
+  // On docs.ganamos.earth, middleware rewrites / → /docs on the server, but
+  // usePathname() returns "/" on the client. Correct this so pathname-based
+  // checks (hide-on-home, search-bar visibility) behave correctly.
+  const isDocsDomain = typeof window !== 'undefined' &&
+    window.location.hostname === 'docs.ganamos.earth'
+  const pathname = isDocsDomain && rawPathname === '/' ? '/docs' : rawPathname
   // NotificationsProvider removed - pending requests feature disabled
   const hasPendingRequests = false
   const donationModal = useDonationModal() // May be undefined if provider not available
@@ -154,7 +161,7 @@ export function DesktopHeader() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-background/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 hidden lg:block">
       <div className="max-w-[1800px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
         {/* Left side - Logo */}
-        <Link href="/dashboard" className="flex items-center gap-2 flex-shrink-0">
+        <a href={isDocsDomain ? "https://www.ganamos.earth" : "/dashboard"} className="flex items-center gap-2 flex-shrink-0">
           <Image
             src="/favicon.png"
             alt="Ganamos"
@@ -165,7 +172,7 @@ export function DesktopHeader() {
           <span className="text-xl font-semibold text-gray-900 dark:text-white" style={{ fontFamily: 'Pacifico, cursive' }}>
             Ganamos
           </span>
-        </Link>
+        </a>
 
         {/* Center - Search Bar */}
         {(pathname === "/dashboard" || pathname.startsWith("/post/")) && (
@@ -377,42 +384,68 @@ export function DesktopHeader() {
             // Anonymous user view
             sessionLoaded && (
               <>
-                <Link 
-                  href="/map" 
+                <a 
+                  href={isDocsDomain ? "https://www.ganamos.earth/map" : "/map"}
                   className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
                 >
                   <MapPin className="w-4 h-4" />
                   Map
-                </Link>
-                <button
-                  onClick={() => {
-                    setAuthFeature('wallet')
-                    setShowAuthModal(true)
-                  }}
-                  className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-                >
-                  <Wallet className="w-4 h-4" />
-                  Wallet
-                </button>
-                <button
-                  onClick={() => {
-                    setAuthFeature('profile')
-                    setShowAuthModal(true)
-                  }}
-                  className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-                >
-                  <UserCircle className="w-4 h-4" />
-                  Profile
-                </button>
+                </a>
+                {isDocsDomain ? (
+                  <a
+                    href="https://www.ganamos.earth/wallet"
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Wallet
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setAuthFeature('wallet')
+                      setShowAuthModal(true)
+                    }}
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    Wallet
+                  </button>
+                )}
+                {isDocsDomain ? (
+                  <a
+                    href="https://www.ganamos.earth/profile"
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <UserCircle className="w-4 h-4" />
+                    Profile
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setAuthFeature('profile')
+                      setShowAuthModal(true)
+                    }}
+                    className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
+                  >
+                    <UserCircle className="w-4 h-4" />
+                    Profile
+                  </button>
+                )}
                 <Button 
                   variant="outline" 
-                  onClick={() => router.push('/auth/login')}
+                  onClick={() => {
+                    if (isDocsDomain) window.location.href = 'https://www.ganamos.earth/auth/login'
+                    else router.push('/auth/login')
+                  }}
                   className="h-9"
                 >
                   Log In
                 </Button>
                 <Button 
-                  onClick={() => router.push('/auth/register')}
+                  onClick={() => {
+                    if (isDocsDomain) window.location.href = 'https://www.ganamos.earth/auth/register'
+                    else router.push('/auth/register')
+                  }}
                   className="h-9"
                 >
                   Sign Up
