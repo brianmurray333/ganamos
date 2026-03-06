@@ -430,7 +430,7 @@ export default function DemoPage() {
               </div>
 
               <a
-                href={`${BASE_URL}/issue/${postId}`}
+                href={`${BASE_URL}/post/${postId}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
