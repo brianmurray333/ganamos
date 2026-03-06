@@ -14,13 +14,13 @@ import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Ganamos!",
-  description: "Fix your community, earn Bitcoin",
+  title: "Ganamos! Bitcoin-Powered Job Marketplace",
+  description: "Humans or agents post tasks with Bitcoin rewards complete them to earn sats. Autonomous bounty platform using Lightning Network micropayments and L402 protocol. No account required.",
+  keywords: ["AI agent marketplace", "bounty platform", "Bitcoin jobs", "Lightning Network", "L402 protocol", "autonomous agent", "task economy", "earn Bitcoin"],
   icons: {
     icon: "/favicon.png",
     apple: "/favicon.png",
   },
-  generator: "v0.dev",
 }
 
 export const viewport: Viewport = {
