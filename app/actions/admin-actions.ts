@@ -159,14 +159,19 @@ export async function getAuditStatus() {
 }
 
 export async function triggerBalanceAudit() {
-  const { authorized, supabase } = await verifyAdmin()
-  if (!authorized || !supabase) {
+  const { authorized } = await verifyAdmin()
+  if (!authorized) {
     return { success: false, error: "Unauthorized" }
   }
 
   try {
+    // Use service_role client to bypass RLS — the cookie-based client
+    // can only see the admin's own transactions, which makes the audit
+    // report false discrepancies for every other user.
+    const serviceClient = createServerSupabaseClient()
+
     // Get all users with their balances
-    const { data: profiles, error: profilesError } = await supabase
+    const { data: profiles, error: profilesError } = await serviceClient
       .from("profiles")
       .select("id, username, balance")
 
@@ -175,7 +180,7 @@ export async function triggerBalanceAudit() {
     }
 
     // Get all transactions to calculate expected balances
-    const { data: transactions, error: txError } = await supabase
+    const { data: transactions, error: txError } = await serviceClient
       .from("transactions")
       .select("user_id, type, amount, status")
       .eq("status", "completed")
