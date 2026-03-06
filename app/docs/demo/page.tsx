@@ -345,7 +345,13 @@ export default function DemoPage() {
                 onChange={e => setPreimage(e.target.value)}
                 placeholder="e.g. 6496c2a5124bb7d849750a06..."
                 className="font-mono text-sm"
-                onPaste={() => setStep('preimage')}
+                onPaste={(e) => {
+                  const pasted = e.clipboardData.getData('text')
+                  if (pasted.trim()) {
+                    setPreimage(pasted.trim())
+                    setStep('preimage')
+                  }
+                }}
               />
             </div>
 
@@ -387,7 +393,7 @@ export default function DemoPage() {
               </div>
               <div className="flex items-start gap-2">
                 <span className="text-muted-foreground shrink-0 w-20">Preimage</span>
-                <span className="text-foreground font-mono text-xs">{preimage.slice(0, 16)}...{preimage.slice(-8)}</span>
+                <span className="text-foreground font-mono text-xs">{preimage.length > 24 ? `${preimage.slice(0, 16)}...${preimage.slice(-8)}` : preimage}</span>
               </div>
             </div>
 
