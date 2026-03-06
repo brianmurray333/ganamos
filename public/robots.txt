@@ -3,5 +3,34 @@ Allow: /
 Allow: /api
 Allow: /openapi.json
 Allow: /.well-known/
+Allow: /llms.txt
 
-Sitemap: https://ganamos.earth/sitemap.xml
+# AI model crawlers — welcome
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: Amazonbot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: cohere-ai
+Allow: /
+
+Sitemap: https://www.ganamos.earth/sitemap.xml
