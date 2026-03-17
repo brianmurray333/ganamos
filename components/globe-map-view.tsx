@@ -40,6 +40,7 @@ const GlobeMapViewComponent = ({
   const [isLoading, setIsLoading] = useState(true)
   const [Globe, setGlobe] = useState<any>(null)
   const [isVisible, setIsVisible] = useState(true)
+  const [globeReady, setGlobeReady] = useState(false)
   const wasRotatingBeforePause = useRef(false)
 
   // Load globe.gl dynamically (client-side only)
@@ -320,6 +321,7 @@ const GlobeMapViewComponent = ({
       })
 
     setIsLoading(false)
+    setGlobeReady(true)
 
     // Handle resize
     const handleResize = () => {
@@ -336,6 +338,7 @@ const GlobeMapViewComponent = ({
       if (globeRef.current) {
         globeRef.current._destructor?.()
         globeRef.current = null
+        setGlobeReady(false)
       }
     }
   }, [Globe]) // Only depend on Globe library loading
@@ -390,13 +393,13 @@ const GlobeMapViewComponent = ({
       .ringRepeatPeriod("repeatPeriod")
   }, [userLocation])
 
-  // Update points when posts change
+  // Update points when posts change or globe becomes ready
   useEffect(() => {
     if (globeRef.current && postsWithLocation.length > 0) {
       globeRef.current.pointsData(postsWithLocation)
       globeRef.current.htmlElementsData(postsWithLocation)
     }
-  }, [postsWithLocation])
+  }, [postsWithLocation, globeReady])
 
   // Animate to searched location when it changes
   useEffect(() => {
