@@ -196,7 +196,7 @@ function ResetPasswordContent() {
       console.log('[RESET-PWD] Will navigate to dashboard in 2 seconds...')
       setTimeout(() => {
         console.log('[RESET-PWD] Now navigating to /dashboard')
-        router.push("/dashboard")
+        router.push("/")
       }, 2000)
     } catch (error: any) {
       toast.error("Error", {
@@ -321,7 +321,7 @@ function ResetPasswordContent() {
               </p>
             </div>
 
-            <Link href="/dashboard" className="block">
+            <Link href="/" className="block">
               <Button className="w-full bg-green-600 hover:bg-green-700 text-white">
                 Go to dashboard
               </Button>

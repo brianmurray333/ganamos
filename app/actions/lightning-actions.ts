@@ -347,7 +347,7 @@ export async function checkDepositStatus(rHash: string) {
 
       // Revalidate the profile page to show updated balance
       revalidatePath("/profile")
-      revalidatePath("/dashboard")
+      revalidatePath("/")
       revalidatePath("/wallet")
 
       // Add activity for deposit (only if amount > 0)

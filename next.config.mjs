@@ -11,6 +11,7 @@ const nextConfig = {
   },
   async redirects() {
     return [
+      { source: '/dashboard', destination: '/', permanent: true },
       { source: '/molt', destination: '/docs', permanent: true },
       { source: '/ai', destination: '/docs', permanent: true },
       { source: '/agent', destination: '/docs', permanent: true },

@@ -107,7 +107,7 @@ export function PhoneAuthForm() {
       console.log("Verification successful, user data:", data.user)
 
       // Redirect to dashboard on successful verification
-      router.push("/dashboard")
+      router.push("/")
     } catch (err: any) {
       console.error("Error verifying code:", err)
       console.error("Error details:", {

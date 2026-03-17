@@ -203,7 +203,7 @@ export default function PostsPage() {
                   ? "No posts created yet" 
                   : "No posts fixed yet"}
             </p>
-            <Button onClick={() => router.push("/dashboard")} variant="outline" className="rounded-xl">
+            <Button onClick={() => router.push("/")} variant="outline" className="rounded-xl">
               Start exploring issues
             </Button>
           </div>

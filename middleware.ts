@@ -126,7 +126,7 @@ export async function middleware(req: NextRequest) {
 
   // Protected routes require authentication
   // Note: /post/new is NOT protected - it supports anonymous posting with Lightning payment
-  // Note: /dashboard and /map allow anonymous access - users see sign-up prompts for restricted features
+  // Note: / (home) and /map allow anonymous access - users see sign-up prompts for restricted features
   const protectedRoutes = ["/wallet", "/profile"]
   const isProtectedRoute = protectedRoutes.some((route) => path.startsWith(route))
 
@@ -206,7 +206,7 @@ export async function middleware(req: NextRequest) {
       if (redirectTo && !authRoutes.includes(redirectTo)) {
         return NextResponse.redirect(new URL(redirectTo, req.url))
       }
-      return NextResponse.redirect(new URL("/dashboard", req.url))
+      return NextResponse.redirect(new URL("/", req.url))
     }
   }
 

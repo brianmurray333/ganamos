@@ -39,7 +39,7 @@ export default function AuthCallbackPage() {
           }
         }
         // Default to dashboard if no redirect found
-        redirect = redirect || "/dashboard"
+        redirect = redirect || "/"
         console.log("Auth callback - Final redirect destination:", redirect)
 
         if (code) {

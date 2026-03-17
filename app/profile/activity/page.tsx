@@ -562,7 +562,7 @@ export default function ActivityPage() {
               <Wallet className="w-8 h-8 text-gray-400" />
             </div>
             <p className="text-gray-500 dark:text-gray-400 mb-4">No activity yet</p>
-            <Button onClick={() => router.push("/dashboard")} variant="outline" className="rounded-xl">
+            <Button onClick={() => router.push("/")} variant="outline" className="rounded-xl">
               Start exploring issues
             </Button>
           </div>

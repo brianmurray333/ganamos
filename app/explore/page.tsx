@@ -8,7 +8,7 @@ export default function ExplorePage() {
 
   useEffect(() => {
     // Redirect to dashboard since Explore is now merged with Home
-    router.push("/dashboard")
+    router.push("/")
   }, [router])
 
   return (

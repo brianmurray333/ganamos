@@ -913,7 +913,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           // The updateBalance call above should handle the UI part.
 
           window.dispatchEvent(new Event("storage")) // To sync across tabs/components if needed
-          router.push("/dashboard")
+          router.push("/")
           // Show toast after navigation to prevent race condition
           setTimeout(() => {
             toast.success("🎊 Fix verified!", {
@@ -962,7 +962,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               : null,
           )
         }
-        router.push("/dashboard")
+        router.push("/")
         // Show toast after navigation to prevent race condition
         setTimeout(() => {
           toast("Fix submitted for review", {
@@ -1365,7 +1365,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         toast.success("Post Deleted", {
           description: "Your post has been deleted and reward refunded",
         })
-        router.push("/dashboard")
+        router.push("/")
       } else {
         toast.error("Error", { description: result.error || "Failed to delete post" })
       }
@@ -1434,7 +1434,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         <div className="text-center">
           <h1 className="text-2xl font-bold">Post not found</h1>
           <p className="mt-2 text-muted-foreground">The post you're looking for doesn't exist or has been removed.</p>
-          <Button className="mt-4" onClick={() => router.push("/dashboard")}>
+          <Button className="mt-4" onClick={() => router.push("/")}>
             Back to Dashboard
           </Button>
         </div>
@@ -1641,7 +1641,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 description: "If your fix is approved, your reward will be sent to this address.",
               })
               setPendingAnonymousFixPostId(null)
-              router.push("/dashboard")
+              router.push("/")
             }}
             onAccountCreationRequested={() => {
               setPendingAnonymousFixPostId(null)
@@ -1736,7 +1736,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 description: "If your fix is approved, your reward will be sent to this address.",
               })
               setPendingAnonymousFixPostId(null)
-              router.push("/dashboard")
+              router.push("/")
             }}
             onAccountCreationRequested={() => {
               setPendingAnonymousFixPostId(null)
@@ -2033,7 +2033,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                       size="icon" 
                       onClick={(e) => {
                         e.stopPropagation()
-                        router.push("/dashboard")
+                        router.push("/")
                       }}
                       className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
                     >
@@ -2092,7 +2092,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   size="icon" 
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push("/dashboard")
+                    router.push("/")
                   }}
                   className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 p-2"
                 >
@@ -2164,7 +2164,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   size="icon" 
                   onClick={(e) => {
                     e.stopPropagation()
-                    router.push("/dashboard")
+                    router.push("/")
                   }}
                   className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
                 >
@@ -2521,7 +2521,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               toast.success("Reward Claimed!", {
                 description: `${formatSatsValue(post.reward)} sats sent to your Lightning wallet`,
               })
-              router.push("/dashboard")
+              router.push("/")
             }}
           />
           {pendingAnonymousFixPostId && (
@@ -2535,7 +2535,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   description: "If your fix is approved, your reward will be sent to this address.",
                 })
                 setPendingAnonymousFixPostId(null)
-                router.push("/dashboard")
+                router.push("/")
               }}
               onAccountCreationRequested={() => {
                 setPendingAnonymousFixPostId(null)
