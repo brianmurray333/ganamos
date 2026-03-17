@@ -151,7 +151,7 @@ const GlobeMapViewComponent = ({
     const height = container.clientHeight
 
     // Create globe instance
-    const globe = new Globe(container)
+    const globe = new Globe(container, { animateIn: false })
       .width(width)
       .height(height)
       .backgroundColor("#020817") // Matches app dark theme background
