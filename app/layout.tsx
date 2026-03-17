@@ -6,6 +6,7 @@ import { ConditionalThemeProvider } from "@/components/conditional-theme-provide
 import { Toaster } from "@/components/ui/sonner"
 import { BottomNav } from "@/components/bottom-nav"
 import { DesktopHeader } from "@/components/desktop-header"
+import { MainContent } from "@/components/main-content"
 import { AuthProvider } from "@/components/auth-provider"
 import { DonationModalProvider } from "@/components/donation-modal-provider"
 import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
@@ -68,7 +69,9 @@ export default function RootLayout({
                 try {
                   var isDocs = window.location.hostname === 'docs.ganamos.earth';
                   var theme = localStorage.getItem('theme');
-                  if (isDocs || theme === 'dark' || (!theme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                  var dark = isDocs || theme === 'dark' || !theme ||
+                    (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                  if (dark) {
                     document.documentElement.classList.add('dark');
                   } else {
                     document.documentElement.classList.remove('dark');
@@ -91,9 +94,9 @@ export default function RootLayout({
                 disableTransitionOnChange
               >
                 <DesktopHeader />
-                <main className="min-h-[calc(100vh-4rem)] lg:pt-16 mx-auto bg-white dark:bg-background pt-[env(safe-area-inset-top)]">
+                <MainContent>
                   {children}
-                </main>
+                </MainContent>
                 <BottomNav />
                 <Toaster />
               </ConditionalThemeProvider>
