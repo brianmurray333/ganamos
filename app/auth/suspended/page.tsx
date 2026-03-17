@@ -42,7 +42,7 @@ export default function SuspendedPage() {
           </a>
           
           <Link
-            href="/"
+            href="/dashboard"
             className="text-sm text-gray-500 hover:text-gray-400 transition-colors"
           >
             Return to Home
