@@ -227,7 +227,9 @@ describe('submitAnonymousFixForReviewAction', () => {
         postId: postId,
         aiAnalysis: aiAnalysis,
         beforeImageUrl: testPost.image_url || undefined,
-        afterImageUrl: fixImageUrl
+        afterImageUrl: fixImageUrl,
+        proofOfCompletionText: null,
+        fixerNote: fixerNote,
       })
     })
 
@@ -510,7 +512,9 @@ describe('submitAnonymousFixForReviewAction', () => {
         postId: 'test-post-123',
         aiAnalysis: 'Medium confidence',
         beforeImageUrl: testPost.image_url || undefined,
-        afterImageUrl: 'https://example.com/fix.jpg'
+        afterImageUrl: 'https://example.com/fix.jpg',
+        proofOfCompletionText: null,
+        fixerNote: 'Fixed the pothole',
       })
     })
 
