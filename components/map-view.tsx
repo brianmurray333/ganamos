@@ -1237,7 +1237,7 @@ function MapViewComponent({
 
             <div className="flex gap-3">
               <img
-                src={selectedPost.imageUrl || selectedPost.image_url || (selectedPost.has_image === false ? '/favicon.png' : '/placeholder.svg')}
+                src={selectedPost.imageUrl || selectedPost.image_url || (selectedPost.has_image === false ? '/icon-512x512.png' : '/placeholder.svg')}
                 alt="Issue"
                 className={`w-16 h-16 rounded-lg flex-shrink-0 ${selectedPost.has_image === false && !selectedPost.imageUrl && !selectedPost.image_url ? 'object-contain p-2 bg-white' : 'object-cover bg-gray-100'}`}
               />

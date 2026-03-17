@@ -27,8 +27,10 @@ async function sendFixSubmittedEmailsToGroupAdmins(params: {
   aiAnalysis?: string | null
   beforeImageUrl?: string | null
   afterImageUrl?: string | null
+  proofOfCompletionText?: string | null
+  fixerNote?: string | null
 }): Promise<void> {
-  const { adminSupabase, groupId, postOwnerId, issueTitle, fixerName, postId, aiAnalysis, beforeImageUrl, afterImageUrl } = params
+  const { adminSupabase, groupId, postOwnerId, issueTitle, fixerName, postId, aiAnalysis, beforeImageUrl, afterImageUrl, proofOfCompletionText, fixerNote } = params
   
   // Get all group admins except the post owner (they already got emailed)
   const { data: groupAdmins, error: adminsError } = await adminSupabase
@@ -62,7 +64,9 @@ async function sendFixSubmittedEmailsToGroupAdmins(params: {
           postId: postId,
           aiAnalysis: aiAnalysis,
           beforeImageUrl: beforeImageUrl,
-          afterImageUrl: afterImageUrl
+          afterImageUrl: afterImageUrl,
+          proofOfCompletionText: proofOfCompletionText,
+          fixerNote: fixerNote,
         })
         console.log(`Fix review email sent to group admin: ${profile.email}`)
       } catch (error) {
@@ -1028,7 +1032,9 @@ export async function submitAnonymousFixForReviewAction(
             postId: postId,
             aiAnalysis: aiAnalysis,
             beforeImageUrl: postData.image_url,
-            afterImageUrl: fixImageUrl
+            afterImageUrl: fixImageUrl,
+            proofOfCompletionText: fixProofText,
+            fixerNote: fixerNote,
           })
           const emailDuration = Date.now() - emailStartTime
           console.log(`[EMAIL FLOW] Anonymous fix email completed in ${emailDuration}ms, result:`, JSON.stringify(emailResult))
@@ -1051,7 +1057,9 @@ export async function submitAnonymousFixForReviewAction(
             postId: postId,
             aiAnalysis: aiAnalysis,
             beforeImageUrl: postData.image_url,
-            afterImageUrl: fixImageUrl
+            afterImageUrl: fixImageUrl,
+            proofOfCompletionText: fixProofText,
+            fixerNote: fixerNote,
           })
           console.log(`Fix review emails sent to group admins for group: ${postData.group_id}`)
         } catch (error) {
@@ -1266,7 +1274,9 @@ export async function submitLoggedInFixForReviewAction(params: {
             postId: postId,
             aiAnalysis: aiAnalysis,
             beforeImageUrl: postData.image_url,
-            afterImageUrl: fixImageUrl
+            afterImageUrl: fixImageUrl,
+            proofOfCompletionText: fixProofText,
+            fixerNote: fixerNote,
           })
           const emailDuration = Date.now() - emailStartTime
           console.log(`[EMAIL FLOW] Email completed in ${emailDuration}ms, result:`, JSON.stringify(emailResult))
@@ -1290,7 +1300,9 @@ export async function submitLoggedInFixForReviewAction(params: {
             postId: postId,
             aiAnalysis: aiAnalysis,
             beforeImageUrl: postData.image_url,
-            afterImageUrl: fixImageUrl
+            afterImageUrl: fixImageUrl,
+            proofOfCompletionText: fixProofText,
+            fixerNote: fixerNote,
           })
           console.log(`Fix review emails sent to group admins for group: ${postData.group_id}`)
         } catch (error) {
