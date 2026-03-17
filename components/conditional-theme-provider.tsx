@@ -26,7 +26,7 @@ export function ConditionalThemeProvider({
     )
   }
 
-  const isLightModePage = pathname === "/" || pathname.startsWith("/auth") || pathname === "/new"
+  const isLightModePage = pathname.startsWith("/auth") || pathname === "/new"
 
   if (isLightModePage) {
     return (

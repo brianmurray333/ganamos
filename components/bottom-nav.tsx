@@ -25,12 +25,12 @@ export function BottomNav() {
     window.location.hostname === 'docs.ganamos.earth'
 
   // Don't show bottom nav on home page, auth pages, public job posting page, post creation page, post detail page, withdraw page, deposit page, pet settings page, satoshi-pet pages, or docs subdomain
-  if (isDocsDomain || pathname === "/" || pathname.startsWith("/auth") || pathname === "/new" || pathname === "/post/new" || pathname.startsWith("/post/") || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
+  if (isDocsDomain || pathname.startsWith("/auth") || pathname === "/new" || pathname === "/post/new" || pathname.startsWith("/post/") || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
     return null
   }
 
   const isActive = (path: string) => {
-    if (path === "/dashboard" && (pathname === "/dashboard" || pathname === "/")) return true
+    if (path === "/dashboard" && pathname === "/dashboard") return true
     if (path !== "/dashboard" && pathname.startsWith(path)) return true
     return false
   }

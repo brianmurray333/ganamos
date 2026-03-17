@@ -1641,7 +1641,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 description: "If your fix is approved, your reward will be sent to this address.",
               })
               setPendingAnonymousFixPostId(null)
-              router.push("/")
+              router.push("/dashboard")
             }}
             onAccountCreationRequested={() => {
               setPendingAnonymousFixPostId(null)
@@ -1736,7 +1736,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 description: "If your fix is approved, your reward will be sent to this address.",
               })
               setPendingAnonymousFixPostId(null)
-              router.push("/")
+              router.push("/dashboard")
             }}
             onAccountCreationRequested={() => {
               setPendingAnonymousFixPostId(null)
@@ -2521,7 +2521,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               toast.success("Reward Claimed!", {
                 description: `${formatSatsValue(post.reward)} sats sent to your Lightning wallet`,
               })
-              router.push("/")
+              router.push("/dashboard")
             }}
           />
           {pendingAnonymousFixPostId && (
@@ -2535,7 +2535,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   description: "If your fix is approved, your reward will be sent to this address.",
                 })
                 setPendingAnonymousFixPostId(null)
-                router.push("/")
+                router.push("/dashboard")
               }}
               onAccountCreationRequested={() => {
                 setPendingAnonymousFixPostId(null)

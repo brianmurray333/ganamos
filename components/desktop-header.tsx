@@ -113,7 +113,7 @@ export function DesktopHeader() {
   // Now we can do conditional returns
   // Don't show header on home page, auth pages, or certain pages
   // Note: /post/[id] is allowed on desktop for side-by-side layout
-  if (pathname === "/" || pathname.startsWith("/auth") || pathname === "/post/new" || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
+  if (pathname.startsWith("/auth") || pathname === "/post/new" || pathname.startsWith("/wallet/withdraw") || pathname.startsWith("/wallet/deposit") || pathname === "/pet-settings" || pathname.startsWith("/satoshi-pet")) {
     return null
   }
 

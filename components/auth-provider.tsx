@@ -720,7 +720,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Need to redirect if on: /auth/login, /auth/register, /, or any auth path
           const isOnAuthPage = currentPath === '/auth/login' || 
                                currentPath === '/auth/register' ||
-                               currentPath === '/' ||
                                currentPath.startsWith('/auth/');
           
           // Don't redirect if already on dashboard or a protected route
@@ -1066,7 +1065,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null)
       setMainAccountProfile(null)
       
-      router.push("/")
+      router.push("/dashboard")
     } catch (error) {
       console.error("[AUTH] Unexpected sign out error:", error)
       toast.error("Sign out failed", {
