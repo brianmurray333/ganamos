@@ -26,7 +26,7 @@ export class AuthHelper {
 
     // Mock login can take a few seconds as it creates user profile,
     // sets up subscriptions, etc. Wait with generous timeout.
-    await this.page.waitForURL((url) => url.pathname === '/dashboard' || url.pathname.startsWith('/dashboard'), {
+    await this.page.waitForURL((url) => url.pathname === '/', {
       timeout: 60000,
       waitUntil: 'domcontentloaded'
     })
@@ -55,7 +55,7 @@ export class AuthHelper {
     await this.page.locator(selectors.auth.submitButton).click()
 
     // Wait for redirect to dashboard
-    await waitForNavigation(this.page, /\/dashboard/, 30000)
+    await waitForNavigation(this.page, /^\/$/, 30000)
   }
 
   /**
@@ -79,8 +79,8 @@ export class AuthHelper {
    */
   async isAuthenticated(): Promise<boolean> {
     try {
-      await this.page.goto('/dashboard')
-      await this.page.waitForURL(/\/dashboard/, { timeout: 5000 })
+      await this.page.goto('/')
+      await this.page.waitForURL((url) => url.pathname === '/', { timeout: 5000 })
       return true
     } catch {
       return false

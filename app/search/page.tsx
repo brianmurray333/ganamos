@@ -57,7 +57,7 @@ export default function SearchPage() {
     localStorage.setItem("activeFilters", JSON.stringify(filtersToSave))
 
     // Navigate to dashboard
-    router.push("/dashboard")
+    router.push("/")
   }
 
   return (
@@ -66,7 +66,7 @@ export default function SearchPage() {
         <h1 className="text-2xl font-bold">Filters</h1>
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/")}
           className="flex items-center gap-2"
           aria-label="Close search"
         >

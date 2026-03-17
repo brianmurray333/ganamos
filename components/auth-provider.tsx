@@ -723,8 +723,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                                currentPath.startsWith('/auth/');
           
           // Don't redirect if already on dashboard or a protected route
-          const isOnProtectedRoute = currentPath === '/dashboard' ||
-                                     currentPath.startsWith('/dashboard') ||
+          const isOnProtectedRoute = currentPath === '/' ||
                                      currentPath.startsWith('/wallet') ||
                                      currentPath.startsWith('/profile') ||
                                      currentPath.startsWith('/post/');
@@ -738,21 +737,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isOnAuthPage && !isOnProtectedRoute) {
             // Get redirect parameter if present (e.g., from middleware or login page)
             const urlParams = new URLSearchParams(window.location.search);
-            const redirectTo = urlParams.get('redirect') || '/dashboard';
+            const redirectTo = urlParams.get('redirect') || '/';
             
-            console.log('[AUTH] User signed in on auth/home page, redirecting to dashboard', {
+            console.log('[AUTH] User signed in on auth/home page, redirecting to home', {
               currentPath,
               redirectTo,
             });
             
-            // Only redirect to dashboard or valid protected routes
-            if (redirectTo === '/dashboard' || redirectTo.startsWith('/dashboard') || 
+            if (redirectTo === '/' || 
                 redirectTo.startsWith('/wallet') || redirectTo.startsWith('/profile')) {
               console.log('[AUTH-DEBUG] Calling router.replace with:', redirectTo);
               router.replace(redirectTo);
             } else {
-              console.log('[AUTH-DEBUG] Invalid redirect target, using /dashboard');
-              router.replace('/dashboard');
+              console.log('[AUTH-DEBUG] Invalid redirect target, using /');
+              router.replace('/');
             }
           } else if (isOnProtectedRoute) {
             console.log('[AUTH-DEBUG] Already on protected route, no redirect needed');
@@ -1065,7 +1063,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null)
       setMainAccountProfile(null)
       
-      router.push("/dashboard")
+      router.push("/")
     } catch (error) {
       console.error("[AUTH] Unexpected sign out error:", error)
       toast.error("Sign out failed", {
@@ -1254,8 +1252,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // This ensures navigation happens reliably, even if middleware/home page redirect doesn't catch it
       const currentPath = window.location.pathname
       if (currentPath === '/auth/login' || currentPath === '/auth/register' || currentPath === '/') {
-        console.log('[AUTH-DEBUG] mockLogin: Explicitly navigating to /dashboard from', currentPath)
-        router.replace('/dashboard')
+        console.log('[AUTH-DEBUG] mockLogin: Explicitly navigating to / from', currentPath)
+        router.replace('/')
       }
     } catch (error: any) {
       toast.error("Error", {

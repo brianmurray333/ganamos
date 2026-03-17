@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Ganamos!",
     short_name: "Ganamos!",
     description: "Fix your community, earn Bitcoin",
-    start_url: "/dashboard",
+    start_url: "/",
     display: "standalone",
     background_color: "#020617",
     theme_color: "#020617",

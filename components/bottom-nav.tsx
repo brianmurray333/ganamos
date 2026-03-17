@@ -30,8 +30,8 @@ export function BottomNav() {
   }
 
   const isActive = (path: string) => {
-    if (path === "/dashboard" && pathname === "/dashboard") return true
-    if (path !== "/dashboard" && pathname.startsWith(path)) return true
+    if (path === "/" && pathname === "/") return true
+    if (path !== "/" && pathname.startsWith(path)) return true
     return false
   }
 
@@ -50,18 +50,18 @@ export function BottomNav() {
           <div className="flex items-center justify-between h-full w-full px-8">
         {/* Home icon */}
         <Link
-          href="/dashboard"
+          href="/"
           prefetch={canPrefetch}
           data-testid="nav-dashboard-link"
           className={cn(
                 "flex items-center justify-center rounded-xl transition-colors",
-                isActive("/dashboard") && "text-primary dark:text-primary",
+                isActive("/") && "text-primary dark:text-primary",
           )}
         >
           <Home
             className={cn(
                   "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors",
-                  isActive("/dashboard") && "text-primary dark:text-primary",
+                  isActive("/") && "text-primary dark:text-primary",
             )}
           />
         </Link>

@@ -68,7 +68,7 @@ export class AuthPage {
         state: 'visible',
         timeout: 30000,
       }),
-      this.page.waitForURL((url) => url.pathname === '/dashboard' || url.pathname.startsWith('/dashboard'), {
+      this.page.waitForURL((url) => url.pathname === '/', {
         timeout: 30000,
         waitUntil: 'domcontentloaded'
       })

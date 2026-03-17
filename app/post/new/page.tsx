@@ -840,7 +840,7 @@ export default function NewPostPage() {
       })
 
       // Always redirect to dashboard, even if a group was selected
-      router.push(`/dashboard?newPost=${postId}`)
+      router.push(`/?newPost=${postId}`)
     } catch (error) {
       console.error("Error creating post:", error)
       toast.error("Error", {
@@ -856,7 +856,7 @@ export default function NewPostPage() {
       setStep("photo")
       setCameraActive(true)
     } else {
-      router.push("/dashboard")
+      router.push("/")
     }
   }
 
@@ -917,7 +917,7 @@ export default function NewPostPage() {
                     type="button"
                     size="icon"
                     className="absolute top-2 right-2 rounded-md bg-black/20 text-white hover:bg-black/40"
-                    onClick={() => router.push("/dashboard")}
+                    onClick={() => router.push("/")}
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"

@@ -161,7 +161,7 @@ export function DesktopHeader() {
     <header className="fixed top-0 left-0 right-0 z-50 bg-white/95 dark:bg-background/95 backdrop-blur-md border-b border-gray-200 dark:border-gray-800 hidden lg:block">
       <div className="max-w-[1800px] mx-auto px-6 h-16 flex items-center justify-between gap-4">
         {/* Left side - Logo */}
-        <a href={isDocsDomain ? "https://www.ganamos.earth" : "/dashboard"} className="flex items-center gap-2 flex-shrink-0">
+        <a href={isDocsDomain ? "https://www.ganamos.earth" : "/"} className="flex items-center gap-2 flex-shrink-0">
           <Image
             src="/favicon.png"
             alt="Ganamos"
@@ -175,7 +175,7 @@ export function DesktopHeader() {
         </a>
 
         {/* Center - Search Bar */}
-        {(pathname === "/dashboard" || pathname.startsWith("/post/")) && (
+        {(pathname === "/" || pathname.startsWith("/post/")) && (
           <div ref={searchContainerRef} className="flex-1 max-w-md relative">
             <div className="relative">
               <input

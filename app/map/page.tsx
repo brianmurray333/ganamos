@@ -28,7 +28,7 @@ export default function MapPage() {
     const checkScreenSize = () => {
       if (window.innerWidth >= 1024) {
         // lg breakpoint - redirect to dashboard
-        router.replace('/dashboard')
+        router.replace('/')
       }
     }
     

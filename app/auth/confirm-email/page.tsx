@@ -89,7 +89,7 @@ function ConfirmEmailContent() {
               </Button>
             </Link>
             
-            <Link href="/dashboard" className="block">
+            <Link href="/" className="block">
               <Button variant="ghost" className="w-full">
                 Return to Home
               </Button>

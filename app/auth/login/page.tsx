@@ -24,7 +24,7 @@ export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const error = searchParams.get("error")
-  const redirect = searchParams.get("redirect") || "/dashboard"
+  const redirect = searchParams.get("redirect") || "/"
   const reason = searchParams.get("reason")
 
   // Show contextual toast based on reason parameter (e.g., from email links)

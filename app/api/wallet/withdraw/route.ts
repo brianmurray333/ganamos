@@ -451,7 +451,7 @@ async function processWithdrawal(
 
   // Revalidate pages
   revalidatePath("/profile")
-  revalidatePath("/dashboard")
+  revalidatePath("/")
   revalidatePath("/wallet")
 
   // Add activity

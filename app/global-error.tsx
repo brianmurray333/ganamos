@@ -175,7 +175,7 @@ export default function GlobalError({
 
             {/* Secondary Action - Go Home */}
             <button
-              onClick={() => window.location.href = '/dashboard'}
+              onClick={() => window.location.href = '/'}
               style={{
                 width: '100%',
                 padding: '0.875rem 1.5rem',
