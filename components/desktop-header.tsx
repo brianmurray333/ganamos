@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter, usePathname } from "next/navigation"
-import { User, Menu, X, Gift, Wallet, LogOut, UserCircle, MapPin } from "lucide-react"
+import { User, Menu, X, Gift, Wallet, LogOut, UserCircle, MapPin, PawPrint } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useAuth } from "@/components/auth-provider"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -271,6 +271,10 @@ export function DesktopHeader() {
                   <DropdownMenuItem onClick={() => router.push("/wallet")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
                     <Wallet className="h-4 w-4" />
                     Wallet
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => router.push("/pet-settings")} className="py-2.5 px-3 rounded-lg flex items-center gap-3 active:opacity-60 transition-opacity">
+                    <PawPrint className="h-4 w-4" />
+                    Pet
                   </DropdownMenuItem>
 
                   {/* Account Switcher Section */}
