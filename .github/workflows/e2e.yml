@@ -131,7 +131,7 @@ jobs:
         run: npm start -- -p 3457 &
 
       - name: Wait for application to be ready
-        run: npx wait-on --timeout 120000 http://localhost:3457/dashboard
+        run: npx wait-on --timeout 120000 http://localhost:3457
 
       - name: Run Playwright tests
         env:
