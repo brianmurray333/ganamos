@@ -1940,7 +1940,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               >
                 {post.has_image === false && !post.imageUrl && !post.image_url ? (
                   <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
-                    <Image src="/favicon.png" alt="Post" width={64} height={64} className="rounded-lg" />
+                    <Image src="/icon-512x512.png" alt="Post" width={64} height={64} className="rounded-lg" />
                   </div>
                 ) : (
                   <Image
@@ -1971,7 +1971,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 >
                   {post.has_image === false && !post.imageUrl && !post.image_url ? (
                     <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
-                      <Image src="/favicon.png" alt="Before" width={64} height={64} className="rounded-lg" />
+                      <Image src="/icon-512x512.png" alt="Before" width={64} height={64} className="rounded-lg" />
                     </div>
                   ) : (
                     <Image

@@ -828,8 +828,10 @@ export async function sendFixSubmittedForReviewEmail(params: {
   aiAnalysis?: string | null
   beforeImageUrl?: string | null
   afterImageUrl?: string | null
+  proofOfCompletionText?: string | null
+  fixerNote?: string | null
 }) {
-  const { toEmail, userName, issueTitle, fixerName, date, postId, aiAnalysis, beforeImageUrl, afterImageUrl } = params
+  const { toEmail, userName, issueTitle, fixerName, date, postId, aiAnalysis, beforeImageUrl, afterImageUrl, proofOfCompletionText, fixerNote } = params
   
   // Build the review URL with review flag to trigger the review flow
   // Note: This is different from ?verify=true which opens the "Close Issue" dialog
@@ -997,6 +999,18 @@ export async function sendFixSubmittedForReviewEmail(params: {
                 </td>
               </tr>
             </table>
+          </div>
+          ` : ''}
+          ${proofOfCompletionText ? `
+          <div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; padding: 15px; margin: 20px 0; border-radius: 6px;">
+            <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #166534;">Proof of completion:</h3>
+            <p style="margin: 0; font-size: 14px; color: #15803d; line-height: 1.6; white-space: pre-line;">${proofOfCompletionText}</p>
+          </div>
+          ` : ''}
+          ${fixerNote ? `
+          <div style="background-color: #f9fafb; border-left: 4px solid #9ca3af; padding: 15px; margin: 20px 0; border-radius: 6px;">
+            <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #374151;">Fixer's note:</h3>
+            <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.6; white-space: pre-line;">${fixerNote}</p>
           </div>
           ` : ''}
           <center>
