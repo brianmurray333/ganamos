@@ -34,7 +34,7 @@ export class DashboardPage {
    * Navigate to the dashboard page
    */
   async goto() {
-    await this.page.goto('/dashboard')
+    await this.page.goto('/')
     await waitForPageLoad(this.page)
   }
 
@@ -82,7 +82,7 @@ export class DashboardPage {
    */
   async verifyPage() {
     // Verify we're on the dashboard
-    await this.page.waitForURL(/\/dashboard/)
+    await this.page.waitForURL((url) => url.pathname === '/', { timeout: 10000 })
     // Wait for content to load
     await this.waitForLoad()
   }
