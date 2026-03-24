@@ -661,9 +661,10 @@ function MapViewComponent({
       // Create map instance with all controls disabled
       const map = new window.google.maps.Map(mapRef.current, {
         center: defaultCenter,
-        zoom: 2, // Start with a low zoom, will be adjusted by bounds if provided
+        zoom: 3,
+        minZoom: 3,
         mapTypeId: window.google.maps.MapTypeId.ROADMAP,
-        disableDefaultUI: true, // Disable all default UI controls
+        disableDefaultUI: true,
         zoomControl: false,
         mapTypeControl: false,
         scaleControl: false,
@@ -671,8 +672,17 @@ function MapViewComponent({
         rotateControl: false,
         fullscreenControl: false,
         gestureHandling: "greedy",
-        clickableIcons: false, // Disable native POI info windows
-        keyboardShortcuts: false, // Disable keyboard shortcuts
+        clickableIcons: false,
+        keyboardShortcuts: false,
+        restriction: {
+          latLngBounds: {
+            north: 85,
+            south: -85,
+            east: 180,
+            west: -180,
+          },
+          strictBounds: true,
+        },
       })
 
 
