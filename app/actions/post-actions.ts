@@ -2059,6 +2059,49 @@ export async function closeIssueAction(
     // Note: We intentionally allow closing even if under_review = true
     // Group admins and post owners should always be able to approve/close issues
 
+    // SECURITY: Verify the post reward was actually funded (has a matching deduction transaction).
+    // Without this, an attacker can create a post with any reward amount, skip the balance
+    // deduction (e.g. via a preview deployment or race condition), then approve the fix
+    // to mint sats from nothing.
+    if (post.reward && post.reward > 0) {
+      const adminSupabase = createServerSupabaseClient({
+        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+      })
+
+      const { data: fundingTx } = await adminSupabase
+        .from('transactions')
+        .select('id')
+        .eq('user_id', post.user_id)
+        .eq('type', 'internal')
+        .eq('status', 'completed')
+        .lt('amount', 0)
+        .ilike('memo', `%${postId.substring(0, 8)}%`)
+        .limit(1)
+
+      // Also check for anonymous L402 posts which are funded via Lightning payment
+      const { data: l402Tx } = await adminSupabase
+        .from('transactions')
+        .select('id')
+        .eq('type', 'deposit')
+        .eq('status', 'completed')
+        .gte('amount', post.reward)
+        .ilike('memo', `%${postId.substring(0, 8)}%`)
+        .limit(1)
+
+      const isFunded = (fundingTx && fundingTx.length > 0) || (l402Tx && l402Tx.length > 0)
+
+      if (!isFunded) {
+        console.error('SECURITY: Attempted to close unfunded reward post', {
+          postId,
+          postOwnerId: post.user_id,
+          reward: post.reward,
+          closedBy: user.id,
+          timestamp: new Date().toISOString(),
+        })
+        return { success: false, error: 'This post\'s reward was never funded. Cannot issue reward.' }
+      }
+    }
+
     // Look up the fixer by username
     const { data: fixerProfile, error: fixerError } = await supabase
       .from('profiles')

@@ -18,7 +18,7 @@ import {
   sendWithdrawalApprovalRequest,
   sendSystemThresholdAlert,
 } from "@/lib/withdrawal-security"
-import { toggleWithdrawals } from "@/app/actions/admin-actions"
+import { emergencyDisableWithdrawals } from "@/app/actions/admin-actions"
 
 export async function POST(request: Request) {
   // Get headers early for audit logging
@@ -236,8 +236,8 @@ export async function POST(request: Request) {
         ipAddress
       ).catch(err => console.error('[Security Alert] System threshold alert failed:', err))
 
-      // Auto-disable withdrawals system-wide
-      toggleWithdrawals(false, `auto_disabled_25k_threshold_breach_at_${new Date().toISOString()}`)
+      // Auto-disable withdrawals system-wide using emergency function (no admin session needed)
+      emergencyDisableWithdrawals(`auto_disabled_25k_threshold_breach_at_${new Date().toISOString()}`)
         .then(result => {
           if (result.success) {
             console.log('[SECURITY] Withdrawals automatically disabled due to threshold breach')
@@ -245,7 +245,7 @@ export async function POST(request: Request) {
             console.error('[SECURITY] Failed to auto-disable withdrawals:', result.error)
           }
         })
-        .catch(err => console.error('[Security Alert] Failed to toggle withdrawals:', err))
+        .catch(err => console.error('[Security Alert] Failed to emergency disable withdrawals:', err))
 
       // Return error to user (generic message, don't reveal threshold details)
       return NextResponse.json({

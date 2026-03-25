@@ -521,6 +521,39 @@ export async function toggleWithdrawals(enabled: boolean, reason?: string) {
   }
 }
 
+/**
+ * Emergency kill-switch for withdrawals that works without an admin session.
+ * Uses the service role client directly. Only call from server-side security code
+ * (e.g. threshold breach auto-disable), never from client-facing actions.
+ */
+export async function emergencyDisableWithdrawals(reason: string) {
+  try {
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
+    const { error } = await adminSupabase
+      .from("system_settings")
+      .update({
+        withdrawals_enabled: false,
+        updated_at: new Date().toISOString(),
+        updated_by: reason,
+      })
+      .eq("id", "main")
+
+    if (error) {
+      console.error("[SECURITY] Emergency disable withdrawals failed:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log(`[SECURITY] Withdrawals EMERGENCY DISABLED. Reason: ${reason}`)
+    return { success: true }
+  } catch (error) {
+    console.error("[SECURITY] Emergency disable withdrawals exception:", error)
+    return { success: false, error: "Failed to emergency disable withdrawals" }
+  }
+}
+
 export async function toggleSignups(enabled: boolean, reason?: string) {
   const { authorized, supabase } = await verifyAdmin()
   if (!authorized || !supabase) {

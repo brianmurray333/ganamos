@@ -23,7 +23,7 @@ export const WITHDRAWAL_LIMITS = {
 }
 
 // Admin email for approval notifications
-const ADMIN_EMAIL = 'admin@example.com'
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'admin@example.com'
 
 export interface WithdrawalSecurityCheck {
   allowed: boolean

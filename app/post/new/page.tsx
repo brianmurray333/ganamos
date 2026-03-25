@@ -740,7 +740,13 @@ export default function NewPostPage() {
         
         if (!result.success) {
           console.error("Error creating post reward transaction:", result.error)
-          // Don't throw - post was already created, just log the error
+          // SECURITY: Delete the post if reward deduction fails — an unfunded
+          // reward post can be exploited to mint sats when the fix is approved.
+          if (supabase) {
+            await supabase.from("posts").delete().eq("id", postId)
+          }
+          toast.error("Error", { description: result.error || "Failed to reserve reward. Post was not created." })
+          return
         } else {
           // Refresh profile to get updated balance (action already updated it in DB)
           await refreshProfile()
