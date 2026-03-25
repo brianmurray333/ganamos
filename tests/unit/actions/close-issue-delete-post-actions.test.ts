@@ -88,6 +88,7 @@ function createCloseIssueMockClient(options: {
   fixerData?: any
   fixerError?: any
   updateError?: any
+  isFunded?: boolean
 } = {}) {
   const {
     hasSession = true,
@@ -97,7 +98,24 @@ function createCloseIssueMockClient(options: {
     fixerData = MOCK_FIXER_PROFILE,
     fixerError = null,
     updateError = null,
+    isFunded = true,
   } = options
+
+  const fundingTxResult = isFunded
+    ? { data: [{ id: 'funding-tx-123' }], error: null }
+    : { data: [], error: null }
+
+  function createChainableMock(resolvedValue: any) {
+    const chainable: any = {}
+    const terminal = vi.fn().mockResolvedValue(resolvedValue)
+    for (const method of ['select', 'eq', 'lt', 'gte', 'ilike', 'limit']) {
+      chainable[method] = vi.fn(() => chainable)
+    }
+    chainable.single = terminal
+    chainable.then = terminal().then.bind(terminal())
+    chainable.limit = vi.fn().mockResolvedValue(resolvedValue)
+    return chainable
+  }
 
   const mockClient: any = {
     auth: {
@@ -148,7 +166,6 @@ function createCloseIssueMockClient(options: {
       }
 
       if (table === 'group_members') {
-        // Return no group admin membership by default
         return {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
@@ -163,6 +180,10 @@ function createCloseIssueMockClient(options: {
             })),
           })),
         }
+      }
+
+      if (table === 'transactions') {
+        return createChainableMock(fundingTxResult)
       }
 
       return mockClient
@@ -420,16 +441,21 @@ describe('closeIssueAction', () => {
       const originalFrom = mockClient.from
       mockClient.from = vi.fn((table: string) => {
         if (table === 'transactions') {
-          return {
-            insert: vi.fn(() => ({
-              select: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: { id: 'transaction-123' },
-                  error: null,
-                }),
-              })),
-            })),
+          const chainable: any = {}
+          for (const method of ['select', 'eq', 'lt', 'gte', 'ilike']) {
+            chainable[method] = vi.fn(() => chainable)
           }
+          chainable.limit = vi.fn().mockResolvedValue({ data: [{ id: 'funding-tx-123' }], error: null })
+          chainable.single = vi.fn().mockResolvedValue({ data: { id: 'transaction-123' }, error: null })
+          chainable.insert = vi.fn(() => ({
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: { id: 'transaction-123' },
+                error: null,
+              }),
+            })),
+          }))
+          return chainable
         }
         if (table === 'activities') {
           return {
