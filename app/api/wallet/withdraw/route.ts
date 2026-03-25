@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
 import { sendBitcoinSentEmail } from "@/lib/transaction-emails"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
-import { sendRateLimitAlert } from "@/lib/security-alerts"
+import { sendRateLimitAlert, sendWithdrawalsDisabledAttemptAlert } from "@/lib/security-alerts"
 import {
   WITHDRAWAL_LIMITS,
   checkWithdrawalLimits,
@@ -108,6 +108,13 @@ export async function POST(request: Request) {
     // Default to enabled if setting doesn't exist (for initial setup)
     const withdrawalsEnabled = settings?.withdrawals_enabled !== false
     if (!withdrawalsEnabled) {
+      sendWithdrawalsDisabledAttemptAlert({
+        userId: user.id,
+        userEmail: user.email ?? undefined,
+        ipAddress,
+        userAgent,
+      }).catch(err => console.error('[Security Alert] Failed to send withdrawals-disabled alert:', err))
+
       return NextResponse.json({ 
         success: false, 
         error: "Withdrawals are temporarily disabled for security maintenance" 
