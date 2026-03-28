@@ -115,12 +115,13 @@ async function checkVoltageAPI(): Promise<{
     
     const nodeBalance = nodeData.balances.total_balance
     
-    // Get app total balance for comparison
+    // Get app total balance for comparison (exclude deleted/suspended accounts)
     const supabaseClient = getSupabaseClient()
     const { data: profiles } = await supabaseClient
       .from('profiles')
       .select('balance')
       .neq('status', 'deleted')
+      .neq('status', 'suspended')
       
     const appTotalBalance = profiles?.reduce((sum, profile) => sum + profile.balance, 0) || 0
     const discrepancy = nodeBalance - appTotalBalance
@@ -686,10 +687,12 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
   // BALANCE BREAKDOWN - All sats in the system
   // =============================================
   
-  // 1. User Balances (sum of all profile.balance)
+  // 1. User Balances (sum of all profile.balance, excluding deleted accounts)
   const { data: profiles } = await supabaseClient
     .from('profiles')
     .select('balance')
+    .neq('status', 'deleted')
+    .neq('status', 'suspended')
     
   const userBalances = profiles?.reduce((sum, profile) => sum + (profile.balance || 0), 0) || 0
 
