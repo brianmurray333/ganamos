@@ -88,16 +88,14 @@ export async function GET(request: NextRequest) {
 
     console.log("Successfully stored Bitcoin price:", insertedPrice)
 
-    // Optional: Clean up old prices (older than 30 days)
     try {
       const { data: cleanupResult, error: cleanupError } = await supabase.rpc(
-        "cleanup_old_bitcoin_prices"
+        "trim_old_bitcoin_prices", { days_to_keep: 2 }
       )
       if (!cleanupError && cleanupResult > 0) {
         console.log(`Cleaned up ${cleanupResult} old price records`)
       }
     } catch (cleanupError) {
-      // Don't fail the request if cleanup fails
       console.warn("Cleanup failed:", cleanupError)
     }
 
