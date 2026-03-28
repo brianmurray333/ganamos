@@ -228,5 +228,5 @@ export function expectDIAApiCalled() {
  * Helper to verify cleanup RPC was called
  */
 export function expectCleanupCalled(mockSupabaseClient: any) {
-  expect(mockSupabaseClient.rpc).toHaveBeenCalledWith('cleanup_old_bitcoin_prices')
+  expect(mockSupabaseClient.rpc).toHaveBeenCalledWith('trim_old_bitcoin_prices', { days_to_keep: 2 })
 }
