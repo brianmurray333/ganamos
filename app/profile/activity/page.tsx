@@ -388,24 +388,22 @@ export default function ActivityPage() {
     if (!userId) return;
 
     const offset = pageNum * ACTIVITIES_PER_PAGE;
-    // Fetch more than needed so we can merge and still have enough
-    const fetchLimit = ACTIVITIES_PER_PAGE * 2;
+    const totalNeeded = offset + ACTIVITIES_PER_PAGE;
 
     try {
-      // Fetch from both transactions and activities tables in parallel
       const [transactionsResult, activitiesResult] = await Promise.all([
         supabase
           .from("transactions")
           .select("*")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
-          .limit(fetchLimit),
+          .limit(totalNeeded),
         supabase
           .from("activities")
           .select("*")
           .eq("user_id", userId)
           .order("timestamp", { ascending: false })
-          .limit(fetchLimit),
+          .limit(totalNeeded),
       ]);
 
       if (transactionsResult.error) {
