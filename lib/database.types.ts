@@ -77,12 +77,11 @@ export interface Database {
           original_reward: number | null
           total_boost_amount: number
           boost_applied: boolean
-          is_anonymous: boolean | null
+          is_anonymous: boolean
           funding_payment_request: string | null
           funding_r_hash: string | null
           funding_status: "pending" | "paid" | "expired" | null
-          // Fields for anonymous fix payouts
-          fixed_by_is_anonymous: boolean // << ADDED
+          fixed_by_is_anonymous: boolean
           anonymous_reward_paid_at: string | null // << ADDED (TIMESTAMPTZ in DB)
           anonymous_reward_payment_hash: string | null // << ADDED (TEXT in DB)
           anonymous_reward_payment_lock: string | null // UUID lock to prevent race conditions
@@ -127,18 +126,15 @@ export interface Database {
           original_reward?: number | null
           total_boost_amount?: number
           boost_applied?: boolean
-          is_anonymous?: boolean | null
+          is_anonymous?: boolean
           funding_payment_request?: string | null
           funding_r_hash?: string | null
           funding_status?: "pending" | "paid" | "expired" | null
-          // Fields for anonymous fix payouts
           fixed_by_is_anonymous?: boolean
           anonymous_reward_paid_at?: string | null
           anonymous_reward_payment_hash?: string | null
           anonymous_reward_payment_lock?: string | null
-          // Individual assignment
           assigned_to?: string | null
-          // Expiration
           expires_at?: string | null
           expiry_warning_sent_at?: string | null
         }
@@ -177,11 +173,10 @@ export interface Database {
           original_reward?: number | null
           total_boost_amount?: number
           boost_applied?: boolean
-          is_anonymous?: boolean | null
+          is_anonymous?: boolean
           funding_payment_request?: string | null
           funding_r_hash?: string | null
           funding_status?: "pending" | "paid" | "expired" | null
-          // Fields for anonymous fix payouts
           fixed_by_is_anonymous?: boolean
           anonymous_reward_paid_at?: string | null
           anonymous_reward_payment_hash?: string | null
