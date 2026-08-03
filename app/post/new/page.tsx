@@ -679,79 +679,34 @@ export default function NewPostPage() {
         console.log("✅ Image uploaded successfully")
       }
 
-      const postDataForSupabase = {
-        id: postId,
-        user_id: activeUserId || user!.id,
-        created_by: profile!.name,
-        created_by_avatar: profile!.avatar_url,
+      const { createPostWithRewardAction } = await import("@/app/actions/post-actions")
+      const result = await createPostWithRewardAction({
+        postId,
+        userId: activeUserId || user!.id,
         title: description.substring(0, 50),
         description,
-        image_url: finalImageUrl,
-        has_image: finalImageUrl != null,
-        location: currentLocation?.name || null, // Use geocoded name
+        imageUrl: finalImageUrl,
+        hasImage: finalImageUrl != null,
+        location: currentLocation?.name || null,
         latitude: currentLocation?.lat || null,
         longitude: currentLocation?.lng || null,
         reward,
-        claimed: false,
-        fixed: false,
-        created_at: now.toISOString(),
-        group_id: assignedTo ? null : selectedGroupId, // If assigned to person, no group
-        assigned_to: assignedTo, // Individual assignment
-        city: currentLocation?.displayName || currentLocation?.name || null, // Use displayName or fallback to name
-        is_anonymous: false,
-        expires_at: expiresAt ? expiresAt.toISOString() : null,
+        groupId: assignedTo ? null : selectedGroupId,
+        assignedTo,
+        city: currentLocation?.displayName || currentLocation?.name || null,
+        createdBy: profile!.name,
+        createdByAvatar: profile!.avatar_url,
+        expiresAt: expiresAt ? expiresAt.toISOString() : null,
+        memo: `Post reward for: ${description.substring(0, 50)}`,
+      })
+
+      if (!result.success) {
+        console.error("Atomic post creation failed:", result.error)
+        toast.error("Error", { description: result.error || "Post was not created." })
+        return
       }
 
-      if (supabase) {
-        const { error: insertError } = await supabase.from("posts").insert(postDataForSupabase)
-        if (insertError) {
-          console.error("Error saving post to Supabase:", insertError)
-          throw insertError
-        }
-        
-        // Only insert activity for posts WITHOUT rewards (server action will handle posts with rewards)
-        if (reward === 0) {
-          try {
-            await supabase.from("activities").insert({
-              id: uuidv4(),
-              user_id: activeUserId || user!.id,
-              type: "post",
-              related_id: postId,
-              related_table: "posts",
-              timestamp: now.toISOString(),
-              metadata: { title: description.substring(0, 50) },
-            })
-          } catch (activityError) {
-            console.error("Error inserting activity for new post:", activityError)
-          }
-        }
-      }
-
-      // If post has a reward, create a transaction and update balance atomically
-      // This also creates the activity with reward info
-      if (profile && reward > 0) {
-        const { createPostWithRewardAction } = await import("@/app/actions/post-actions")
-        const result = await createPostWithRewardAction({
-          postId,
-          userId: activeUserId || user!.id,
-          reward,
-          memo: `Post reward for: ${description.substring(0, 50)}`
-        })
-        
-        if (!result.success) {
-          console.error("Error creating post reward transaction:", result.error)
-          // SECURITY: Delete the post if reward deduction fails — an unfunded
-          // reward post can be exploited to mint sats when the fix is approved.
-          if (supabase) {
-            await supabase.from("posts").delete().eq("id", postId)
-          }
-          toast.error("Error", { description: result.error || "Failed to reserve reward. Post was not created." })
-          return
-        } else {
-          // Refresh profile to get updated balance (action already updated it in DB)
-          await refreshProfile()
-        }
-      }
+      await refreshProfile()
 
       // Send email notification if assigned to a specific person
       if (assignedTo && assignedToProfile) {

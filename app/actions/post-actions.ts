@@ -1444,9 +1444,22 @@ export async function claimAnonymousRewardAction(
 export async function createPostWithRewardAction(params: {
   postId: string
   userId: string
+  title: string
+  description: string
+  imageUrl?: string | null
+  hasImage?: boolean
+  location?: string | null
+  latitude?: number | null
+  longitude?: number | null
   reward: number
+  groupId?: string | null
+  assignedTo?: string | null
+  city?: string | null
+  createdBy?: string | null
+  createdByAvatar?: string | null
+  expiresAt?: string | null
   memo?: string
-}): Promise<{ success: boolean; error?: string; transactionId?: string }> {
+}): Promise<{ success: boolean; error?: string; transactionId?: string; newBalance?: number }> {
   'use server'
   
   try {
@@ -1484,99 +1497,50 @@ export async function createPostWithRewardAction(params: {
       return { success: false, error: 'Unauthorized: Cannot modify another user\'s balance' }
     }
 
-    if (!postId || !userId || reward <= 0) {
+    if (!postId || !userId || !params.title.trim() || !params.description.trim() || reward < 0) {
       return { success: false, error: 'Invalid parameters' }
     }
 
-    // SAFETY: Check reward cap (blocks at hard limit)
-    const rewardCapCheck = await checkPostRewardCap(userId, reward)
-    if (!rewardCapCheck.allowed) {
-      console.warn(`[Safety Caps] Post reward blocked: ${reward} sats exceeds hard cap for user ${userId}`)
-      return { success: false, error: rewardCapCheck.message || 'Post reward exceeds maximum allowed amount.' }
-    }
-    if (rewardCapCheck.capLevel !== 'none') {
-      console.log(`[Safety Caps] Post reward cap ${rewardCapCheck.capLevel} triggered for user ${userId}`)
-    }
-
-    // IMPORTANT: Use admin supabase for transaction creation and balance updates
-    // The prevent_direct_balance_update trigger only allows service_role to modify balances
-    // All transaction creation must go through service_role
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    const { data, error } = await supabase.rpc('create_post_atomic', {
+      p_post_id: postId,
+      p_user_id: userId,
+      p_title: params.title,
+      p_description: params.description,
+      p_image_url: params.imageUrl ?? null,
+      p_has_image: params.hasImage ?? Boolean(params.imageUrl),
+      p_location: params.location ?? null,
+      p_latitude: params.latitude ?? null,
+      p_longitude: params.longitude ?? null,
+      p_reward: reward,
+      p_group_id: params.groupId ?? null,
+      p_assigned_to: params.assignedTo ?? null,
+      p_city: params.city ?? null,
+      p_created_by: params.createdBy ?? null,
+      p_created_by_avatar: params.createdByAvatar ?? null,
+      p_expires_at: params.expiresAt ?? null,
+      p_memo: memo ?? null,
     })
 
-    // Get current balance to verify sufficient funds
-    const { data: profile, error: profileError } = await adminSupabase
-      .from('profiles')
-      .select('balance')
-      .eq('id', userId)
-      .single()
-
-    if (profileError || !profile) {
-      return { success: false, error: 'User profile not found' }
+    if (error) {
+      console.error('Atomic post creation failed:', error)
+      return { success: false, error: error.message || 'Failed to create post' }
     }
 
-    if (profile.balance < reward) {
-      return { success: false, error: 'Insufficient balance' }
+    const result = data as unknown as {
+      success: boolean
+      transaction_id?: string | null
+      new_balance?: number
     }
-
-    // Create transaction record for the post reward deduction
-    const { data: transaction, error: txError } = await adminSupabase
-      .from('transactions')
-      .insert({
-        user_id: userId,
-        type: 'internal', // Post reward is an internal transaction
-        amount: -reward, // Negative because it's a deduction
-        status: 'completed',
-        memo: memo || `Post reward for issue`,
-      })
-      .select('id')
-      .single()
-
-    if (txError || !transaction) {
-      console.error('Error creating post reward transaction:', txError)
-      return { success: false, error: 'Failed to create transaction' }
-    }
-
-    // Update balance atomically
-    const newBalance = profile.balance - reward
-    const { error: balanceError } = await adminSupabase
-      .from('profiles')
-      .update({
-        balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId)
-
-    if (balanceError) {
-      console.error('Error updating balance after post reward transaction:', balanceError)
-      // Transaction was created but balance update failed - this is inconsistent
-      // In a real scenario, we'd want to rollback or handle this better
-      return { success: false, error: 'Transaction created but balance update failed' }
-    }
-
-    // Create activity for the post reward
-    await adminSupabase.from('activities').insert({
-      id: uuidv4(),
-      user_id: userId,
-      type: 'post',
-      related_id: postId,
-      related_table: 'posts',
-      timestamp: new Date().toISOString(),
-      metadata: { 
-        title: memo || 'Post created',
-        reward: reward,
-        transaction_id: transaction.id
-      },
-    })
-
-    console.log(`Post reward transaction created: ${transaction.id} for post ${postId}, ${reward} sats deducted`)
     
     // SECURITY: Send SMS alert for large post bounties
-    alertLargePostBounty(userId, reward, memo)
+    if (reward > 0) alertLargePostBounty(userId, reward, memo)
       .catch(err => console.error("[Security Alert] SMS for large bounty failed:", err))
     
-    return { success: true, transactionId: transaction.id }
+    return {
+      success: result.success,
+      transactionId: result.transaction_id ?? undefined,
+      newBalance: result.new_balance,
+    }
   } catch (error) {
     console.error('Error in createPostWithRewardAction:', error)
     return {
