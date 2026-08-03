@@ -710,9 +710,8 @@ describe('createPostWithRewardAction', () => {
     vi.useRealTimers()
   })
 
-  describe('Admin Client Usage (Critical for RLS bypass)', () => {
-    it('should use admin client with service role key for transaction and balance operations', async () => {
-      // ARRANGE - Create separate mock clients for user session and admin
+  describe('Canonical atomic RPC', () => {
+    it('should use the authenticated client to call the atomic post function', async () => {
       const mockUserClient: any = {
         auth: {
           getSession: vi.fn().mockResolvedValue({
@@ -740,54 +739,19 @@ describe('createPostWithRewardAction', () => {
           }
           throw new Error(`User client should not access table: ${table}`)
         }),
-      }
-
-      const mockAdminClient: any = {
-        from: vi.fn((table: string) => {
-          if (table === 'profiles') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ 
-                    data: { balance: 5000 }, 
-                    error: null 
-                  }),
-                })),
-              })),
-              update: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-              })),
-            }
-          }
-          if (table === 'transactions') {
-            return {
-              insert: vi.fn(() => ({
-                select: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ 
-                    data: { id: TEST_TX_ID }, 
-                    error: null 
-                  }),
-                })),
-              })),
-            }
-          }
-          if (table === 'activities') {
-            return {
-              insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-            }
-          }
-          throw new Error(`Unexpected table: ${table}`)
+        rpc: vi.fn().mockResolvedValue({
+          data: { success: true, transaction_id: TEST_TX_ID, new_balance: 4000 },
+          error: null,
         }),
       }
-
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockUserClient)  // First call: user session for auth
-        .mockReturnValueOnce(mockAdminClient) // Second call: admin client for DB ops
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
 
       // ACT
       const result = await createPostWithRewardAction({
         postId: TEST_POST_ID,
         userId: TEST_USER_ID,
+        title: 'Test post',
+        description: 'Test post description',
         reward: TEST_REWARD,
         memo: TEST_MEMO,
       })
@@ -796,21 +760,12 @@ describe('createPostWithRewardAction', () => {
       expect(result.success).toBe(true)
       expect(result.transactionId).toBe(TEST_TX_ID)
 
-      // Verify createServerSupabaseClient was called twice
-      expect(createServerSupabaseClient).toHaveBeenCalledTimes(2)
-
-      // First call should be with cookie store (user session for auth check)
-      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(1, expect.any(Object))
-
-      // Second call should be with service role key (admin client for DB operations)
-      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(2, {
-        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-      })
-
-      // Verify admin client was used for sensitive operations
-      expect(mockAdminClient.from).toHaveBeenCalledWith('profiles')
-      expect(mockAdminClient.from).toHaveBeenCalledWith('transactions')
-      expect(mockAdminClient.from).toHaveBeenCalledWith('activities')
+      expect(createServerSupabaseClient).toHaveBeenCalledTimes(1)
+      expect(mockUserClient.rpc).toHaveBeenCalledWith('create_post_atomic', expect.objectContaining({
+        p_post_id: TEST_POST_ID,
+        p_user_id: TEST_USER_ID,
+        p_reward: TEST_REWARD,
+      }))
     })
 
     it('should reject if user is not authenticated', async () => {
@@ -830,6 +785,8 @@ describe('createPostWithRewardAction', () => {
       const result = await createPostWithRewardAction({
         postId: TEST_POST_ID,
         userId: TEST_USER_ID,
+        title: 'Test post',
+        description: 'Test post description',
         reward: TEST_REWARD,
       })
 
@@ -873,6 +830,8 @@ describe('createPostWithRewardAction', () => {
       const result = await createPostWithRewardAction({
         postId: TEST_POST_ID,
         userId: TEST_USER_ID,
+        title: 'Test post',
+        description: 'Test post description',
         reward: TEST_REWARD,
       })
 
@@ -910,32 +869,18 @@ describe('createPostWithRewardAction', () => {
         }),
       }
 
-      const mockAdminClient: any = {
-        from: vi.fn((table: string) => {
-          if (table === 'profiles') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ 
-                    data: { balance: 500 }, // Less than reward
-                    error: null 
-                  }),
-                })),
-              })),
-            }
-          }
-          return {}
-        }),
-      }
-
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockUserClient)
-        .mockReturnValueOnce(mockAdminClient)
+      mockUserClient.rpc = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Insufficient balance' },
+      })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockUserClient)
 
       // ACT
       const result = await createPostWithRewardAction({
         postId: TEST_POST_ID,
         userId: TEST_USER_ID,
+        title: 'Test post',
+        description: 'Test post description',
         reward: TEST_REWARD, // 1000 > 500
       })
 

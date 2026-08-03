@@ -585,6 +585,35 @@ export interface Database {
         }
       }
     }
+    Functions: {
+      create_post_atomic: {
+        Args: {
+          p_post_id: string
+          p_user_id: string
+          p_title: string
+          p_description: string
+          p_image_url?: string | null
+          p_has_image?: boolean
+          p_location?: string | null
+          p_latitude?: number | null
+          p_longitude?: number | null
+          p_reward?: number
+          p_group_id?: string | null
+          p_assigned_to?: string | null
+          p_city?: string | null
+          p_created_by?: string | null
+          p_created_by_avatar?: string | null
+          p_expires_at?: string | null
+          p_memo?: string | null
+        }
+        Returns: {
+          success: boolean
+          post_id: string
+          transaction_id: string | null
+          new_balance: number
+        }
+      }
+    }
   }
 }
 
