@@ -28,7 +28,8 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Keep CI reproducible and avoid a rate-limited "latest" lookup.
+          version: 2.111.0
 
       - name: Install dependencies
         run: npm ci
@@ -70,8 +71,13 @@ jobs:
           
           # Export to GITHUB_ENV for subsequent steps
           echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
-          echo "SUPABASE_ANON_KEY=$ANON_KEY" >> $GITHUB_ENV
-          echo "SUPABASE_SERVICE_KEY=$SERVICE_ROLE_KEY" >> $GITHUB_ENV
+          # CLI versions expose either legacy JWT names or the newer key names.
+          SUPABASE_ANON_KEY="${ANON_KEY:-$PUBLISHABLE_KEY}"
+          SUPABASE_SERVICE_KEY="${SERVICE_ROLE_KEY:-$SECRET_KEY}"
+          test -n "$SUPABASE_ANON_KEY"
+          test -n "$SUPABASE_SERVICE_KEY"
+          echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" >> $GITHUB_ENV
+          echo "SUPABASE_SERVICE_KEY=$SUPABASE_SERVICE_KEY" >> $GITHUB_ENV
           
           echo "Credentials exported successfully"
 

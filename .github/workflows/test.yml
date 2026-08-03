@@ -59,7 +59,9 @@ jobs:
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pin this so setup does not call the GitHub releases API to resolve
+          # "latest" (which is rate-limited on hosted runners).
+          version: 2.111.0
 
       - name: Start Supabase
         run: |
@@ -100,4 +102,4 @@ jobs:
 
       - name: Stop Supabase
         if: always()
-        run: supabase stop
+        run: command -v supabase >/dev/null && supabase stop || true
