@@ -609,3 +609,39 @@ END $$;
 
 COMMENT ON TABLE donation_pools IS 'Seeded with donation pools for cities, countries, and global';
 COMMENT ON TABLE bitcoin_prices IS 'Seeded with sample Bitcoin prices for testing';
+
+-- Local Supabase API privileges. Production projects receive these grants when
+-- they are created, but a database rebuilt solely from this repository's old
+-- migrations does not. RLS remains the authorization boundary.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+
+-- Avoid recursive evaluation of group_members while preserving the original
+-- rule: users may see their own row and members of groups they belong to.
+CREATE OR REPLACE FUNCTION public.is_approved_group_member(target_group_id uuid, target_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.group_members
+    WHERE group_id = target_group_id
+      AND user_id = target_user_id
+      AND status = 'approved'
+  );
+$$;
+
+REVOKE ALL ON FUNCTION public.is_approved_group_member(uuid, uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_approved_group_member(uuid, uuid)
+  TO anon, authenticated, service_role;
+
+DROP POLICY IF EXISTS "Users can view group members of their groups" ON public.group_members;
+CREATE POLICY "Users can view group members of their groups" ON public.group_members
+  FOR SELECT USING (
+    user_id = auth.uid()
+    OR public.is_approved_group_member(group_id, auth.uid())
+  );
