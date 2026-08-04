@@ -15,6 +15,7 @@
 		8FC648B402AC2B57CDBFA940 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 778168F60F211241852312B4 /* SessionStore.swift */; };
 		948635C12A08C7E5E5393715 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DDBB30FA9942279641EE62F /* Models.swift */; };
 		995AA530FC3613C7AE37687C /* GanamosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A6AF0F120E7D85787CC547 /* GanamosApp.swift */; };
+		99F86616D6C431D457A53765 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */; };
 		A1DF72880BD007BBD80AD426 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13252AE3EB92C6090E30652A /* RootView.swift */; };
 		C095935130AFD1C235240063 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */; };
 		ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66901815C87EF5036DF3603D /* FeatureViews.swift */; };
@@ -34,6 +35,7 @@
 /* Begin PBXFileReference section */
 		13252AE3EB92C6090E30652A /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A6AF0F120E7D85787CC547 /* GanamosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GanamosApp.swift; sourceTree = "<group>"; };
 		5DDBB30FA9942279641EE62F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		66901815C87EF5036DF3603D /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
@@ -82,10 +84,19 @@
 			isa = PBXGroup;
 			children = (
 				A2B2F4521FB5F8FE0442D90B /* Config */,
+				74989EF4BBA13CFF8527AF9A /* Resources */,
 				11968FC60094BE89F1B8595A /* Sources */,
 				1CFD8D59826DE43AADFF3DFC /* Tests */,
 				9DAF1C78F8C68569E4B4522C /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		74989EF4BBA13CFF8527AF9A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		9DAF1C78F8C68569E4B4522C /* Products */ = {
@@ -113,6 +124,7 @@
 			buildConfigurationList = 6BC18CFAB2F42718CF5A833C /* Build configuration list for PBXNativeTarget "Ganamos" */;
 			buildPhases = (
 				47564214E1E9E2CE91BC946D /* Sources */,
+				55F322CE1C30100D290C5C78 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -176,6 +188,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		55F322CE1C30100D290C5C78 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99F86616D6C431D457A53765 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0E719D76DFD258EAA41AD549 /* Sources */ = {
@@ -379,6 +402,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -395,6 +419,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

@@ -11,11 +11,19 @@ struct GanamosPost: Codable, Identifiable, Hashable, Sendable {
     let reward: Int
     let createdAt: Date?
     let group: PostGroup?
+    let userID: UUID?
+    let fixed: Bool?
+    let underReview: Bool?
+    let deletedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, location, latitude, longitude, reward, group
         case imageURL = "image_url"
         case createdAt = "created_at"
+        case userID = "user_id"
+        case fixed
+        case underReview = "under_review"
+        case deletedAt = "deleted_at"
     }
 }
 

@@ -24,7 +24,20 @@ actor APIClient {
         self.configuration = configuration
         self.session = session
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let value = try decoder.singleValueContainer().decode(String.self)
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: value) {
+                return date
+            }
+            formatter.formatOptions = [.withInternetDateTime]
+            if let date = formatter.date(from: value) { return date }
+            throw DecodingError.dataCorruptedError(
+                in: try decoder.singleValueContainer(),
+                debugDescription: "Invalid ISO 8601 date: \(value)"
+            )
+        }
     }
 
     func signIn(email: String, password: String) async throws -> AuthResponse {
@@ -55,7 +68,7 @@ actor APIClient {
         guard let baseURL = configuration.supabaseURL else { throw APIError.notConfigured }
         var components = URLComponents(url: baseURL.appending(path: "rest/v1/posts"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
-            URLQueryItem(name: "select", value: "id,title,description,image_url,location,latitude,longitude,reward,created_at,group:group_id(id,name,description)"),
+            URLQueryItem(name: "select", value: "id,title,description,image_url,location,latitude,longitude,reward,created_at,user_id,fixed,under_review,deleted_at,group:group_id(id,name,description)"),
             URLQueryItem(name: "fixed", value: "eq.false"),
             URLQueryItem(name: "under_review", value: "neq.true"),
             URLQueryItem(name: "deleted_at", value: "is.null"),
@@ -66,6 +79,22 @@ actor APIClient {
         request.setValue(configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue("Bearer \(accessToken ?? configuration.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
         return try await decode(request, as: [GanamosPost].self)
+    }
+
+    func isGroupAdmin(groupID: UUID, accessToken: String, userID: UUID) async throws -> Bool {
+        guard let baseURL = configuration.supabaseURL else { throw APIError.notConfigured }
+        var components = URLComponents(url: baseURL.appending(path: "rest/v1/group_members"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "select", value: "id"),
+            URLQueryItem(name: "group_id", value: "eq.\(groupID.uuidString.lowercased())"),
+            URLQueryItem(name: "user_id", value: "eq.\(userID.uuidString.lowercased())"),
+            URLQueryItem(name: "role", value: "eq.admin"),
+            URLQueryItem(name: "status", value: "eq.approved"),
+            URLQueryItem(name: "limit", value: "1")
+        ]
+        struct Membership: Decodable { let id: UUID }
+        let memberships = try await decode(authorizedRequest(url: components.url!, accessToken: accessToken), as: [Membership].self)
+        return !memberships.isEmpty
     }
 
     func uploadPostImage(_ data: Data, accessToken: String, userID: UUID, folder: String) async throws -> URL {
@@ -171,6 +200,11 @@ actor APIClient {
         return try await decode(authorizedRequest(url: components.url!, accessToken: accessToken), as: [WalletTransaction].self)
     }
 
+    func bitcoinPrice() async throws -> Double {
+        let response = try await decode(URLRequest(url: URL(string: "https://ganamos.earth/api/bitcoin-price")!), as: BitcoinPriceResponse.self)
+        return response.price
+    }
+
     private func authorizedRequest(url: URL, accessToken: String) -> URLRequest {
         var request = URLRequest(url: url)
         request.setValue(configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
@@ -188,4 +222,8 @@ actor APIClient {
         }
         return try decoder.decode(type, from: data)
     }
+}
+
+private struct BitcoinPriceResponse: Decodable {
+    let price: Double
 }

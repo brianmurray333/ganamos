@@ -86,35 +86,151 @@ struct NewFixView: View {
 
 struct WalletView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(\.openURL) private var openURL
     @State private var transactions: [WalletTransaction] = []
+    @State private var bitcoinPrice: Double?
     @State private var isLoading = false
     @State private var error: String?
+    @AppStorage("walletConnectPromptDismissed") private var connectPromptDismissed = false
 
     var body: some View {
-        List {
-            Section {
-                VStack(spacing: 10) {
-                    Text("\(session.profile?.balance ?? 0) sats")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                    Text("Available balance").foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity).padding()
+        ZStack {
+            GanamosColor.canvas.ignoresSafeArea()
+            ScrollView {
+                LazyVStack(spacing: 18) {
+                    balanceCard
+                    walletActions
+                    if !connectPromptDismissed { connectWalletBanner }
+                    transactionHistory
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
             }
-            Section("Recent activity") {
-                if isLoading { ProgressView().frame(maxWidth: .infinity) }
-                else if let error { Text(error).foregroundStyle(.secondary) }
-                else if transactions.isEmpty { Text("No transactions yet").foregroundStyle(.secondary) }
-                else { ForEach(transactions) { TransactionRow(transaction: $0) } }
-            }
+            .refreshable { await load() }
         }
-        .navigationTitle("Wallet")
-        .refreshable { await load() }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .task(id: session.accessToken) { await load() }
+        .preferredColorScheme(.dark)
         .overlay {
             if !session.isAuthenticated {
-                EmptyState(icon: "lock.fill", title: "Sign in to view your wallet", message: "Your Ganamos balance and Lightning activity will appear here.")
+                ZStack {
+                    GanamosColor.canvas.ignoresSafeArea()
+                    EmptyState(icon: "lock.fill", title: "Sign in to view your wallet", message: "Your Ganamos balance and Lightning activity will appear here.")
                     .onTapGesture { session.isPresentingLogin = true }
+                }
             }
         }
+    }
+
+    private var balanceCard: some View {
+        VStack(spacing: 8) {
+            Circle()
+                .fill(Color.orange.opacity(0.16))
+                .frame(width: 58, height: 58)
+                .overlay(Image("BitcoinLogo").resizable().scaledToFit().frame(width: 34, height: 34))
+                .padding(.bottom, 2)
+            Text("Current Balance")
+                .font(.subheadline)
+                .foregroundStyle(GanamosColor.mutedText)
+            Text(compactSats(session.profile?.balance ?? 0))
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+            Text(usdBalance)
+                .font(.subheadline)
+                .foregroundStyle(GanamosColor.mutedText)
+                .opacity(bitcoinPrice == nil ? 0 : 1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+        .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(GanamosColor.border))
+    }
+
+    private var walletActions: some View {
+        HStack(spacing: 14) {
+            WalletAction(title: "Receive", icon: "arrow.down", color: GanamosColor.green) {
+                openSecureWalletPath("/wallet/deposit")
+            }
+            WalletAction(title: "Send", icon: "arrow.up", color: .red) {
+                openSecureWalletPath("/wallet/withdraw")
+            }
+        }
+    }
+
+    private var connectWalletBanner: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Connect Your Lightning Wallet").font(.headline)
+                    Text("Use your own wallet for full control of your funds.")
+                        .font(.subheadline).foregroundStyle(GanamosColor.mutedText)
+                }
+                Spacer()
+                Button { connectPromptDismissed = true } label: {
+                    Image(systemName: "xmark").foregroundStyle(GanamosColor.mutedText)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            Button { openSecureWalletPath("/wallet") } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "bolt")
+                    Text("Connect Wallet").fontWeight(.semibold)
+                    Image(systemName: "chevron.right").font(.caption)
+                }
+                .padding(.horizontal, 16).frame(height: 48)
+                .background(Color.purple, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            Text("Works with Alby, Zeus, Mutiny & more")
+                .font(.caption).foregroundStyle(GanamosColor.mutedText)
+        }
+        .padding(18)
+        .foregroundStyle(.white)
+        .background(Color.purple.opacity(0.14), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.purple.opacity(0.55)))
+    }
+
+    private var transactionHistory: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Transaction History", systemImage: "clock.arrow.circlepath")
+                .font(.title3.weight(.semibold)).foregroundStyle(.white)
+            if isLoading && transactions.isEmpty { ProgressView().frame(maxWidth: .infinity).padding() }
+            else if let error { Text(error).font(.subheadline).foregroundStyle(GanamosColor.mutedText).padding(.vertical, 8) }
+            else if transactions.isEmpty { Text("No transactions yet").foregroundStyle(GanamosColor.mutedText).padding(.vertical, 8) }
+            else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(transactions.enumerated()), id: \.element.id) { index, transaction in
+                        TransactionRow(transaction: transaction)
+                        if index < transactions.count - 1 { Divider().overlay(GanamosColor.border).padding(.leading, 46) }
+                    }
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(GanamosColor.border))
+    }
+
+    private var usdBalance: String {
+        guard let bitcoinPrice else { return "$0.00 USD" }
+        let usd = Double(session.profile?.balance ?? 0) / 100_000_000 * bitcoinPrice
+        return String(format: "$%.2f USD", usd)
+    }
+
+    private func compactSats(_ amount: Int) -> String {
+        guard abs(amount) >= 1_000 else { return "\(amount.formatted()) sats" }
+        let value = Double(amount) / 1_000
+        let text = value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+        return "\(text)k sats"
+    }
+
+    private func openSecureWalletPath(_ path: String) {
+        if session.isAuthenticated { openURL(URL(string: "https://ganamos.earth\(path)")!) }
+        else { session.isPresentingLogin = true }
     }
 
     private func load() async {
@@ -125,9 +241,31 @@ struct WalletView: View {
         do {
             async let profile: Void = session.refreshProfile()
             async let activity = APIClient.shared.transactions(accessToken: token, userID: userID)
+            async let price = APIClient.shared.bitcoinPrice()
             _ = try await profile
             transactions = try await activity
+            bitcoinPrice = try? await price
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+private struct WalletAction: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(systemName: icon).font(.title3.weight(.medium)).foregroundStyle(color)
+                Text(title).font(.headline).foregroundStyle(.white)
+            }
+            .frame(maxWidth: .infinity).frame(height: 104)
+            .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(GanamosColor.border))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -135,8 +273,11 @@ private struct TransactionRow: View {
     let transaction: WalletTransaction
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: transaction.amount >= 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                .font(.title2).foregroundStyle(transaction.amount >= 0 ? GanamosColor.green : .red)
+            Circle()
+                .fill((transaction.amount >= 0 ? GanamosColor.green : Color.red).opacity(0.15))
+                .frame(width: 34, height: 34)
+                .overlay(Image(systemName: transaction.amount >= 0 ? "arrow.down" : "arrow.up")
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(transaction.amount >= 0 ? GanamosColor.green : .red))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.headline)
                 Text(transaction.memo ?? transaction.createdAt.formatted(date: .abbreviated, time: .shortened))
@@ -147,7 +288,7 @@ private struct TransactionRow: View {
                 Text("\(transaction.amount > 0 ? "+" : "")\(transaction.amount) sats").fontWeight(.semibold)
                 Text(transaction.status.rawValue.capitalized).font(.caption).foregroundStyle(.secondary)
             }
-        }.padding(.vertical, 4)
+        }.padding(.vertical, 12)
     }
 
     private var title: String {
