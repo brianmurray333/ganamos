@@ -2,22 +2,33 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @State private var selection: AppTab = .home
 
     var body: some View {
         @Bindable var session = session
-        TabView {
+        TabView(selection: $selection) {
             NavigationStack { FeedView() }
-                .tabItem { Label("Fixes", systemImage: "house.fill") }
+                .tag(AppTab.home)
+                .tabItem { Label("Home", image: "LucideHome") }
             NavigationStack { MapScreen() }
-                .tabItem { Label("Map", systemImage: "map.fill") }
+                .tag(AppTab.map)
+                .tabItem { Label("Map", image: "LucideMap") }
             NavigationStack { NewFixView() }
-                .tabItem { Label("New", systemImage: "plus.circle.fill") }
+                .tag(AppTab.new)
+                .tabItem { Label("New", systemImage: "plus") }
             NavigationStack { WalletView() }
-                .tabItem { Label("Wallet", systemImage: "bitcoinsign.circle.fill") }
+                .tag(AppTab.wallet)
+                .tabItem { Label("Wallet", image: "LucideWallet") }
             NavigationStack { ProfileView() }
-                .tabItem { Label("Profile", systemImage: "person.crop.circle.fill") }
+                .tag(AppTab.profile)
+                .tabItem { Label("Profile", image: "LucideUser") }
         }
+        .tint(GanamosColor.green)
         .sheet(isPresented: $session.isPresentingLogin) { LoginView() }
         .task { await session.restore() }
     }
+}
+
+private enum AppTab: Hashable {
+    case home, map, new, wallet, profile
 }
