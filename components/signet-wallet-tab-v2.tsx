@@ -26,7 +26,12 @@ export function SignetWalletTab() {
         const react = await import("@lightninglabs/wavelength-react")
 
         // Assets are expected under /public/wavewalletdk/<version>/
-        const baseUrl = `/wavewalletdk/${web.RUNTIME_MANIFEST_VERSION}/`
+        // Provide an ABSOLUTE same-origin base URL so the SDK's URL() constructor
+        // receives a valid base (relative bases throw in new URL()).
+        const baseUrl = new URL(
+          `/wavewalletdk/${web.RUNTIME_MANIFEST_VERSION}/`,
+          window.location.origin
+        ).toString()
 
         const walletEngine = web.createWebWalletEngine({
           runtimeThread: "main",
