@@ -36,8 +36,13 @@ export function SignetWalletTab() {
         // Build the client explicitly and then wrap it in an engine.
         // This path mirrors the official demo and ensures runtimeBaseUrl is
         // forwarded before start() is called.
+        // Force sqlite bridge to use same-origin worker and sqlite3 URLs
+        ;(globalThis as any).sqliteBridgeWorkerURL = `${baseUrl}sqlite-worker.js`
+        ;(globalThis as any).sqliteBridgeSQLiteJSURL = `${baseUrl}sqlite3.js`
+
         const client = web.createWebClient({
           runtimeBaseUrl: baseUrl,
+          debug: true,
         })
         await client.ready()
         const engine = web.createWalletEngine({
@@ -278,6 +283,9 @@ export function SignetWalletTab() {
               <div>{receiveError?.message || sendError?.message || (error && (error.message || String(error)))}</div>
               {"code" in (error || {}) && (error as any).code && (
                 <div className="opacity-80">Code: {(error as any).code}</div>
+              )}
+              {"detail" in (error || {}) && (error as any).detail && (
+                <div className="opacity-80 break-all">Detail: {(error as any).detail}</div>
               )}
             </div>
           )}
