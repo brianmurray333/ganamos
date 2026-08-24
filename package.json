@@ -32,6 +32,8 @@
     "dev:local": "npm run supabase:start && npm run dev"
   },
   "dependencies": {
+    "@lightninglabs/wavelength-react": "latest",
+    "@lightninglabs/wavelength-web": "latest",
     "@getalby/sdk": "^3.5.0",
     "@googlemaps/google-maps-services-js": "latest",
     "@radix-ui/react-accordion": "^1.1.2",
