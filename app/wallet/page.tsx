@@ -18,7 +18,7 @@ import { WalletConnectBanner } from "@/components/wallet-connect-banner"
 import { WalletConnectionModal } from "@/components/wallet-connection-modal"
 import { ConnectedWalletCard } from "@/components/connected-wallet-card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { SignetWalletTab } from "@/components/signet-wallet-tab"
+import { SignetWalletTab } from "@/components/signet-wallet-tab-v2"
 import {
   DropdownMenu,
   DropdownMenuContent,
