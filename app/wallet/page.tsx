@@ -17,6 +17,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { WalletConnectBanner } from "@/components/wallet-connect-banner"
 import { WalletConnectionModal } from "@/components/wallet-connection-modal"
 import { ConnectedWalletCard } from "@/components/connected-wallet-card"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { SignetWalletTab } from "@/components/signet-wallet-tab"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -348,14 +350,14 @@ export default function WalletPage() {
     )
   }
 
-  return (
-    <div className="container max-w-md mx-auto pt-6 px-4">
+  const isBrian = user?.email?.toLowerCase() === "brianmurray03@gmail.com"
+
+  // Helper rendering for the existing custodial wallet UI
+  const CustodialContent = (
+    <>
       {/* Connected wallet card */}
       {nwcStatus?.hasNWCWallet && nwcStatus.wallet && (
-        <ConnectedWalletCard
-          wallet={nwcStatus.wallet}
-          onDisconnect={handleWalletDisconnected}
-        />
+        <ConnectedWalletCard wallet={nwcStatus.wallet} onDisconnect={handleWalletDisconnected} />
       )}
 
       {/* Balance Card */}
@@ -379,17 +381,13 @@ export default function WalletPage() {
                         {nwcStatus.wallet?.name || "Connected Wallet"}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem 
-                        onClick={() => setShowConnectionModal(true)}
-                      >
+                      <DropdownMenuItem onClick={() => setShowConnectionModal(true)}>
                         <Zap className="h-4 w-4 mr-2" />
                         Change Wallet
                       </DropdownMenuItem>
                     </>
                   ) : (
-                    <DropdownMenuItem 
-                      onClick={() => setShowConnectionModal(true)}
-                    >
+                    <DropdownMenuItem onClick={() => setShowConnectionModal(true)}>
                       <Zap className="h-4 w-4 mr-2" />
                       Connect Lightning Wallet
                     </DropdownMenuItem>
@@ -406,7 +404,9 @@ export default function WalletPage() {
             <p className="text-sm text-muted-foreground mb-1">
               {nwcStatus?.hasNWCWallet ? "Ganamos Balance" : "Current Balance"}
             </p>
-            <p className="text-3xl font-bold" data-testid="wallet-balance">{formatSatsValue(balance || 0)}</p>
+            <p className="text-3xl font-bold" data-testid="wallet-balance">
+              {formatSatsValue(balance || 0)}
+            </p>
             <p className="text-sm text-muted-foreground mt-1 h-5">
               {!isPriceLoading && bitcoinPrice && calculateUsdValue(balance || 0) ? (
                 `$${calculateUsdValue(balance || 0)} USD`
@@ -415,9 +415,7 @@ export default function WalletPage() {
               )}
             </p>
             {nwcStatus?.hasNWCWallet && (
-              <p className="text-xs text-muted-foreground mt-2">
-                Payments will use your connected wallet
-              </p>
+              <p className="text-xs text-muted-foreground mt-2">Payments will use your connected wallet</p>
             )}
           </div>
         </CardContent>
@@ -443,12 +441,9 @@ export default function WalletPage() {
         </Link>
       </div>
 
-      {/* Connect wallet banner - below Send/Receive buttons */}
+      {/* Connect wallet banner - below Send/Receive buttons (custodial tab only) */}
       {showBanner && (
-        <WalletConnectBanner
-          onConnect={() => setShowConnectionModal(true)}
-          onDismiss={handleBannerDismiss}
-        />
+        <WalletConnectBanner onConnect={() => setShowConnectionModal(true)} onDismiss={handleBannerDismiss} />
       )}
 
       <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card">
@@ -467,6 +462,29 @@ export default function WalletPage() {
         onOpenChange={setShowConnectionModal}
         onConnected={handleWalletConnected}
       />
+    </>
+  )
+
+  if (!isBrian) {
+    // Existing single-wallet view for everyone else
+    return <div className="container max-w-md mx-auto pt-6 px-4">{CustodialContent}</div>
+  }
+
+  return (
+    <div className="container max-w-md mx-auto pt-6 px-4">
+      <Tabs defaultValue="ganamos" className="w-full">
+        <div className="mb-4 flex items-center justify-between">
+          <TabsList>
+            <TabsTrigger value="ganamos">Ganamos</TabsTrigger>
+            <TabsTrigger value="signet">Signet (Practice)</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="ganamos">{CustodialContent}</TabsContent>
+        <TabsContent value="signet">
+          <SignetWalletTab />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
