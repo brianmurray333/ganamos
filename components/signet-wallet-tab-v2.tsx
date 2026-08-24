@@ -34,7 +34,7 @@ export function SignetWalletTab() {
         ).toString()
 
         const walletEngine = web.createWebWalletEngine({
-          runtimeThread: "main",
+          // Worker mode (default) with OPFS persistence; requires COOP/COEP headers
           runtimeBaseUrl: baseUrl,
           config: web.defaultConfig("signet" as any),
           autoStart: true,
