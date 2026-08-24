@@ -6,7 +6,7 @@ import { useAuth } from \"@/components/auth-provider\"
 import { Card, CardContent } from \"@/components/ui/card\"
 import { Button } from \"@/components/ui/button\"
 import { ArrowLeft } from \"lucide-react\"
-import { SignetWalletTab } from \"@/components/signet-wallet-tab\"
+import { SignetWalletTab } from \"@/components/signet-wallet-tab-v2\"
 
 export default function SignetRoutePage() {
   const router = useRouter()

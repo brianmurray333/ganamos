@@ -12,7 +12,6 @@ import fsp from "node:fs/promises"
 import path from "node:path"
 import os from "node:os"
 import { pipeline } from "node:stream/promises"
-import tar from "tar"
 
 async function main() {
   try {
@@ -44,7 +43,15 @@ async function main() {
     // Stream to tmp file (Windows-safe) then extract
     const tmpFile = path.join(os.tmpdir(), `wavewalletdk-${version}-${Date.now()}.tar.gz`)
     await pipeline(res.body, fs.createWriteStream(tmpFile))
-    await tar.x({ file: tmpFile, cwd: baseDir })
+    // Import tar lazily to avoid ESM resolution issues if dev deps are pruned
+    let tarMod
+    try {
+      tarMod = await import("tar")
+    } catch (e) {
+      console.warn("[wavelength-assets] 'tar' module unavailable, skipping extraction")
+      return
+    }
+    await tarMod.x({ file: tmpFile, cwd: baseDir })
     await fsp.unlink(tmpFile).catch(() => {})
 
     const postExist = await filesExist(baseDir, assets)

@@ -45,3 +45,6 @@ playwright-report/
 # security audit files (local only)
 RLS_POLICY_AUDIT.md
 SECURITY_*.local.md
+
+# Wavelength runtime assets (fetched on postinstall)
+/public/wavewalletdk/
