@@ -33,16 +33,22 @@ export function SignetWalletTab() {
           window.location.origin
         ).toString()
 
-        const walletEngine = web.createWebWalletEngine({
-          // Worker mode (default) with OPFS persistence; requires COOP/COEP headers
+        // Build the client explicitly and then wrap it in an engine.
+        // This path mirrors the official demo and ensures runtimeBaseUrl is
+        // forwarded before start() is called.
+        const client = web.createWebClient({
           runtimeBaseUrl: baseUrl,
+        })
+        await client.ready()
+        const engine = web.createWalletEngine({
+          client,
           config: web.defaultConfig("signet" as any),
           autoStart: true,
         })
 
         if (!mounted) return
         setWlReact(react)
-        setEngine(walletEngine)
+        setEngine(engine)
       } catch (err: any) {
         if (!mounted) return
         const message =
@@ -268,8 +274,11 @@ export function SignetWalletTab() {
           )}
 
           {(receiveError || sendError || error) && (
-            <div className="text-xs text-red-500">
-              {receiveError?.message || sendError?.message || error?.message}
+            <div className="text-xs text-red-500 space-y-1">
+              <div>{receiveError?.message || sendError?.message || (error && (error.message || String(error)))}</div>
+              {"code" in (error || {}) && (error as any).code && (
+                <div className="opacity-80">Code: {(error as any).code}</div>
+              )}
             </div>
           )}
 
