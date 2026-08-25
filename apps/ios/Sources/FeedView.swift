@@ -145,6 +145,7 @@ struct PostDetailView: View {
     @Environment(\.openURL) private var openURL
     @State private var isPresentingFix = false
     @State private var isGroupAdmin = false
+    @State private var deadline: Date?
 
     private var displayTitle: String {
         post.title?.isEmpty == false ? post.title! : "Community fix"
@@ -193,6 +194,34 @@ struct PostDetailView: View {
                                 }
                                 .font(.subheadline)
                                 .foregroundStyle(GanamosColor.mutedText)
+                                
+                                // Deadline editor/view
+                                if let userID = session.userID, post.userID == userID {
+                                    Menu {
+                                        Button("In 1 hour") { deadline = Date().addingTimeInterval(3600); Task { await setDeadline() } }
+                                        Button("In 12 hours") { deadline = Date().addingTimeInterval(12 * 3600); Task { await setDeadline() } }
+                                        Button("In 1 day") { deadline = Date().addingTimeInterval(24 * 3600); Task { await setDeadline() } }
+                                        Button("In 3 days") { deadline = Date().addingTimeInterval(72 * 3600); Task { await setDeadline() } }
+                                        Button("In 7 days") { deadline = Date().addingTimeInterval(168 * 3600); Task { await setDeadline() } }
+                                        if deadline != nil { Button("Remove deadline", role: .destructive) { deadline = nil; Task { await setDeadline() } } }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "timer")
+                                            Text(deadline.map { "Expires " + $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) } ?? "Add deadline")
+                                        }
+                                        .font(.subheadline.weight(.medium))
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(.black.opacity(0.22), in: Capsule())
+                                    }
+                                    .menuStyle(.automatic)
+                                } else if let deadline {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "timer")
+                                        Text("Expires " + deadline.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
+                                    }
+                                    .font(.subheadline)
+                                    .foregroundStyle(GanamosColor.mutedText)
+                                }
                             }
                             Spacer(minLength: 4)
                             RewardBadge(amount: post.reward)
@@ -269,7 +298,10 @@ struct PostDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         .sheet(isPresented: $isPresentingFix) { NavigationStack { SubmitFixView(post: post) } }
-        .task(id: session.userID) { await loadGroupAdminStatus() }
+        .task(id: session.userID) {
+            await loadGroupAdminStatus()
+            deadline = post.expiresAt
+        }
         .preferredColorScheme(.dark)
     }
 
@@ -282,6 +314,11 @@ struct PostDetailView: View {
             return
         }
         isGroupAdmin = (try? await APIClient.shared.isGroupAdmin(groupID: groupID, accessToken: token, userID: userID)) ?? false
+    }
+    
+    private func setDeadline() async {
+        guard let token = session.accessToken else { return }
+        try? await APIClient.shared.updatePostExpiration(postID: post.id, expiresAt: deadline, accessToken: token)
     }
 }
 

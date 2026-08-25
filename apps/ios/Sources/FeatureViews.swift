@@ -29,6 +29,7 @@ struct MapScreen: View {
 
 struct NewFixView: View {
     @Environment(SessionStore.self) private var session
+    @State private var navigateToPost: GanamosPost?
     @State private var title = ""
     @State private var details = ""
     @State private var location = ""
@@ -40,6 +41,14 @@ struct NewFixView: View {
     @State private var didCreate = false
     var body: some View {
         Form {
+            // Invisible navigation link to detail after creation
+            NavigationLink(isActive: .constant(navigateToPost != nil)) {
+                if let post = navigateToPost {
+                    PostDetailView(post: post)
+                } else {
+                    EmptyView()
+                }
+            } label: { EmptyView() }
             Section("What needs fixing?") {
                 TextField("Short title", text: $title)
                 TextField("Describe the problem", text: $details, axis: .vertical).lineLimit(4...8)
@@ -73,9 +82,27 @@ struct NewFixView: View {
         do {
             var imageURL: URL?
             if let photoData { imageURL = try await APIClient.shared.uploadPostImage(photoData, accessToken: token, userID: userID, folder: "posts") }
-            try await APIClient.shared.createPost(title: title, description: details, location: location, imageURL: imageURL, reward: reward, accessToken: token, userID: userID, profile: session.profile)
+            let result = try await APIClient.shared.createPost(title: title, description: details, location: location, imageURL: imageURL, reward: reward, accessToken: token, userID: userID, profile: session.profile)
             try await session.refreshProfile()
-            didCreate = true
+            // Navigate to the newly created post's detail view
+            navigateToPost = GanamosPost(
+                id: result.postID,
+                title: title.isEmpty ? nil : title,
+                description: details,
+                imageURL: imageURL,
+                location: location.isEmpty ? nil : location,
+                latitude: nil,
+                longitude: nil,
+                reward: reward,
+                createdAt: Date(),
+                expiresAt: nil,
+                group: nil,
+                userID: userID,
+                fixed: false,
+                underReview: false,
+                deletedAt: nil
+            )
+            didCreate = false
         } catch { self.error = error.localizedDescription }
     }
 
