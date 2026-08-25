@@ -21,6 +21,13 @@ const nextConfig = {
         ],
       },
       {
+        source: "/signet-wallet.html",
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+        ],
+      },
+      {
         // Ensure runtime binaries served from /public/wavewalletdk/... are treated as same-origin resources
         source: "/wavewalletdk/:path*",
         headers: [

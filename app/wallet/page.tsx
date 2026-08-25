@@ -18,7 +18,6 @@ import { WalletConnectBanner } from "@/components/wallet-connect-banner"
 import { WalletConnectionModal } from "@/components/wallet-connection-modal"
 import { ConnectedWalletCard } from "@/components/connected-wallet-card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { SignetWalletTab } from "@/components/signet-wallet-tab-v2"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -482,7 +481,15 @@ export default function WalletPage() {
 
         <TabsContent value="ganamos">{CustodialContent}</TabsContent>
         <TabsContent value="signet">
-          <SignetWalletTab />
+          {/* Isolate the demo boot to a static page that matches official demo */}
+          <div className="rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700/50">
+            <iframe
+              title="Signet Wallet (Wavelength)"
+              src="/signet-wallet.html"
+              style={{ width: "100%", height: 680, border: "0" }}
+              referrerPolicy="no-referrer"
+            />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
