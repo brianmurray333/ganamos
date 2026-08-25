@@ -30,6 +30,7 @@ struct MapScreen: View {
 struct NewFixView: View {
     @Environment(SessionStore.self) private var session
     @State private var navigateToPost: GanamosPost?
+    @State private var pushToDetail = false
     @State private var title = ""
     @State private var details = ""
     @State private var location = ""
@@ -42,11 +43,13 @@ struct NewFixView: View {
     var body: some View {
         Form {
             // Invisible navigation link to detail after creation
-            NavigationLink(isActive: .constant(navigateToPost != nil)) {
-                if let post = navigateToPost {
-                    PostDetailView(post: post)
-                } else {
-                    EmptyView()
+            NavigationLink(isActive: $pushToDetail) {
+                Group {
+                    if let post = navigateToPost {
+                        PostDetailView(post: post)
+                    } else {
+                        EmptyView()
+                    }
                 }
             } label: { EmptyView() }
             Section("What needs fixing?") {
@@ -102,6 +105,7 @@ struct NewFixView: View {
                 underReview: false,
                 deletedAt: nil
             )
+            pushToDetail = true
             didCreate = false
         } catch { self.error = error.localizedDescription }
     }
