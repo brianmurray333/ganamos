@@ -44,6 +44,14 @@
       <div class="spacer"></div>
       <div class="muted">If boot fails, details will appear above. Assets are served from <code>/wavewalletdk/v0.1.1/</code>.</div>
     </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "@lightninglabs/wavelength-web": "/wavewalletdk/v0.1.1/web/index.js",
+          "@lightninglabs/wavelength-core": "/wavewalletdk/v0.1.1/core/index.js"
+        }
+      }
+    </script>
     <script type="module">
       // Surface unhandled errors in the UI
       const errBox = document.getElementById('error');
@@ -59,8 +67,8 @@
         if (st) { stackBox.style.display = 'block'; stackBox.textContent = st; }
       });
 
-      // Import the web transport from a CORS-enabled CDN (COEP allows CORS); worker + assets stay same-origin.
-      import { createWebClient, createWalletEngine, defaultConfig } from 'https://esm.sh/@lightninglabs/wavelength-web@0.1.1?bundle';
+      // Import the web transport via same-origin import map (no external CDN)
+      import { createWebClient, createWalletEngine, defaultConfig } from '@lightninglabs/wavelength-web';
 
       const version = 'v0.1.1';
       const base = new URL(`/wavewalletdk/${version}/`, window.location.origin).toString();

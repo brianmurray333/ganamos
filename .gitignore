@@ -46,5 +46,8 @@ playwright-report/
 RLS_POLICY_AUDIT.md
 SECURITY_*.local.md
 
-# Wavelength runtime assets (fetched on postinstall)
-/public/wavewalletdk/
+# Wavelength runtime assets
+# Ignore by default, but allow the pinned SDK version files (minus the large uncompressed .wasm)
+/public/wavewalletdk/**
+!/public/wavewalletdk/v0.1.1/**
+/public/wavewalletdk/v0.1.1/wavewalletdk.wasm
