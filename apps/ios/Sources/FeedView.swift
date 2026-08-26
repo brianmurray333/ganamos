@@ -195,33 +195,7 @@ struct PostDetailView: View {
                                 .font(.subheadline)
                                 .foregroundStyle(GanamosColor.mutedText)
                                 
-                                // Deadline editor/view
-                                if let userID = session.userID, post.userID == userID {
-                                    Menu {
-                                        Button("In 1 hour") { deadline = Date().addingTimeInterval(3600); Task { await setDeadline() } }
-                                        Button("In 12 hours") { deadline = Date().addingTimeInterval(12 * 3600); Task { await setDeadline() } }
-                                        Button("In 1 day") { deadline = Date().addingTimeInterval(24 * 3600); Task { await setDeadline() } }
-                                        Button("In 3 days") { deadline = Date().addingTimeInterval(72 * 3600); Task { await setDeadline() } }
-                                        Button("In 7 days") { deadline = Date().addingTimeInterval(168 * 3600); Task { await setDeadline() } }
-                                        if deadline != nil { Button("Remove deadline", role: .destructive) { deadline = nil; Task { await setDeadline() } } }
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            Image(systemName: "timer")
-                                            Text(deadline.map { "Expires " + $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) } ?? "Add deadline")
-                                        }
-                                        .font(.subheadline.weight(.medium))
-                                        .padding(.horizontal, 10).padding(.vertical, 6)
-                                        .background(.black.opacity(0.22), in: Capsule())
-                                    }
-                                    .menuStyle(.automatic)
-                                } else if let deadline {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "timer")
-                                        Text("Expires " + deadline.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundStyle(GanamosColor.mutedText)
-                                }
+                                
                             }
                             Spacer(minLength: 4)
                             RewardBadge(amount: post.reward)
@@ -257,6 +231,34 @@ struct PostDetailView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.white)
                         .background(GanamosColor.green, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                        // Deadline control directly above Mark Complete
+                        if let userID = session.userID, post.userID == userID {
+                            Menu {
+                                Button("In 1 hour") { deadline = Date().addingTimeInterval(3600); Task { await setDeadline() } }
+                                Button("In 12 hours") { deadline = Date().addingTimeInterval(12 * 3600); Task { await setDeadline() } }
+                                Button("In 1 day") { deadline = Date().addingTimeInterval(24 * 3600); Task { await setDeadline() } }
+                                Button("In 3 days") { deadline = Date().addingTimeInterval(72 * 3600); Task { await setDeadline() } }
+                                Button("In 7 days") { deadline = Date().addingTimeInterval(168 * 3600); Task { await setDeadline() } }
+                                if deadline != nil { Button("Remove deadline", role: .destructive) { deadline = nil; Task { await setDeadline() } } }
+                            } label: {
+                                Text(deadline.map { "Expires " + $0.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)) } ?? "Add deadline")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 52)
+                                    .foregroundStyle(.white)
+                                    .background(GanamosColor.canvas, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(GanamosColor.border))
+                            }
+                        } else if let deadline {
+                            Text("Expires " + deadline.formatted(.relative(presentation: .named, unitsStyle: .abbreviated)))
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .foregroundStyle(.white)
+                                .background(GanamosColor.canvas, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(GanamosColor.border))
+                        }
 
                         if canMarkComplete {
                             Button {

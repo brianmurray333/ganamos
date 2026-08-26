@@ -32,7 +32,6 @@ import dynamic from "next/dynamic"
 import PostDetailSkeleton from "@/components/post-detail-skeleton"
 import { StaticMapWidget } from "@/components/static-map-widget"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
-import { Timer } from "lucide-react"
 
 // Dynamically import the map to avoid SSR issues with Google Maps
 const PostDetailMap = dynamic(
@@ -2295,63 +2294,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   <span>Fix submitted by {post.submitted_fix_by_name}</span>
                 </div>
               )}
-              {/* Deadline editor/view */}
-              <div className="mt-2">
-                {isOriginalPoster ? (
-                  <Popover open={showDeadlinePicker} onOpenChange={setShowDeadlinePicker}>
-                    <PopoverTrigger asChild>
-                      <button
-                        type="button"
-                        className="h-9 px-3 inline-flex items-center gap-2 rounded-md border border-input bg-background text-sm transition-colors hover:bg-accent"
-                        title={deadline ? `Expires ${formatAbbreviatedTimeRemaining(deadline)}` : 'Add deadline'}
-                      >
-                        <Timer className={`w-4 h-4 ${deadline ? 'text-green-600' : 'text-muted-foreground'}`} />
-                        <span className="whitespace-nowrap">
-                          {deadline ? `Expires ${formatAbbreviatedTimeRemaining(deadline)}` : 'Add deadline'}
-                        </span>
-                      </button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-auto p-1">
-                      <div className="flex flex-col">
-                        {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
-                          { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
-                          <button
-                            key={label}
-                            type="button"
-                            onClick={() => { handleUpdateDeadline(new Date(Date.now() + hrs * 3600_000)); setShowDeadlinePicker(false) }}
-                            className={`flex items-center px-3 py-2 text-sm rounded-sm transition-colors ${
-                              deadline && Math.abs(deadline.getTime() - Date.now() - hrs * 3600_000) < 60_000
-                                ? 'bg-accent text-accent-foreground'
-                                : 'hover:bg-accent hover:text-accent-foreground'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                        {deadline && (
-                          <>
-                            <div className="h-px bg-muted my-1" />
-                            <button
-                              type="button"
-                              onClick={() => { handleUpdateDeadline(null); setShowDeadlinePicker(false) }}
-                              className="flex items-center px-3 py-2 text-sm rounded-sm text-red-500 hover:bg-accent transition-colors"
-                            >
-                              Remove deadline
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                ) : (
-                  !!deadline && (
-                    <div className="flex items-center text-sm text-muted-foreground">
-                      <Timer className="w-4 h-4 mr-1" />
-                      <span>Expires {formatAbbreviatedTimeRemaining(deadline)}</span>
-                    </div>
-                  )
-                )}
-              </div>
+              
             </div>
             
             {/* Bitcoin Map Marker with Sats Reward on the right - EXACT copy from dashboard */}
@@ -2658,6 +2601,57 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 setShowCamera(true)
               }
             }}>Start</Button>
+          )}
+          
+          {/* Deadline control directly above Mark Complete */}
+          {isOriginalPoster ? (
+            <Popover open={showDeadlinePicker} onOpenChange={setShowDeadlinePicker}>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className="w-full h-12 mt-4 text-lg font-semibold"
+                >
+                  {deadline ? `Expires ${formatAbbreviatedTimeRemaining(deadline)}` : 'Add deadline'}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="center" collisionPadding={8} className="w-auto p-1">
+                <div className="flex flex-col">
+                  {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
+                    { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => { handleUpdateDeadline(new Date(Date.now() + hrs * 3600_000)); setShowDeadlinePicker(false) }}
+                      className={`flex items-center px-3 py-2 text-sm rounded-sm transition-colors ${
+                        deadline && Math.abs(deadline.getTime() - Date.now() - hrs * 3600_000) < 60_000
+                          ? 'bg-accent text-accent-foreground'
+                          : 'hover:bg-accent hover:text-accent-foreground'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {deadline && (
+                    <>
+                      <div className="h-px bg-muted my-1" />
+                      <button
+                        type="button"
+                        onClick={() => { handleUpdateDeadline(null); setShowDeadlinePicker(false) }}
+                        className="flex items-center px-3 py-2 text-sm rounded-sm text-red-500 hover:bg-accent transition-colors"
+                      >
+                        Remove deadline
+                      </button>
+                    </>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            !!deadline && (
+              <Button variant="outline" className="w-full h-12 mt-4 text-lg font-semibold" disabled>
+                {`Expires ${formatAbbreviatedTimeRemaining(deadline)}`}
+              </Button>
+            )
           )}
           
           
