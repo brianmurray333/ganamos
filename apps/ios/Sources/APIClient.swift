@@ -120,7 +120,7 @@ actor APIClient {
         accessToken: String,
         userID: UUID,
         profile: UserProfile?
-    ) async throws {
+    ) async throws -> CreatePostResult {
         guard let baseURL = configuration.supabaseURL else { throw APIError.notConfigured }
         var request = authorizedRequest(url: baseURL.appending(path: "rest/v1/rpc/create_post_atomic"), accessToken: accessToken)
         request.httpMethod = "POST"
@@ -139,7 +139,27 @@ actor APIClient {
         if let imageURL { payload["p_image_url"] = imageURL.absoluteString }
         if let location, !location.isEmpty { payload["p_location"] = location }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        _ = try await decode(request, as: CreatePostResult.self)
+        return try await decode(request, as: CreatePostResult.self)
+    }
+
+    func updatePostExpiration(postID: UUID, expiresAt: Date?, accessToken: String) async throws {
+        guard let baseURL = configuration.supabaseURL else { throw APIError.notConfigured }
+        var components = URLComponents(url: baseURL.appending(path: "rest/v1/posts"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "id", value: "eq.\(postID.uuidString.lowercased())")
+        ]
+        var request = authorizedRequest(url: components.url!, accessToken: accessToken)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        let iso: String? = expiresAt.map { date in
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return f.string(from: date)
+        }
+        let payload: [String: Any?] = ["expires_at": iso as Any]
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload.mapValues { $0 ?? NSNull() })
+        try await expectSuccess(request)
     }
 
     func submitFix(

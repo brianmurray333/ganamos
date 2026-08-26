@@ -10,6 +10,7 @@ struct GanamosPost: Codable, Identifiable, Hashable, Sendable {
     let longitude: Double?
     let reward: Int
     let createdAt: Date?
+    let expiresAt: Date?
     let group: PostGroup?
     let userID: UUID?
     let fixed: Bool?
@@ -20,6 +21,7 @@ struct GanamosPost: Codable, Identifiable, Hashable, Sendable {
         case id, title, description, location, latitude, longitude, reward, group
         case imageURL = "image_url"
         case createdAt = "created_at"
+        case expiresAt = "expires_at"
         case userID = "user_id"
         case fixed
         case underReview = "under_review"

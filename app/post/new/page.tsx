@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { toast } from "sonner"
 import { useAuth } from "@/components/auth-provider"
 import { v4 as uuidv4 } from "@/lib/uuid"
@@ -24,7 +23,7 @@ import {
 import QRCode from "@/components/qr-code"
 import { getCurrentLocationWithName } from "@/lib/geocoding" // Import the geocoding utility
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
-import { ChevronLeft, Search, User, Users, Globe, Lock, X, Timer } from "lucide-react"
+import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LocationEditorModal } from "@/components/location-editor-modal"
@@ -91,8 +90,6 @@ export default function NewPostPage() {
   const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false)
   const [showShareGroupModal, setShowShareGroupModal] = useState(false)
   const [pendingGroup, setPendingGroup] = useState<Group | null>(null)
-  const [expiresAt, setExpiresAt] = useState<Date | null>(null)
-  const [showExpirationPicker, setShowExpirationPicker] = useState(false)
 
   useEffect(() => {
     if (isAnonymous) {
@@ -268,7 +265,6 @@ export default function NewPostPage() {
               city: currentLocation?.displayName || currentLocation?.name || null, // Use displayName or fallback to name
               funding_r_hash: fundingRHash,
               funding_payment_request: fundingPaymentRequest!,
-              expires_at: expiresAt ? expiresAt.toISOString() : null,
             }
 
             const creationResult = await createFundedAnonymousPostAction(postDetails)
@@ -277,7 +273,8 @@ export default function NewPostPage() {
               toast.success("🎉 Anonymous Post Created!", {
                 description: "Your issue has been posted successfully.",
               })
-              setShowCreateAccountPrompt(true)
+              // Navigate to detail page after creation
+              router.push(`/post/${creationResult.postId}`)
             } else {
               toast.error("Error Creating Post", {
                 description: creationResult.error || "Failed to create post after payment.",
@@ -374,15 +371,6 @@ export default function NewPostPage() {
     const btcAmount = sats / 100000000
     const usdValue = btcAmount * bitcoinPrice
     return usdValue.toFixed(2)
-  }
-
-  const formatAbbreviatedTimeRemaining = (date: Date): string => {
-    const diff = Math.floor((date.getTime() - Date.now()) / 1000)
-    if (diff <= 0) return 'soon'
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-    if (diff < 604800) return `${Math.floor(diff / 86400)}d`
-    return `${Math.floor(diff / 604800)}w`
   }
 
   const handleCapture = async (imageSrc: string) => {
@@ -696,7 +684,6 @@ export default function NewPostPage() {
         city: currentLocation?.displayName || currentLocation?.name || null,
         createdBy: profile!.name,
         createdByAvatar: profile!.avatar_url,
-        expiresAt: expiresAt ? expiresAt.toISOString() : null,
         memo: `Post reward for: ${description.substring(0, 50)}`,
       })
 
@@ -800,8 +787,8 @@ export default function NewPostPage() {
         description: "Your issue has been posted successfully ✅",
       })
 
-      // Always redirect to dashboard, even if a group was selected
-      router.push(`/?newPost=${postId}`)
+      // Redirect to the new post's detail page
+      router.push(`/post/${postId}`)
     } catch (error) {
       console.error("Error creating post:", error)
       toast.error("Error", {
@@ -1151,40 +1138,7 @@ export default function NewPostPage() {
                       </SelectContent>
                     </Select>
                     </div>
-                    <Popover open={showExpirationPicker} onOpenChange={setShowExpirationPicker}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className="h-12 w-12 flex-shrink-0 flex items-center justify-center rounded-md border border-input bg-background transition-colors hover:bg-accent"
-                          title={expiresAt ? `Expires ${formatAbbreviatedTimeRemaining(expiresAt)}` : 'Add expiration'}
-                        >
-                          <Timer className={`w-5 h-5 ${expiresAt ? 'text-green-600' : 'text-muted-foreground'}`} />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent align="end" className="w-auto p-1">
-                        <div className="flex flex-col">
-                          {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
-                            { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
-                            <button key={label} type="button"
-                              onClick={() => { setExpiresAt(new Date(Date.now() + hrs * 3600_000)); setShowExpirationPicker(false) }}
-                              className={`flex items-center px-3 py-2 text-sm rounded-sm transition-colors ${
-                                expiresAt && Math.abs(expiresAt.getTime() - Date.now() - hrs * 3600_000) < 60_000
-                                  ? 'bg-accent text-accent-foreground'
-                                  : 'hover:bg-accent hover:text-accent-foreground'
-                              }`}
-                            >{label}</button>
-                          ))}
-                          {expiresAt && (
-                            <>
-                              <div className="h-px bg-muted my-1" />
-                              <button type="button" onClick={() => { setExpiresAt(null); setShowExpirationPicker(false) }}
-                                className="flex items-center px-3 py-2 text-sm rounded-sm text-red-500 hover:bg-accent transition-colors"
-                              >Remove</button>
-                            </>
-                          )}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                    
                   </div>
                 )}
                 
