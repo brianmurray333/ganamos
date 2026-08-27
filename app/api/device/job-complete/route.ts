@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
 import { sendDeviceJobCompletionEmail } from "@/lib/transaction-emails"
+import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 // Force dynamic rendering and disable caching
 export const dynamic = 'force-dynamic'
@@ -9,11 +10,10 @@ export const revalidate = 0
 
 export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    // Parse body first to support legacy body deviceId
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
     
-    // Parse body
-    const body = await request.json()
     const { jobId } = body
 
     if (!deviceId) {
@@ -30,9 +30,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Rate limiting
-    const rateLimit = checkRateLimit(deviceId, RATE_LIMITS.DEVICE_CONFIG)
-    if (!rateLimit.allowed) {
+    // Rate limiting (strict to prevent spam emails)
+    const perMinute = checkRateLimit(deviceId, RATE_LIMITS.DEVICE_NOTIFY)
+    const perHour = checkRateLimit(`hour:${deviceId}`, RATE_LIMITS.DEVICE_NOTIFY_HOURLY)
+    if (!perMinute.allowed || !perHour.allowed) {
       return NextResponse.json(
         { success: false, error: "Rate limit exceeded" },
         { status: 429 }
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (deviceError || !device) {
-      console.log("[Device Job Complete] Device not found:", deviceId)
+      console.log("[Device Job Complete] Device not found:", maskDeviceId(deviceId))
       return NextResponse.json(
         { success: false, error: "Device not found" },
         { status: 404 }

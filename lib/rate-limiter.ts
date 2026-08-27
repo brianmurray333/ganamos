@@ -112,6 +112,16 @@ export const RATE_LIMITS = {
     windowMs: 60 * 1000, // 10 games per minute max
   },
   
+  // Notification-style endpoints (e.g., job-complete emails) - stricter limits
+  DEVICE_NOTIFY: {
+    maxRequests: 5,
+    windowMs: 60 * 1000, // 5 notifications per minute
+  },
+  DEVICE_NOTIFY_HOURLY: {
+    maxRequests: 30,
+    windowMs: 60 * 60 * 1000, // 30 notifications per hour
+  },
+  
   // Wallet operations - strict limits for financial endpoints
   WALLET_WITHDRAW: {
     maxRequests: 3,

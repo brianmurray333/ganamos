@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 export const dynamic = "force-dynamic"
 
 // Sync a single pending spend from the device
 export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting check
     const rateLimit = checkRateLimit(deviceId, RATE_LIMITS.DEVICE_SYNC)
     if (!rateLimit.allowed) {
-      console.warn(`[Rate Limit] Device ${deviceId} exceeded sync limit (${rateLimit.totalRequests} requests)`)
+      console.warn(`[Rate Limit] Device ${maskDeviceId(deviceId)} exceeded sync limit (${rateLimit.totalRequests} requests)`)
       return NextResponse.json(
         {
           success: false,
@@ -31,7 +32,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
     const { spendId, timestamp, amount, action } = body
 
     if (!spendId || !amount || !action) {
@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(
-      `[Economy Sync] Device ${deviceId} spent ${amount} coins on ${action} (device.coins -> ${deviceCoins})${result.already_processed ? ' [duplicate]' : ''}`
+      `[Economy Sync] Device ${maskDeviceId(deviceId)} spent ${amount} coins on ${action} (device.coins -> ${deviceCoins})${result.already_processed ? ' [duplicate]' : ''}`
     )
 
     // Only include alreadyProcessed when true (matching original API behavior)

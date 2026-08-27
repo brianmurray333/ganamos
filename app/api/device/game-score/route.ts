@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 export const dynamic = "force-dynamic"
 
@@ -127,8 +128,8 @@ async function buildLeaderboardResponse(
 
 export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting check
     const rateLimit = checkRateLimit(deviceId, RATE_LIMITS.GAME_SCORE)
     if (!rateLimit.allowed) {
-      console.warn(`[Rate Limit] Device ${deviceId} exceeded game score limit (${rateLimit.totalRequests} requests)`)
+      console.warn(`[Rate Limit] Device ${maskDeviceId(deviceId)} exceeded game score limit (${rateLimit.totalRequests} requests)`)
       return NextResponse.json(
         {
           success: false,
@@ -154,7 +155,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json().catch(() => ({}))
     const scoreValue = Number(body?.score)
 
     if (!Number.isFinite(scoreValue) || scoreValue < 0) {
@@ -286,8 +286,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId") || undefined
+    const deviceId = getDeviceIdFromRequest(request) || undefined
 
     const supabase = createServerSupabaseClient()
     let fallbackPetName: string | null | undefined = null

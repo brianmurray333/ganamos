@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
@@ -11,8 +12,8 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     // Rate limiting check
     const rateLimit = checkRateLimit(deviceId, RATE_LIMITS.DEVICE_SPEND)
     if (!rateLimit.allowed) {
-      console.warn(`[Rate Limit] Device ${deviceId} exceeded spend limit (${rateLimit.totalRequests} requests)`)
+      console.warn(`[Rate Limit] Device ${maskDeviceId(deviceId)} exceeded spend limit (${rateLimit.totalRequests} requests)`)
       return NextResponse.json(
         {
           success: false,
@@ -38,7 +39,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
     const { amount, action } = body // action: 'feed', 'heal', or 'game'
 
     if (!amount || amount <= 0) {
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       .update({ coins: newDeviceCoins })
       .eq("id", deviceId)
     
-    console.log(`[Spend Coins] Device ${deviceId} spent ${amount} coins on ${action}. Device coins: ${deviceCoins} -> ${newDeviceCoins}`)
+    console.log(`[Spend Coins] Device ${maskDeviceId(deviceId)} spent ${amount} coins on ${action}. Device coins: ${deviceCoins} -> ${newDeviceCoins}`)
 
     return NextResponse.json({
       success: true,
