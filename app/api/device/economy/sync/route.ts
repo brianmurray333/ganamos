@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic"
 // Sync a single pending spend from the device
 export async function POST(request: NextRequest) {
   try {
-    const deviceId = getDeviceIdFromRequest(request)
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -31,7 +32,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
     const { spendId, timestamp, amount, action } = body
 
     if (!spendId || !amount || !action) {

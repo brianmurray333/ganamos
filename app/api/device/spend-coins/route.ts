@@ -12,7 +12,8 @@ export const dynamic = 'force-dynamic'
  */
 export async function POST(request: NextRequest) {
   try {
-    const deviceId = getDeviceIdFromRequest(request)
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -38,7 +39,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const body = await request.json()
     const { amount, action } = body // action: 'feed', 'heal', or 'game'
 
     if (!amount || amount <= 0) {

@@ -10,10 +10,10 @@ export const revalidate = 0
 
 export async function POST(request: NextRequest) {
   try {
-    const deviceId = getDeviceIdFromRequest(request)
+    // Parse body first to support legacy body deviceId
+    const body = await request.json().catch(() => ({}))
+    const deviceId = getDeviceIdFromRequest(request, body)
     
-    // Parse body
-    const body = await request.json()
     const { jobId } = body
 
     if (!deviceId) {
