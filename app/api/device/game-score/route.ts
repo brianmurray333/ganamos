@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest } from "@/lib/device-identity"
 
 export const dynamic = "force-dynamic"
 
@@ -127,8 +128,7 @@ async function buildLeaderboardResponse(
 
 export async function POST(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    const deviceId = getDeviceIdFromRequest(request)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -286,8 +286,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId") || undefined
+    const deviceId = getDeviceIdFromRequest(request) || undefined
 
     const supabase = createServerSupabaseClient()
     let fallbackPetName: string | null | undefined = null

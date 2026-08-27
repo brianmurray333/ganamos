@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest, getPairingCodeFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 // Force dynamic rendering and disable caching
 export const dynamic = 'force-dynamic'
@@ -8,9 +9,9 @@ export const revalidate = 0 // Never cache
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
-    const pairingCode = searchParams.get("pairingCode")
+    // Prefer headers, then query params (back-compat)
+    const deviceId = getDeviceIdFromRequest(request)
+    const pairingCode = getPairingCodeFromRequest(request)
 
     // Require either deviceId or pairingCode for authentication
     if (!deviceId && !pairingCode) {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
     const rateLimitId = deviceId || pairingCode || 'unknown'
     const rateLimit = checkRateLimit(rateLimitId, RATE_LIMITS.DEVICE_CONFIG)
     if (!rateLimit.allowed) {
-      console.warn(`[Rate Limit] Device ${rateLimitId} exceeded config limit (${rateLimit.totalRequests} requests)`)
+      console.warn(`[Rate Limit] Device ${maskDeviceId(rateLimitId)} exceeded config limit (${rateLimit.totalRequests} requests)`)
       return NextResponse.json(
         {
           success: false,
@@ -55,14 +56,14 @@ export async function GET(request: NextRequest) {
     const { data: device, error: deviceError } = await deviceQuery.single()
 
     console.log("[Device Config] Device query result:", {
-      deviceId,
-      pairingCode,
+      deviceId: maskDeviceId(deviceId),
+      pairingCode: pairingCode ? "***" : "",
       found: !!device,
       deviceExists: !!device,
       errorCode: deviceError?.code,
       errorMessage: deviceError?.message,
       deviceStatus: device?.status,
-      deviceIdFromDb: device?.id,
+      deviceIdFromDb: maskDeviceId(device?.id),
       deviceUserId: device?.user_id, // CRITICAL: Log the user_id we'll query for
     })
 
@@ -182,6 +183,20 @@ export async function GET(request: NextRequest) {
       .from("devices")
       .update({ last_seen_at: new Date().toISOString() })
       .eq("id", device.id)
+    
+    // If authenticated with pairingCode, make it one-shot by clearing it now
+    if (!deviceId && pairingCode) {
+      const { error: clearPairingError } = await supabase
+        .from("devices")
+        .update({ pairing_code: null, updated_at: new Date().toISOString() })
+        .eq("id", device.id)
+        .eq("pairing_code", pairingCode)
+      if (clearPairingError) {
+        console.warn("[Device Config] Failed to clear pairing code (one-shot):", clearPairingError)
+      } else {
+        console.log("[Device Config] Pairing code consumed (one-shot) for device", maskDeviceId(device.id))
+      }
+    }
 
     // Get the last transaction message and determine notification type
     let lastMessage = ""
@@ -281,7 +296,7 @@ export async function GET(request: NextRequest) {
       
       if (!earningsError && earnings) {
         coinsEarnedSinceLastSync = earnings.reduce((sum, tx) => sum + tx.amount, 0)
-        console.log(`[Device Config] Coins earned since last sync for ${device.id}: ${coinsEarnedSinceLastSync}`)
+        console.log(`[Device Config] Coins earned since last sync for ${maskDeviceId(device.id)}: ${coinsEarnedSinceLastSync}`)
         
         // If there are new earnings, update the device's coin balance in the database
         // This keeps device.coins in sync with what the firmware's local balance should be
@@ -294,7 +309,7 @@ export async function GET(request: NextRequest) {
           
           if (!updateError) {
             deviceCoins = newDeviceCoins
-            console.log(`[Device Config] Updated device.coins: ${deviceCoins} (added ${coinsEarnedSinceLastSync})`)
+            console.log(`[Device Config] Updated device.coins for ${maskDeviceId(device.id)}: ${deviceCoins} (added ${coinsEarnedSinceLastSync})`)
           } else {
             console.warn("[Device Config] Failed to update device.coins:", updateError)
           }
@@ -376,7 +391,7 @@ export async function GET(request: NextRequest) {
             ? newestJob.title.substring(0, 23) + ".."
             : newestJob.title
           newJobReward = newestJob.reward
-          console.log(`[Device Config] New job detected for device ${device.id}: "${newJobTitle}" (${newJobReward} sats)`)
+          console.log(`[Device Config] New job detected for device ${maskDeviceId(device.id)}: "${newJobTitle}" (${newJobReward} sats)`)
           
           // Mark this job as "seen" so we don't notify again on next poll
           await supabase

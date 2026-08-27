@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
+import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
 
 // Force dynamic rendering and disable caching
 export const dynamic = 'force-dynamic'
@@ -8,8 +9,7 @@ export const revalidate = 0
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const deviceId = searchParams.get("deviceId")
+    const deviceId = getDeviceIdFromRequest(request)
 
     if (!deviceId) {
       return NextResponse.json(
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
       .single()
 
     if (deviceError || !device) {
-      console.log("[Device Jobs] Device not found:", deviceId)
+      console.log("[Device Jobs] Device not found:", maskDeviceId(deviceId))
       return NextResponse.json(
         { success: false, error: "Device not found" },
         { status: 404 }
@@ -151,7 +151,7 @@ export async function GET(request: NextRequest) {
       groupName: post.assigned_to ? "Assigned to you" : ((post.groups as any)?.name || "")
     }))
 
-    console.log(`[Device Jobs] Returning ${jobs.length} jobs for device ${deviceId}`)
+    console.log(`[Device Jobs] Returning ${jobs.length} jobs for device ${maskDeviceId(deviceId)}`)
 
     // Update last_jobs_seen_at to mark that device has seen current jobs
     // This prevents repeated "new job" notifications
