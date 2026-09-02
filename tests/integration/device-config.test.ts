@@ -85,7 +85,7 @@ describe('GET /api/device/config', () => {
       expect(data.config.userId).toBe(userId)
       expect(data.config.userName).toBe('Test User')
       expect(data.config.balance).toBe(50000)
-      expect(data.config.coins).toBe(0) // Deprecated: always 0, device manages coins locally
+      expect(data.config.coins).toBe(100) // Mirrors authoritative profile.pet_coins
     })
 
     it('should return 404 when deviceId does not exist', async () => {
@@ -134,7 +134,7 @@ describe('GET /api/device/config', () => {
       expect(data.config.petName).toBe('Buddy')
       expect(data.config.petType).toBe('dog')
       expect(data.config.balance).toBe(25000)
-      expect(data.config.coins).toBe(0) // Deprecated: always 0, device manages coins locally
+      expect(data.config.coins).toBe(50) // Mirrors authoritative profile.pet_coins
     })
 
     it('should return 404 when pairingCode does not exist', async () => {
@@ -218,9 +218,9 @@ describe('GET /api/device/config', () => {
   })
 
   describe('Balance and Coins Data', () => {
-    it('should return correct balance from profile and coins from device', async () => {
+    it('should return sats and authoritative pet coins as separate balances', async () => {
       const { id: userId } = await seedUser({ balance: 12345, petCoins: 678 })
-      // Coins are now tracked per-device, not per-user profile
+      // A stale device cache is reconciled to the profile's non-withdrawable coins.
       const { id: deviceId } = await seedDevice(userId, { status: 'paired', coins: 500 })
 
       const request = createConfigRequest({ deviceId })
@@ -229,8 +229,8 @@ describe('GET /api/device/config', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       expect(data.config.balance).toBe(12345)
-      // Coins now comes from device.coins, not profiles.pet_coins
-      expect(data.config.coins).toBe(500)
+      expect(data.config.coins).toBe(678)
+      expect(data.config.coinsEarnedSinceLastSync).toBe(178)
     })
 
     it('should handle zero balance and coins', async () => {
@@ -246,11 +246,10 @@ describe('GET /api/device/config', () => {
       expect(data.config.coins).toBe(0)
     })
 
-    it('should return device coins independent of profile pet_coins', async () => {
-      const supabase = getServiceClient()
+    it('should reconcile a stale device coin cursor to profile pet_coins', async () => {
       const { id: userId } = await seedUser({ balance: 1000, petCoins: 999 })
       
-      // Device has its own coin balance separate from profile.pet_coins
+      // devices.coins is a delivery cursor/cache, not an independent ledger.
       const { id: deviceId } = await seedDevice(userId, { status: 'paired', coins: 123 })
 
       const request = createConfigRequest({ deviceId })
@@ -258,8 +257,8 @@ describe('GET /api/device/config', () => {
 
       expect(response.status).toBe(200)
       const data = await response.json()
-      // Coins come from device.coins, not profile.pet_coins
-      expect(data.config.coins).toBe(123)
+      expect(data.config.coins).toBe(999)
+      expect(data.config.coinsEarnedSinceLastSync).toBe(876)
     })
   })
 
@@ -468,8 +467,9 @@ describe('GET /api/device/config', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       
-      // For new devices with no transactions, should be 0
-      expect(data.config.coinsEarnedSinceLastSync).toBe(0)
+      // A fresh device receives the full authoritative pet-coin balance once.
+      expect(data.config.coins).toBe(1000)
+      expect(data.config.coinsEarnedSinceLastSync).toBe(1000)
     })
   })
 

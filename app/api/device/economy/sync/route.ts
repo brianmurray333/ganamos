@@ -96,16 +96,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Also update device.coins (per-device tracking for firmware reconciliation)
-    // Only do this if not already processed (avoid double-decrementing)
-    let deviceCoins = device.coins || 0
-    if (!result.already_processed) {
-      deviceCoins = Math.max(0, deviceCoins - amount)
-      await supabase
-        .from("devices")
-        .update({ coins: deviceCoins })
-        .eq("id", deviceId)
-    }
+    // profiles.pet_coins is authoritative. devices.coins is only the firmware's
+    // delivery cursor/cache, so reconcile it even when this spend was a retry.
+    const deviceCoins = Math.max(0, Number(result.new_balance) || 0)
+    await supabase
+      .from("devices")
+      .update({ coins: deviceCoins })
+      .eq("id", deviceId)
 
     console.log(
       `[Economy Sync] Device ${maskDeviceId(deviceId)} spent ${amount} coins on ${action} (device.coins -> ${deviceCoins})${result.already_processed ? ' [duplicate]' : ''}`
@@ -126,4 +123,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-

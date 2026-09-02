@@ -149,22 +149,14 @@ export async function POST(request: NextRequest) {
       petName: device.pet_name,
       petInitial: device.pet_name.charAt(0).toUpperCase(),
       macAddress: macAddress,
-      side: assignment.side,
-      position: assignment.position,
       joinedAt: new Date().toISOString(),
-      wagerAccepted: gameWager > 0 ? true : undefined,
     }
 
-    const updatedPlayers = [...players, newPlayer]
-
-    // 6. Update game with new player
-    const { error: updateError } = await supabase
-      .from("pickleball_games")
-      .update({
-        players: updatedPlayers,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", gameId)
+    // Serialize membership in Postgres so concurrent joins receive distinct slots.
+    const { data: joinResult, error: updateError } = await supabase.rpc(
+      "join_pickleball_game_atomic",
+      { p_game_id: gameId, p_player: newPlayer }
+    )
 
     if (updateError) {
       console.error("[Pickleball] Failed to add player:", updateError)
@@ -174,16 +166,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[Pickleball] Device ${deviceId} (${device.pet_name}) joined game ${gameId}. Players: ${updatedPlayers.length}`)
+    const updatedPlayers = joinResult.players as any[]
+    const playerIndex = Number(joinResult.playerIndex)
+    const joined = updatedPlayers[playerIndex]
+    console.log(`[Pickleball] Device ${deviceId} (${device.pet_name}) joined game ${gameId} in slot ${playerIndex}`)
 
     return NextResponse.json({
       success: true,
       players: updatedPlayers,
       playerCount: updatedPlayers.length,
-      yourSide: assignment.side,
-      yourPosition: assignment.position,
+      playerIndex,
+      yourSide: joined.side,
+      yourPosition: joined.position,
       wagerAmount: gameWager,
-      wagerAccepted: true,
+      wagerAccepted: gameWager === 0,
       wagerStatus: game.wager_status || "none",
     })
   } catch (error) {

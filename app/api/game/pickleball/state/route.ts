@@ -94,6 +94,7 @@ export async function GET(request: NextRequest) {
         macAddress: p.macAddress,
         side: p.side,
         position: p.position,
+        wagerAccepted: p.wagerAccepted === true,
       })),
       playerCount: players.length,
       hostDeviceId: game.host_device_id,
@@ -103,6 +104,7 @@ export async function GET(request: NextRequest) {
       scoreRight: game.score_right,
       wagerAmount: game.wager_amount || 0,
       wagerStatus: game.wager_status || "none",
+      matchGeneration: game.match_generation || 0,
     })
   } catch (error) {
     console.error("[Pickleball] State error:", error)
@@ -133,22 +135,39 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServerSupabaseClient()
 
-    // Verify this device is the host
+    // Load the game. Wager consent is a player action; other mutations are host-only.
     const { data: game, error: gameError } = await supabase
       .from("pickleball_games")
       .select("*")
       .eq("id", gameId)
-      .eq("host_device_id", deviceId)
       .single()
 
     if (gameError || !game) {
       return NextResponse.json(
-        { success: false, error: "Game not found or you are not the host" },
+        { success: false, error: "Game not found" },
         { status: 404 }
       )
     }
 
     const players = (game.players as any[]) || []
+
+    if (action === "wager_consent") {
+      if (!players.some((p: any) => p.deviceId === deviceId)) {
+        return NextResponse.json({ success: false, error: "Device is not in this game" }, { status: 403 })
+      }
+      const accepted = body.accepted === true
+      const { error } = await supabase.rpc("set_pickleball_wager_consent", {
+        p_game_id: gameId,
+        p_device_id: deviceId,
+        p_accepted: accepted,
+      })
+      if (error) return NextResponse.json({ success: false, error: "Failed to record wager choice" }, { status: 400 })
+      return NextResponse.json({ success: true, accepted })
+    }
+
+    if (game.host_device_id !== deviceId) {
+      return NextResponse.json({ success: false, error: "Only the host can perform this action" }, { status: 403 })
+    }
 
     if (action === "start_countdown") {
       // Need at least 2 players
@@ -159,15 +178,23 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      if ((game.wager_amount || 0) > 0 && players.some((p: any) => p.wagerAccepted !== true)) {
+        return NextResponse.json(
+          { success: false, error: "All players must accept the wager" },
+          { status: 400 }
+        )
+      }
+      const matchGeneration = Number(game.match_generation || 0) + 1
       await supabase
         .from("pickleball_games")
         .update({
           status: "countdown",
+          match_generation: matchGeneration,
           updated_at: new Date().toISOString(),
         })
         .eq("id", gameId)
 
-      return NextResponse.json({ success: true, status: "countdown" })
+      return NextResponse.json({ success: true, status: "countdown", matchGeneration })
     }
 
     if (action === "start_game") {

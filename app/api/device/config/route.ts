@@ -178,11 +178,7 @@ export async function GET(request: NextRequest) {
       userName: profile.name
     })
 
-    // Update last_seen_at
-    await supabase
-      .from("devices")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", device.id)
+    const syncStartedAt = new Date().toISOString()
     
     // If authenticated with pairingCode, make it one-shot by clearing it now
     if (!deviceId && pairingCode) {
@@ -279,47 +275,16 @@ export async function GET(request: NextRequest) {
       console.warn("Error fetching BTC price:", error)
     }
 
-    // Calculate coins earned since last sync
-    // Device creates coins when balance increases, this tells device about earnings
-    let coinsEarnedSinceLastSync = 0
-    let deviceCoins = device.coins || 0  // Current device coin balance
-    try {
-      const { data: earnings, error: earningsError } = await supabase
-        .from("transactions")
-        .select("amount")
-        .eq("user_id", device.user_id)
-        .eq("status", "completed")
-        .in("type", ["deposit", "internal"])
-        .gt("amount", 0)  // Only positive amounts (earnings)
-        .gte("created_at", device.created_at)  // Only after device paired
-        .gt("created_at", device.last_seen_at || device.created_at)  // Since last sync
-      
-      if (!earningsError && earnings) {
-        coinsEarnedSinceLastSync = earnings.reduce((sum, tx) => sum + tx.amount, 0)
-        console.log(`[Device Config] Coins earned since last sync for ${maskDeviceId(device.id)}: ${coinsEarnedSinceLastSync}`)
-        
-        // If there are new earnings, update the device's coin balance in the database
-        // This keeps device.coins in sync with what the firmware's local balance should be
-        if (coinsEarnedSinceLastSync > 0) {
-          const newDeviceCoins = deviceCoins + coinsEarnedSinceLastSync
-          const { error: updateError } = await supabase
-            .from("devices")
-            .update({ coins: newDeviceCoins })
-            .eq("id", device.id)
-          
-          if (!updateError) {
-            deviceCoins = newDeviceCoins
-            console.log(`[Device Config] Updated device.coins for ${maskDeviceId(device.id)}: ${deviceCoins} (added ${coinsEarnedSinceLastSync})`)
-          } else {
-            console.warn("[Device Config] Failed to update device.coins:", updateError)
-          }
-        }
-      } else if (earningsError) {
-        console.warn("[Device Config] Error calculating coins earned:", earningsError)
-      }
-    } catch (error) {
-      console.warn("[Device Config] Error calculating coins earned:", error)
-    }
+    // profiles.pet_coins is the sole authoritative, non-withdrawable pet
+    // currency. devices.coins is only a delivery cursor/cache, never a ledger.
+    const authoritativeCoins = Math.max(0, Number(profile.pet_coins) || 0)
+    const previousDeviceCoins = Math.max(0, Number(device.coins) || 0)
+    const coinsEarnedSinceLastSync = Math.max(0, authoritativeCoins - previousDeviceCoins)
+    const deviceCoins = authoritativeCoins
+    await supabase
+      .from("devices")
+      .update({ coins: authoritativeCoins, last_seen_at: syncStartedAt })
+      .eq("id", device.id)
 
     // Get user's group memberships (shared across jobs + pickleball invite checks)
     let groupIds: string[] = []
@@ -404,16 +369,17 @@ export async function GET(request: NextRequest) {
       console.warn("[Device Config] Error checking for new jobs:", error)
     }
 
-    // Check for active pickleball game invites (any active lobby, not just group members)
+    // Invite only within an approved Ganamos group. Room-code joins happen explicitly.
     let pickleballInvite: { gameId: string; hostPetName: string; playerCount: number; hostMac: string } | null = null
     
     try {
       const { data: activeGames } = await supabase
         .from("pickleball_games")
-        .select("id, host_device_id, host_user_id, players, lobby_expires_at")
+        .select("id, host_device_id, host_user_id, players, lobby_expires_at, matchmaking_group_id")
         .in("status", ["lobby", "countdown"])
         .neq("host_device_id", device.id)
         .gt("lobby_expires_at", new Date().toISOString())
+        .in("matchmaking_group_id", groupIds.length > 0 ? groupIds : ["00000000-0000-0000-0000-000000000000"])
         .order("created_at", { ascending: false })
         .limit(1)
       
@@ -511,4 +477,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-
