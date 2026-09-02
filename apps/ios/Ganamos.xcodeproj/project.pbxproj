@@ -11,18 +11,30 @@
 		1D1347DFA9757801E3EA262D /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8299FF108209968CB41CB354 /* AppConfiguration.swift */; };
 		5813EBAB0ACE64FE6BE6D241 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0F80F45B7BCD10A2B89DD /* APIClient.swift */; };
 		62552B3EB304617A7069E784 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */; };
+		66AAA7FCC4E1766CFDEA5BF4 /* NewFixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE27BBC194F71FAAE63B987 /* NewFixView.swift */; };
+		6CF4286FFC8A952D278F429A /* GanamosFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B65BA73739A6FA14366CB6 /* GanamosFlowTests.swift */; };
+		74BA5CAF90E2BB49EC6AE71B /* DonateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D52156DE7D15E14DE02415 /* DonateView.swift */; };
 		87BA130F433942129D3482DA /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD852EDEE1993AD279634F00 /* KeychainStore.swift */; };
 		8FC648B402AC2B57CDBFA940 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 778168F60F211241852312B4 /* SessionStore.swift */; };
 		948635C12A08C7E5E5393715 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DDBB30FA9942279641EE62F /* Models.swift */; };
 		995AA530FC3613C7AE37687C /* GanamosApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A6AF0F120E7D85787CC547 /* GanamosApp.swift */; };
 		99F86616D6C431D457A53765 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */; };
+		9EF110ACEB94D3CBD4BF44D3 /* ProfileDestinationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */; };
 		A1DF72880BD007BBD80AD426 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13252AE3EB92C6090E30652A /* RootView.swift */; };
 		C095935130AFD1C235240063 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */; };
+		CB6F3DC976EF403E1C70F5DD /* WalletFlowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3695C0B4083985641684F80 /* WalletFlowViews.swift */; };
 		ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66901815C87EF5036DF3603D /* FeatureViews.swift */; };
 		FB87B3FF7060012897027C19 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9194ECB0998EAB5E27A0E2 /* DesignSystem.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2FBC90E41E4FAEDBE2F38007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 89D3BFBB6A66B3267FD84BC0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C19BD44D3DF52BF75544CE4A;
+			remoteInfo = Ganamos;
+		};
 		4AADF3600C4E9525FAD6BF27 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 89D3BFBB6A66B3267FD84BC0 /* Project object */;
@@ -33,18 +45,25 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0869448BC67FD2FC6242CF0C /* GanamosUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GanamosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		13252AE3EB92C6090E30652A /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		20784E5C6F49D20EF279CE2C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDestinationViews.swift; sourceTree = "<group>"; };
 		3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A6AF0F120E7D85787CC547 /* GanamosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GanamosApp.swift; sourceTree = "<group>"; };
+		5AE27BBC194F71FAAE63B987 /* NewFixView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewFixView.swift; sourceTree = "<group>"; };
 		5DDBB30FA9942279641EE62F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		66901815C87EF5036DF3603D /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 		6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigurationTests.swift; sourceTree = "<group>"; };
 		778168F60F211241852312B4 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		81B65BA73739A6FA14366CB6 /* GanamosFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GanamosFlowTests.swift; sourceTree = "<group>"; };
 		8299FF108209968CB41CB354 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		8EA0F80F45B7BCD10A2B89DD /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		99346C351DF86CB41A03E4B8 /* FeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedView.swift; sourceTree = "<group>"; };
 		AD852EDEE1993AD279634F00 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		B6D52156DE7D15E14DE02415 /* DonateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DonateView.swift; sourceTree = "<group>"; };
+		C3695C0B4083985641684F80 /* WalletFlowViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletFlowViews.swift; sourceTree = "<group>"; };
 		D273201B8090BE20B5B8E362 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EC756DFA1CADCF43E53F6D46 /* GanamosTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GanamosTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		ECBDD7FB98454CDD16C8CFAA /* Ganamos.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Ganamos.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -59,6 +78,7 @@
 				8EA0F80F45B7BCD10A2B89DD /* APIClient.swift */,
 				8299FF108209968CB41CB354 /* AppConfiguration.swift */,
 				FC9194ECB0998EAB5E27A0E2 /* DesignSystem.swift */,
+				B6D52156DE7D15E14DE02415 /* DonateView.swift */,
 				66901815C87EF5036DF3603D /* FeatureViews.swift */,
 				99346C351DF86CB41A03E4B8 /* FeedView.swift */,
 				59A6AF0F120E7D85787CC547 /* GanamosApp.swift */,
@@ -66,8 +86,11 @@
 				AD852EDEE1993AD279634F00 /* KeychainStore.swift */,
 				3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */,
 				5DDBB30FA9942279641EE62F /* Models.swift */,
+				5AE27BBC194F71FAAE63B987 /* NewFixView.swift */,
+				3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */,
 				13252AE3EB92C6090E30652A /* RootView.swift */,
 				778168F60F211241852312B4 /* SessionStore.swift */,
+				C3695C0B4083985641684F80 /* WalletFlowViews.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -80,6 +103,15 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		607E6D953808DD9CE89F99E6 /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				81B65BA73739A6FA14366CB6 /* GanamosFlowTests.swift */,
+				20784E5C6F49D20EF279CE2C /* Info.plist */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
 		68B93E110770751045DBAB1B = {
 			isa = PBXGroup;
 			children = (
@@ -87,6 +119,7 @@
 				74989EF4BBA13CFF8527AF9A /* Resources */,
 				11968FC60094BE89F1B8595A /* Sources */,
 				1CFD8D59826DE43AADFF3DFC /* Tests */,
+				607E6D953808DD9CE89F99E6 /* UITests */,
 				9DAF1C78F8C68569E4B4522C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -104,6 +137,7 @@
 			children = (
 				ECBDD7FB98454CDD16C8CFAA /* Ganamos.app */,
 				EC756DFA1CADCF43E53F6D46 /* GanamosTests.xctest */,
+				0869448BC67FD2FC6242CF0C /* GanamosUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -119,6 +153,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		871F01249CF1154B873E5B4A /* GanamosUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 154E341E683C7FF91ACF78C4 /* Build configuration list for PBXNativeTarget "GanamosUITests" */;
+			buildPhases = (
+				D66A1FEA36D49145216D9DF6 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				145730387D0EA09B1BE161F9 /* PBXTargetDependency */,
+			);
+			name = GanamosUITests;
+			packageProductDependencies = (
+			);
+			productName = GanamosUITests;
+			productReference = 0869448BC67FD2FC6242CF0C /* GanamosUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		C19BD44D3DF52BF75544CE4A /* Ganamos */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6BC18CFAB2F42718CF5A833C /* Build configuration list for PBXNativeTarget "Ganamos" */;
@@ -164,6 +216,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					871F01249CF1154B873E5B4A = {
+						TestTargetID = C19BD44D3DF52BF75544CE4A;
+					};
 					C19BD44D3DF52BF75544CE4A = {
 						DevelopmentTeam = "$(GANAMOS_DEVELOPMENT_TEAM)";
 					};
@@ -185,6 +240,7 @@
 			targets = (
 				C19BD44D3DF52BF75544CE4A /* Ganamos */,
 				F6FD79CFB802E0A9D7F7721D /* GanamosTests */,
+				871F01249CF1154B873E5B4A /* GanamosUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -216,20 +272,37 @@
 				5813EBAB0ACE64FE6BE6D241 /* APIClient.swift in Sources */,
 				1D1347DFA9757801E3EA262D /* AppConfiguration.swift in Sources */,
 				FB87B3FF7060012897027C19 /* DesignSystem.swift in Sources */,
+				74BA5CAF90E2BB49EC6AE71B /* DonateView.swift in Sources */,
 				ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */,
 				1299F05E249A6F32EA5CF444 /* FeedView.swift in Sources */,
 				995AA530FC3613C7AE37687C /* GanamosApp.swift in Sources */,
 				87BA130F433942129D3482DA /* KeychainStore.swift in Sources */,
 				62552B3EB304617A7069E784 /* LoginView.swift in Sources */,
 				948635C12A08C7E5E5393715 /* Models.swift in Sources */,
+				66AAA7FCC4E1766CFDEA5BF4 /* NewFixView.swift in Sources */,
+				9EF110ACEB94D3CBD4BF44D3 /* ProfileDestinationViews.swift in Sources */,
 				A1DF72880BD007BBD80AD426 /* RootView.swift in Sources */,
 				8FC648B402AC2B57CDBFA940 /* SessionStore.swift in Sources */,
+				CB6F3DC976EF403E1C70F5DD /* WalletFlowViews.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D66A1FEA36D49145216D9DF6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CF4286FFC8A952D278F429A /* GanamosFlowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		145730387D0EA09B1BE161F9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C19BD44D3DF52BF75544CE4A /* Ganamos */;
+			targetProxy = 2FBC90E41E4FAEDBE2F38007 /* PBXContainerItemProxy */;
+		};
 		9C82EEEF149A3D826D9D84D4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C19BD44D3DF52BF75544CE4A /* Ganamos */;
@@ -238,6 +311,24 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		38E688FE0B02D8C96D6CFE33 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = UITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = earth.ganamos.GanamosUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Ganamos;
+			};
+			name = Debug;
+		};
 		504CF2800F615BAB9BE9D156 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = EDB276D52B12F87FBF7E2CA9 /* Local.xcconfig */;
@@ -415,6 +506,24 @@
 			};
 			name = Debug;
 		};
+		D4DC560A0681F17C2E91FF64 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = UITests/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = earth.ganamos.GanamosUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Ganamos;
+			};
+			name = Release;
+		};
 		D8BA5B3EF0DF6322EFB06CD9 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -435,6 +544,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		154E341E683C7FF91ACF78C4 /* Build configuration list for PBXNativeTarget "GanamosUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				38E688FE0B02D8C96D6CFE33 /* Debug */,
+				D4DC560A0681F17C2E91FF64 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		3E259E3BC44E10B8CD57E6F9 /* Build configuration list for PBXNativeTarget "GanamosTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

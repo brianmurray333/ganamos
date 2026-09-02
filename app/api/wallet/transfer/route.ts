@@ -1,18 +1,17 @@
 import { NextResponse } from "next/server"
-import { cookies, headers } from "next/headers"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+import { headers } from "next/headers"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { v4 as uuidv4 } from "uuid"
 import { sendBitcoinReceivedEmail, sendBitcoinSentEmail } from "@/lib/transaction-emails"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
 import { sendRateLimitAlert } from "@/lib/security-alerts"
 import { alertLargeTransfer } from "@/lib/sms-alerts"
+import { authenticatedRequestClient } from "@/lib/request-auth"
 
 export async function POST(request: Request) {
   try {
     // Authenticate the user
-    const supabase = createRouteHandlerClient({ cookies })
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const { supabase, user, error: authError } = await authenticatedRequestClient(request)
 
     if (authError || !user) {
       return NextResponse.json({ success: false, error: "Not authenticated" }, { status: 401 })
@@ -365,4 +364,3 @@ export async function POST(request: Request) {
     }, { status: 500 })
   }
 }
-

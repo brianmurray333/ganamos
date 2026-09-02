@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { cookies, headers } from "next/headers"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+import { headers } from "next/headers"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { payInvoice } from "@/lib/lightning"
 import { revalidatePath } from "next/cache"
@@ -19,6 +18,7 @@ import {
   sendSystemThresholdAlert,
 } from "@/lib/withdrawal-security"
 import { emergencyDisableWithdrawals } from "@/app/actions/admin-actions"
+import { authenticatedRequestClient } from "@/lib/request-auth"
 
 export async function POST(request: Request) {
   // Get headers early for audit logging
@@ -28,8 +28,7 @@ export async function POST(request: Request) {
 
   try {
     // Use the official Supabase Next.js helper for user verification
-    const supabase = createRouteHandlerClient({ cookies })
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    const { supabase, user, error: authError } = await authenticatedRequestClient(request)
 
     if (authError) {
       console.log("[Withdraw API] Auth error:", authError.message)
@@ -137,8 +136,7 @@ export async function POST(request: Request) {
     
     // If a different userId is requested, verify it's a connected account
     if (requestedUserId && requestedUserId !== authenticatedUserId) {
-      const checkSupabase = createRouteHandlerClient({ cookies })
-      const { data: connectedAccount } = await checkSupabase
+      const { data: connectedAccount } = await supabase
         .from('connected_accounts')
         .select('id')
         .eq('primary_user_id', authenticatedUserId)

@@ -1,9 +1,8 @@
 // Import the createServerSupabaseClient function
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { createServerSupabaseClient } from "@/lib/supabase" // Add this import
-import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { v4 as uuidv4 } from "uuid"
+import { authenticatedRequestClient } from "@/lib/request-auth"
 
 /**
  * Generate a unique username by checking for existing usernames and appending a suffix if needed
@@ -57,18 +56,11 @@ export async function POST(request: Request) {
     }
 
     // Create a Supabase client with the user's session
-    const supabase = createRouteHandlerClient({ cookies })
-
-    // Get the current user to determine who is creating the child account
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    const { supabase, user } = await authenticatedRequestClient(request)
+    if (!user) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 })
     }
-
-    const primaryUserId = session.user.id
+    const primaryUserId = user.id
 
     // Generate a unique email for the child account
     const childId = uuidv4()

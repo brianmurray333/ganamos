@@ -39,7 +39,11 @@ targets:
         CFBundleDisplayName: Ganamos!
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "2"
+        CFBundleVersion: "3"
+        CFBundleURLTypes:
+          - CFBundleURLName: earth.ganamos.oauth
+            CFBundleURLSchemes:
+              - ganamos
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -48,6 +52,7 @@ targets:
         NSPhotoLibraryUsageDescription: Ganamos lets you choose photos for community fixes and proof of completion.
         ITSAppUsesNonExemptEncryption: false
         GANAMOS_API_BASE_URL: "$(GANAMOS_API_BASE_URL)"
+        GANAMOS_ADMIN_EMAIL: "$(GANAMOS_ADMIN_EMAIL)"
         GANAMOS_SUPABASE_URL: "$(GANAMOS_SUPABASE_URL)"
         GANAMOS_SUPABASE_ANON_KEY: "$(GANAMOS_SUPABASE_ANON_KEY)"
   GanamosTests:
@@ -60,6 +65,17 @@ targets:
       - path: Tests
     dependencies:
       - target: Ganamos
+  GanamosUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: UITests/Info.plist
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Ganamos
 
 schemes:
   Ganamos:
@@ -70,3 +86,4 @@ schemes:
     test:
       targets:
         - GanamosTests
+        - GanamosUITests
