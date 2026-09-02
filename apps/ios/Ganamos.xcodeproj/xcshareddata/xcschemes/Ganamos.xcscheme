@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Ganamos.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "871F01249CF1154B873E5B4A"
+               BuildableName = "GanamosUITests.xctest"
+               BlueprintName = "GanamosUITests"
+               ReferencedContainer = "container:Ganamos.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

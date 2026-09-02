@@ -22,6 +22,17 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertEqual(profile.fixedIssuesCount, 4)
     }
 
+    func testConnectedPetDecodesMissingPersonalizationAsActiveFallback() throws {
+        let nullJSON = #"{"pet_name":null,"pet_type":null}"#.data(using: .utf8)!
+        let emptyJSON = #"{"pet_name":"","pet_type":""}"#.data(using: .utf8)!
+
+        for json in [nullJSON, emptyJSON] {
+            let pet = try JSONDecoder().decode(UserPet.self, from: json)
+            XCTAssertEqual(pet.name, "Pet")
+            XCTAssertEqual(pet.type, "")
+        }
+    }
+
     func testTransactionDecodesExistingWebShape() throws {
         let json = #"{"id":"00000000-0000-0000-0000-000000000001","type":"deposit","amount":500,"status":"completed","memo":"Lightning deposit","created_at":"2026-08-02T12:00:00Z"}"#.data(using: .utf8)!
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601

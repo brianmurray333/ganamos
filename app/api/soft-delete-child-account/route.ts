@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+import { authenticatedRequestClient } from "@/lib/request-auth"
 
 export async function POST(request: Request) {
   try {
@@ -13,16 +12,11 @@ export async function POST(request: Request) {
     }
 
     // Get the user's session
-    const supabase = createRouteHandlerClient({ cookies })
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    if (!session) {
+    const { supabase, user } = await authenticatedRequestClient(request)
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
-    const userId = session.user.id
+    const userId = user.id
 
     // Check if the child account belongs to this user
     const { data: connectionData, error: connectionError } = await supabase

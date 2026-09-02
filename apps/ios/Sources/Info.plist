@@ -20,10 +20,23 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>earth.ganamos.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ganamos</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>3</string>
 	<key>GANAMOS_API_BASE_URL</key>
 	<string>$(GANAMOS_API_BASE_URL)</string>
+	<key>GANAMOS_ADMIN_EMAIL</key>
+	<string>$(GANAMOS_ADMIN_EMAIL)</string>
 	<key>GANAMOS_SUPABASE_ANON_KEY</key>
 	<string>$(GANAMOS_SUPABASE_ANON_KEY)</string>
 	<key>GANAMOS_SUPABASE_URL</key>
