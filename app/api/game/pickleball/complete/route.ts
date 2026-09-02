@@ -84,8 +84,9 @@ export async function POST(request: NextRequest) {
     // Settle wager if active
     if (wagerAmount > 0 && wagerStatus === "active") {
       const loserSide = winnerSide === "left" ? "right" : "left"
-      const winners = players.filter((p: any) => p.side === winnerSide && p.wagerAccepted !== false)
-      const losers = players.filter((p: any) => p.side === loserSide && p.wagerAccepted !== false)
+      // Never settle a wager for implicit/undefined consent.
+      const winners = players.filter((p: any) => p.side === winnerSide && p.wagerAccepted === true)
+      const losers = players.filter((p: any) => p.side === loserSide && p.wagerAccepted === true)
 
       if (winners.length > 0 && losers.length > 0) {
         const payoutPerWinner = Math.floor((wagerAmount * losers.length) / winners.length)
