@@ -11,6 +11,10 @@ struct MapScreen: View {
         center: CLLocationCoordinate2D(latitude: 38.2, longitude: -119.4),
         span: MKCoordinateSpan(latitudeDelta: 15, longitudeDelta: 12)
     ))
+    @State private var cameraRegion: MKCoordinateRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 38.2, longitude: -119.4),
+        span: MKCoordinateSpan(latitudeDelta: 15, longitudeDelta: 12)
+    )
     @State private var posts: [GanamosPost] = []
     @State private var selectedPost: GanamosPost?
     @State private var searchText = ""
@@ -31,23 +35,28 @@ struct MapScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            Map(position: $position) {
-                ForEach(mappedPosts) { post in
-                    Annotation("", coordinate: CLLocationCoordinate2D(latitude: post.latitude!, longitude: post.longitude!)) {
-                        Button { selectedPost = post } label: {
-                            RewardBadge(amount: post.reward)
-                                .scaleEffect(0.9)
-                                .contentShape(Rectangle())
+            if AppConfiguration.current.googleMapsAPIKey != nil {
+                GoogleMapView(posts: mappedPosts, selectedPost: $selectedPost, cameraRegion: cameraRegion)
+                    .ignoresSafeArea(edges: .top)
+            } else {
+                Map(position: $position) {
+                    ForEach(mappedPosts) { post in
+                        Annotation("", coordinate: CLLocationCoordinate2D(latitude: post.latitude!, longitude: post.longitude!)) {
+                            Button { selectedPost = post } label: {
+                                RewardBadge(amount: post.reward)
+                                    .scaleEffect(0.9)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(post.title ?? "Community fix"), reward \(post.reward) sats")
+                            .accessibilityIdentifier("mapPost-\(post.id.uuidString.lowercased())")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(post.title ?? "Community fix"), reward \(post.reward) sats")
-                        .accessibilityIdentifier("mapPost-\(post.id.uuidString.lowercased())")
                     }
                 }
+                .mapStyle(.standard(elevation: .realistic))
+                .mapControls { MapCompass() }
+                .ignoresSafeArea(edges: .top)
             }
-            .mapStyle(.standard(elevation: .realistic))
-            .mapControls { MapCompass() }
-            .ignoresSafeArea(edges: .top)
 
             MapSearchField(text: $searchText, isSearching: isSearching, submit: search)
                 .padding(.horizontal, 18)
@@ -106,7 +115,7 @@ struct MapScreen: View {
             request.naturalLanguageQuery = query
             if let response = try? await MKLocalSearch(request: request).start(),
                let item = response.mapItems.first {
-                position = .region(MKCoordinateRegion(
+                setCameraRegion(MKCoordinateRegion(
                     center: item.placemark.coordinate,
                     span: MKCoordinateSpan(latitudeDelta: 0.35, longitudeDelta: 0.35)
                 ))
@@ -125,7 +134,7 @@ struct MapScreen: View {
         let maxLatitude = coordinates.map(\.latitude).max() ?? first.latitude
         let minLongitude = coordinates.map(\.longitude).min() ?? first.longitude
         let maxLongitude = coordinates.map(\.longitude).max() ?? first.longitude
-        position = .region(MKCoordinateRegion(
+        setCameraRegion(MKCoordinateRegion(
             center: CLLocationCoordinate2D(
                 latitude: (minLatitude + maxLatitude) / 2,
                 longitude: (minLongitude + maxLongitude) / 2
@@ -135,6 +144,11 @@ struct MapScreen: View {
                 longitudeDelta: max((maxLongitude - minLongitude) * 1.45, 0.16)
             )
         ))
+    }
+
+    private func setCameraRegion(_ region: MKCoordinateRegion) {
+        position = .region(region)
+        cameraRegion = region
     }
 }
 
