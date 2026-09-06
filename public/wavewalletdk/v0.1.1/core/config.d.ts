@@ -1,0 +1,128 @@
+import type { ServerTransport } from './facade.ts';
+/**
+ * Selects the Bitcoin network the embedded daemon runs against. Names match
+ * the daemon's network selector: 'testnet' is Bitcoin testnet3 and 'testnet4'
+ * is Bitcoin testnet4.
+ */
+export type Network = 'mainnet' | 'testnet' | 'testnet4' | 'signet' | 'regtest';
+/**
+ * The networks that carry a public endpoint preset, and so can be passed to a
+ * transport package's defaultConfig helper. mainnet and regtest are excluded:
+ * mainnet has no public deployment yet, and regtest's ports vary per
+ * development environment. A {@link RuntimeConfig} for either is built by hand.
+ */
+export type PresetNetwork = 'testnet' | 'testnet4' | 'signet';
+/**
+ * The daemon log verbosity levels accepted by {@link RuntimeConfig.debugLevel},
+ * from most to least verbose. Exported for UIs that render a level picker.
+ * debugLevel itself stays a plain string because the daemon also accepts a
+ * per-subsystem list such as 'ROND=debug,info'.
+ */
+export declare const DEBUG_LEVELS: readonly ["trace", "debug", "info", "warn", "error", "critical", "off"];
+/** One of the daemon log verbosity levels in {@link DEBUG_LEVELS}. */
+export type DebugLevel = (typeof DEBUG_LEVELS)[number];
+/**
+ * The configuration passed to `client.start()`. For the common case prefer
+ * the defaultConfig helper exported by your transport package (wavelength-web
+ * or wavelength-react-native), which preloads the canonical public endpoints
+ * in that transport's flavor, and override only the fields you need.
+ */
+export type RuntimeConfig = {
+    /** The Bitcoin network to run against. `mainnet` also requires {@link allowMainnet}. */
+    network?: Network;
+    /** Explicitly permits mainnet. The SDK rejects mainnet configs unless this is true. */
+    allowMainnet?: boolean;
+    /**
+     * Storage root for daemon and wallet state. This is an OPFS path on web and
+     * a filesystem path on React Native. The daemon chooses a default when unset.
+     */
+    dataDir?: string;
+    /**
+     * Daemon log verbosity. Accepts a standard {@link DebugLevel} or a
+     * per-subsystem expression such as `ROND=debug,info`.
+     */
+    debugLevel?: string;
+    /**
+     * Ark operator and mailbox endpoint. Use a REST URL on web and a `host:port`
+     * gRPC address on React Native. The daemon network default is used when unset.
+     */
+    arkServerAddress?: string;
+    /** Filesystem path to an Ark TLS certificate. The web transport rejects it. */
+    arkServerTlsCertPath?: string;
+    /** Disables TLS for the Ark endpoint. Use only for local development. */
+    arkServerInsecure?: boolean;
+    /** Embedded wallet backend. Defaults to `lwwallet`. */
+    walletType?: 'lwwallet' | 'btcwallet';
+    /** HTTP Esplora endpoint used by the `lwwallet` backend on both platforms. */
+    walletEsploraUrl?: string;
+    /** Password file used by `lwwallet` to unlock automatically. */
+    walletPasswordFile?: string;
+    /**
+     * Chain polling interval in seconds for `lwwallet`. Must be a nonnegative
+     * safe integer.
+     */
+    walletPollIntervalSeconds?: number;
+    /**
+     * Wallet address look-ahead window for either backend. Must be a
+     * nonnegative safe integer that fits in a uint32.
+     */
+    walletRecoveryWindow?: number;
+    /** Fee estimator endpoint used by the `btcwallet` backend. */
+    walletFeeUrl?: string;
+    /**
+     * Local file path or HTTP(S) URL from which `btcwallet` imports block
+     * headers on startup.
+     */
+    walletBlockHeadersSource?: string;
+    /**
+     * Local file path or HTTP(S) URL from which `btcwallet` imports compact
+     * filter headers on startup.
+     */
+    walletFilterHeadersSource?: string;
+    /**
+     * Lightning swap endpoint. Use a REST URL on web and a `host:port` gRPC
+     * address on React Native. The daemon network default is used when unset.
+     */
+    swapServerAddress?: string;
+    /**
+     * Filesystem path to a swap-server TLS certificate. Web rejects it unless
+     * swaps are disabled, in which case every swap field is omitted.
+     */
+    swapServerTlsCertPath?: string;
+    /** Disables TLS for the swap endpoint. Use only for local development. */
+    swapServerInsecure?: boolean;
+    /** Path to the daemon-owned SQLite database that stores swap state. */
+    swapDatabaseFileName?: string;
+    /** Disables Lightning swaps and omits every swap configuration field. */
+    disableSwaps?: boolean;
+    /**
+     * Maximum per-round operator fee the daemon accepts, in satoshis. Must be a
+     * nonnegative safe integer.
+     */
+    maxOperatorFeeSat?: number;
+    /**
+     * Maximum concurrent VTXO signing sessions. Zero selects the wallet-backend
+     * default and one forces serial signing.
+     */
+    signingWorkers?: number;
+    /** Bufconn listener buffer size override. Must be a nonnegative safe integer. */
+    bufferSize?: number;
+};
+/** Validates host-owned runtime settings before the typed start dispatches. */
+export declare function validateRuntimeConfig(config: RuntimeConfig, transport: ServerTransport): void;
+/**
+ * Returns the canonical public endpoint preset for a network in one
+ * transport's flavor: REST gateway URLs for 'rest' (the web transport),
+ * host:port gRPC addresses for 'grpc' (native transports). This is the
+ * building block the transport packages' defaultConfig helpers compose over;
+ * app code normally calls those instead.
+ *
+ * Only the preset networks are accepted (see {@link PresetNetwork}); mainnet
+ * and regtest have no preset and their {@link RuntimeConfig} is built by hand.
+ *
+ * @param network - The Bitcoin network to look up.
+ * @param transport - The endpoint flavor the caller's transport dials.
+ * @returns The preset config fields for that network and transport.
+ */
+export declare function networkDefaults(network: PresetNetwork, transport: ServerTransport): Partial<RuntimeConfig>;
+//# sourceMappingURL=config.d.ts.map

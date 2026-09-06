@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signet Wallet (Wavelength)</title>
+    <style>
+      :root { color-scheme: dark light; }
+      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: #0b0f14; color: #e6edf3; }
+      .container { max-width: 420px; margin: 0 auto; padding: 16px; }
+      .card { background: #0f1621; border: 1px solid #1f2a37; border-radius: 12px; padding: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+      .row { display: flex; gap: 8px; align-items: center; }
+      .col { display: flex; flex-direction: column; gap: 8px; }
+      .muted { color: #94a3b8; font-size: 12px; }
+      input { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #263345; background: #0b1220; color: #e6edf3; }
+      button { padding: 10px 12px; border-radius: 8px; border: 1px solid #263345; background: #0e7a3e; color: #fff; cursor: pointer; }
+      button[disabled] { opacity: .5; cursor: not-allowed; }
+      pre { background: #0b1220; padding: 8px; border-radius: 8px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+      .spacer { height: 12px; }
+      .badge { font-size: 12px; color: #94a3b8; }
+      .error { color: #ef4444; }
+      .ok { color: #22c55e; }
+      .center { text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="card">
+        <div class="center">
+          <div style="width:40px;height:40px;border-radius:9999px;display:inline-flex;align-items:center;justify-content:center;background:#f59e0b1a;border:1px solid #1f2a37;margin-bottom:8px;">
+            <span style="font-weight:700;color:#f59e0b">₿</span>
+          </div>
+        </div>
+        <div class="center">
+          <div class="badge">Wavelength Signet (Practice)</div>
+          <div id="phase" style="font-size:20px;font-weight:700;margin-top:4px;">Initializing…</div>
+          <div id="balance" class="muted" style="height:18px;margin-top:4px;"></div>
+        </div>
+        <div class="spacer"></div>
+        <div id="actions" class="col"></div>
+        <div id="error" class="error"></div>
+        <pre id="stack" style="display:none;"></pre>
+      </div>
+      <div class="spacer"></div>
+      <div class="muted">If boot fails, details will appear above. Assets are served from <code>/wavewalletdk/v0.1.1/</code>.</div>
+    </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "@lightninglabs/wavelength-web": "/wavewalletdk/v0.1.1/web/index.js",
+          "@lightninglabs/wavelength-core": "/wavewalletdk/v0.1.1/core/index.js"
+        }
+      }
+    </script>
+    <script type="module">
+      // Surface unhandled errors in the UI
+      const errBox = document.getElementById('error');
+      const stackBox = document.getElementById('stack');
+      window.addEventListener('error', (e) => {
+        errBox.textContent = e?.error?.message || e?.message || String(e);
+        if (e?.error?.stack) { stackBox.style.display = 'block'; stackBox.textContent = e.error.stack; }
+      });
+      window.addEventListener('unhandledrejection', (e) => {
+        const reason = e?.reason;
+        errBox.textContent = (reason && (reason.message || reason)) || 'Unhandled promise rejection';
+        const st = reason && reason.stack;
+        if (st) { stackBox.style.display = 'block'; stackBox.textContent = st; }
+      });
+
+      // Import the web transport via same-origin import map (no external CDN)
+      import { createWebClient, createWalletEngine, defaultConfig } from '@lightninglabs/wavelength-web';
+
+      const version = 'v0.1.1';
+      const base = new URL(`/wavewalletdk/${version}/`, window.location.origin).toString();
+      // Force the sqlite bridge to use same-origin nested worker and sqlite3 bundle
+      window.sqliteBridgeWorkerURL = `${base}sqlite-worker.js`;
+      window.sqliteBridgeSQLiteJSURL = `${base}sqlite3.js`;
+
+      const phaseEl = document.getElementById('phase');
+      const actionsEl = document.getElementById('actions');
+      const balanceEl = document.getElementById('balance');
+      function setError(e) {
+        const msg = e?.message || String(e);
+        errBox.textContent = msg;
+        if (e?.stack) { stackBox.style.display = 'block'; stackBox.textContent = e.stack; }
+      }
+
+      try {
+        const client = createWebClient({
+          workerURL: `${base}wavewalletdk-worker.js`,
+          runtimeBaseUrl: base,
+          debug: true,
+        });
+        await client.ready();
+
+        const engine = createWalletEngine({
+          client,
+          config: defaultConfig('signet'),
+          autoStart: true,
+        });
+        window.__signetEngine = engine; // debug handle
+
+        function render() {
+          const snap = engine.getSnapshot();
+          phaseEl.textContent = `Phase: ${snap.phase}`;
+          errBox.textContent = '';
+          stackBox.style.display = 'none';
+          actionsEl.innerHTML = '';
+          balanceEl.textContent = '';
+
+          if (snap?.balance && typeof snap.balance.confirmedSat === 'number') {
+            balanceEl.textContent = `Balance: ${snap.balance.confirmedSat.toLocaleString()} sats`;
+          }
+
+          if (snap.phase === 'needsWallet') {
+            const row = document.createElement('div');
+            row.className = 'row';
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.placeholder = 'Choose a password';
+            const btn = document.createElement('button');
+            btn.textContent = 'Create Wallet';
+            btn.onclick = async () => {
+              btn.disabled = true;
+              try {
+                await engine.createWallet({ password: input.value || '' });
+              } catch (e) { setError(e); } finally { btn.disabled = false; }
+            };
+            row.appendChild(input); row.appendChild(btn);
+            actionsEl.appendChild(row);
+          } else if (snap.phase === 'locked') {
+            const row = document.createElement('div');
+            row.className = 'row';
+            const input = document.createElement('input');
+            input.type = 'password';
+            input.placeholder = 'Enter password';
+            const btn = document.createElement('button');
+            btn.textContent = 'Unlock';
+            btn.onclick = async () => {
+              btn.disabled = true;
+              try {
+                await engine.unlockWallet({ password: input.value || '' });
+              } catch (e) { setError(e); } finally { btn.disabled = false; }
+            };
+            row.appendChild(input); row.appendChild(btn);
+            actionsEl.appendChild(row);
+          } else if (snap.phase === 'ready') {
+            const p = document.createElement('div');
+            p.className = 'ok';
+            p.textContent = 'Wallet ready.';
+            actionsEl.appendChild(p);
+          }
+        }
+
+        render();
+        const unsubscribe = engine.subscribe(render);
+        window.addEventListener('beforeunload', () => unsubscribe?.());
+      } catch (e) {
+        setError(e);
+      }
+    </script>
+  </body>
+</html>
+
