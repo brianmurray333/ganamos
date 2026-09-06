@@ -12,6 +12,8 @@
 		5813EBAB0ACE64FE6BE6D241 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0F80F45B7BCD10A2B89DD /* APIClient.swift */; };
 		62552B3EB304617A7069E784 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */; };
 		66AAA7FCC4E1766CFDEA5BF4 /* NewFixView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE27BBC194F71FAAE63B987 /* NewFixView.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* GoogleMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0E1D2C3B4A5968778695A4B /* GoogleMapView.swift */; };
+		BADA55BADA55BADA55BADA55 /* GoogleMaps in Frameworks */ = {isa = PBXBuildFile; productRef = C0FFEE0000AABBCCDDEEFF11 /* GoogleMaps */; };
 		6CF4286FFC8A952D278F429A /* GanamosFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B65BA73739A6FA14366CB6 /* GanamosFlowTests.swift */; };
 		74BA5CAF90E2BB49EC6AE71B /* DonateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D52156DE7D15E14DE02415 /* DonateView.swift */; };
 		87BA130F433942129D3482DA /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD852EDEE1993AD279634F00 /* KeychainStore.swift */; };
@@ -28,6 +30,17 @@
 		ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66901815C87EF5036DF3603D /* FeatureViews.swift */; };
 		FB87B3FF7060012897027C19 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9194ECB0998EAB5E27A0E2 /* DesignSystem.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		FACEFEEDFACEFEEDFACEFEED /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BADA55BADA55BADA55BADA55 /* GoogleMaps in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXContainerItemProxy section */
 		2FBC90E41E4FAEDBE2F38007 /* PBXContainerItemProxy */ = {
@@ -50,6 +63,7 @@
 		0869448BC67FD2FC6242CF0C /* GanamosUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = GanamosUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		13252AE3EB92C6090E30652A /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		20784E5C6F49D20EF279CE2C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		F0E1D2C3B4A5968778695A4B /* GoogleMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleMapView.swift; sourceTree = "<group>"; };
 		3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDestinationViews.swift; sourceTree = "<group>"; };
 		35A9C6478D26D393AF8CE8FD /* FeedLoadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLoadingTests.swift; sourceTree = "<group>"; };
 		3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
@@ -81,6 +95,7 @@
 			children = (
 				8EA0F80F45B7BCD10A2B89DD /* APIClient.swift */,
 				8299FF108209968CB41CB354 /* AppConfiguration.swift */,
+				F0E1D2C3B4A5968778695A4B /* GoogleMapView.swift */,
 				FC9194ECB0998EAB5E27A0E2 /* DesignSystem.swift */,
 				B6D52156DE7D15E14DE02415 /* DonateView.swift */,
 				66901815C87EF5036DF3603D /* FeatureViews.swift */,
@@ -183,6 +198,7 @@
 			buildPhases = (
 				47564214E1E9E2CE91BC946D /* Sources */,
 				55F322CE1C30100D290C5C78 /* Resources */,
+				FACEFEEDFACEFEEDFACEFEED /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -190,6 +206,7 @@
 			);
 			name = Ganamos;
 			packageProductDependencies = (
+				C0FFEE0000AABBCCDDEEFF11 /* GoogleMaps */,
 			);
 			productName = Ganamos;
 			productReference = ECBDD7FB98454CDD16C8CFAA /* Ganamos.app */;
@@ -243,6 +260,9 @@
 			productRefGroup = 9DAF1C78F8C68569E4B4522C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
+			packageReferences = (
+				D0C1B2A3F4E5968778695A4B /* XCRemoteSwiftPackageReference "ios-maps-sdk" */,
+			);
 			targets = (
 				C19BD44D3DF52BF75544CE4A /* Ganamos */,
 				F6FD79CFB802E0A9D7F7721D /* GanamosTests */,
@@ -276,6 +296,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A1B2C3D4E5F60718293A4B5C /* GoogleMapView.swift in Sources */,
 				5813EBAB0ACE64FE6BE6D241 /* APIClient.swift in Sources */,
 				1D1347DFA9757801E3EA262D /* AppConfiguration.swift in Sources */,
 				FB87B3FF7060012897027C19 /* DesignSystem.swift in Sources */,
@@ -305,6 +326,24 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		D0C1B2A3F4E5968778695A4B /* XCRemoteSwiftPackageReference "ios-maps-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/googlemaps/ios-maps-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C0FFEE0000AABBCCDDEEFF11 /* GoogleMaps */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GoogleMaps;
+			package = D0C1B2A3F4E5968778695A4B /* XCRemoteSwiftPackageReference "ios-maps-sdk" */;
+		};
+/* End XCSwiftPackageProductDependency section */
 /* Begin PBXTargetDependency section */
 		145730387D0EA09B1BE161F9 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;

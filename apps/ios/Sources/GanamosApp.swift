@@ -1,8 +1,17 @@
 import SwiftUI
+import GoogleMaps
 
 @main
 struct GanamosApp: App {
     @State private var session = SessionStore()
+    
+    init() {
+        if let key = AppConfiguration.current.googleMapsAPIKey {
+            GMSServices.provideAPIKey(key)
+        } else {
+            print("[Ganamos] Google Maps API key missing; falling back to MapKit")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
