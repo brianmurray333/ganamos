@@ -108,6 +108,17 @@ struct FeedView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(GanamosColor.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        // Soft fade under the top bar to match the web header treatment
+        .overlay(alignment: .top) {
+            LinearGradient(
+                colors: [GanamosColor.canvas, Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 72)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if session.isAuthenticated {
