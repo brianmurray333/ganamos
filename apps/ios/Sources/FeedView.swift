@@ -295,8 +295,34 @@ private struct PostCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AsyncImage(url: post.imageURL) { image in image.resizable().scaledToFill() } placeholder: {
-                ZStack { GanamosColor.green.opacity(0.12); Image(systemName: "wrench.and.screwdriver").foregroundStyle(GanamosColor.green) }
+            AsyncImage(url: post.imageURL, transaction: .init(animation: .easeInOut)) { phase in
+                switch phase {
+                case .empty:
+                    // Neutral skeleton for cards that will load an image.
+                    // Avoid flashing the wrench placeholder while scrolling.
+                    if post.imageURL != nil {
+                        Rectangle().fill(.white.opacity(0.06))
+                    } else {
+                        ZStack {
+                            GanamosColor.surface
+                            Image(systemName: "wrench.and.screwdriver")
+                                .foregroundStyle(GanamosColor.mutedText)
+                        }
+                    }
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                case .failure:
+                    ZStack {
+                        GanamosColor.surface
+                        Image(systemName: "photo")
+                            .foregroundStyle(GanamosColor.mutedText)
+                    }
+                @unknown default:
+                    Rectangle().fill(.white.opacity(0.06))
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 201)
