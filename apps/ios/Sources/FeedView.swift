@@ -373,7 +373,10 @@ private struct PostCard: View {
         .background(GanamosColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(GanamosColor.border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.24), radius: 12, y: 7)
+        // Subtle glow to echo the web’s treatment without going neon
+        .shadow(color: GanamosColor.green.opacity(0.12), radius: 18, y: 0)
+        .shadow(color: Color.orange.opacity(0.05), radius: 10, y: 0)
+        .shadow(color: .black.opacity(0.22), radius: 10, y: 6)
         .accessibilityElement(children: .combine)
     }
 }
