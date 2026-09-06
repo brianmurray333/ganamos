@@ -124,7 +124,17 @@ struct FeedView: View {
                 if session.isAuthenticated {
                     AccountBalanceMenu(isShowingWallet: $isShowingWallet)
                 }
-                else { Button("Sign In") { session.isPresentingLogin = true } }
+                else {
+                    Button {
+                        session.isPresentingLogin = true
+                    } label: {
+                        Text("Sign up to earn").font(.headline)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(GanamosColor.green)
+                    .foregroundStyle(.black)
+                    .accessibilityIdentifier("feedSignUpCTA")
+                }
             }
         }
         .navigationDestination(for: GanamosPost.self) { PostDetailView(post: $0) }
