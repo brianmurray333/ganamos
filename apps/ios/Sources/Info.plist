@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>6</string>
 	<key>GANAMOS_API_BASE_URL</key>
 	<string>$(GANAMOS_API_BASE_URL)</string>
 	<key>GANAMOS_ADMIN_EMAIL</key>
@@ -41,6 +41,8 @@
 	<string>$(GANAMOS_SUPABASE_ANON_KEY)</string>
 	<key>GANAMOS_SUPABASE_URL</key>
 	<string>$(GANAMOS_SUPABASE_URL)</string>
+	<key>GANAMOS_GOOGLE_MAPS_API_KEY</key>
+	<string>$(GANAMOS_GOOGLE_MAPS_API_KEY)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
