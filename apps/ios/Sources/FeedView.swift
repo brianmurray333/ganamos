@@ -108,12 +108,33 @@ struct FeedView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(GanamosColor.canvas, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        // Soft fade under the top bar to match the web header treatment
+        .overlay(alignment: .top) {
+            LinearGradient(
+                colors: [GanamosColor.canvas, Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 72)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if session.isAuthenticated {
                     AccountBalanceMenu(isShowingWallet: $isShowingWallet)
                 }
-                else { Button("Sign In") { session.isPresentingLogin = true } }
+                else {
+                    Button {
+                        session.isPresentingLogin = true
+                    } label: {
+                        Text("Sign up to earn").font(.headline)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(GanamosColor.green)
+                    .foregroundStyle(.black)
+                    .accessibilityIdentifier("feedSignUpCTA")
+                }
             }
         }
         .navigationDestination(for: GanamosPost.self) { PostDetailView(post: $0) }
@@ -295,8 +316,34 @@ private struct PostCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AsyncImage(url: post.imageURL) { image in image.resizable().scaledToFill() } placeholder: {
-                ZStack { GanamosColor.green.opacity(0.12); Image(systemName: "wrench.and.screwdriver").foregroundStyle(GanamosColor.green) }
+            AsyncImage(url: post.imageURL, transaction: .init(animation: .easeInOut)) { phase in
+                switch phase {
+                case .empty:
+                    // Neutral skeleton for cards that will load an image.
+                    // Avoid flashing the wrench placeholder while scrolling.
+                    if post.imageURL != nil {
+                        Rectangle().fill(.white.opacity(0.06))
+                    } else {
+                        ZStack {
+                            GanamosColor.surface
+                            Image(systemName: "wrench.and.screwdriver")
+                                .foregroundStyle(GanamosColor.mutedText)
+                        }
+                    }
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .transition(.opacity)
+                case .failure:
+                    ZStack {
+                        GanamosColor.surface
+                        Image(systemName: "photo")
+                            .foregroundStyle(GanamosColor.mutedText)
+                    }
+                @unknown default:
+                    Rectangle().fill(.white.opacity(0.06))
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 201)
@@ -336,7 +383,10 @@ private struct PostCard: View {
         .background(GanamosColor.surface)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(GanamosColor.border, lineWidth: 1))
-        .shadow(color: .black.opacity(0.24), radius: 12, y: 7)
+        // Subtle glow to echo the web’s treatment without going neon
+        .shadow(color: GanamosColor.green.opacity(0.12), radius: 18, y: 0)
+        .shadow(color: Color.orange.opacity(0.05), radius: 10, y: 0)
+        .shadow(color: .black.opacity(0.22), radius: 10, y: 6)
         .accessibilityElement(children: .combine)
     }
 }

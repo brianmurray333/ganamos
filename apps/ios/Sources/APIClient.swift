@@ -139,7 +139,9 @@ actor APIClient {
             URLQueryItem(name: "under_review", value: "neq.true"),
             URLQueryItem(name: "deleted_at", value: "is.null"),
             URLQueryItem(name: "order", value: "created_at.desc"),
-            URLQueryItem(name: "limit", value: "30")
+            // Match web feed behavior more closely — avoid dropping older
+            // open issues (e.g., Europe) by widening the initial window.
+            URLQueryItem(name: "limit", value: "200")
         ]
         var request = URLRequest(url: components.url!)
         request.setValue(configuration.supabaseAnonKey, forHTTPHeaderField: "apikey")
