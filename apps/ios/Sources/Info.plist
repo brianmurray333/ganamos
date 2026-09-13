@@ -32,7 +32,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>5</string>
 	<key>GANAMOS_API_BASE_URL</key>
 	<string>$(GANAMOS_API_BASE_URL)</string>
 	<key>GANAMOS_ADMIN_EMAIL</key>
