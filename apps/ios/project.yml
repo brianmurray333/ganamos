@@ -39,12 +39,16 @@ targets:
         CFBundleDisplayName: Ganamos!
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         CFBundleURLTypes:
           - CFBundleURLName: earth.ganamos.oauth
             CFBundleURLSchemes:
               - ganamos
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIStatusBarStyle: UIStatusBarStyleLightContent
+        UIUserInterfaceStyle: Dark
+        UIViewControllerBasedStatusBarAppearance: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: Ganamos uses the camera to document community problems and completed fixes.

@@ -3,25 +3,146 @@ import MapKit
 import SwiftUI
 import UIKit
 
+private actor FeedPrefetchCompletionGate {
+    private var isFinished = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        guard !isFinished else { return }
+        await withCheckedContinuation { continuation in
+            guard !isFinished else {
+                continuation.resume()
+                return
+            }
+            waiter = continuation
+        }
+    }
+
+    func finish() {
+        guard !isFinished else { return }
+        isFinished = true
+        waiter?.resume()
+        waiter = nil
+    }
+}
+
 @MainActor @Observable
 final class FeedModel {
     var posts: [GanamosPost] = []
     var isLoading = false
     var error: String?
+    private let cache: FeedSnapshotCache
+    private let postsLoader: (String?) async throws -> [GanamosPost]
+    private let imagePrefetcher: ([URL]) async -> Void
+    private let imagePrefetchTimeout: Duration
+    private var loadGeneration = 0
+    private var activeCacheScope: String?
 
-    init(posts: [GanamosPost] = [], isLoading: Bool = false, error: String? = nil) {
-        self.posts = posts
+    init(
+        posts: [GanamosPost]? = nil,
+        isLoading: Bool = false,
+        error: String? = nil,
+        cache: FeedSnapshotCache = .shared
+    ) {
+        self.cache = cache
+        postsLoader = { try await APIClient.shared.posts(accessToken: $0) }
+        imagePrefetcher = { await FeedImageStore.shared.prefetch($0) }
+        imagePrefetchTimeout = .seconds(2)
+        self.posts = posts ?? []
         self.isLoading = isLoading
         self.error = error
     }
 
-    func load(token: String?) async {
+    init(
+        posts: [GanamosPost]? = nil,
+        isLoading: Bool = false,
+        error: String? = nil,
+        cache: FeedSnapshotCache = .shared,
+        postsLoader: @escaping (String?) async throws -> [GanamosPost],
+        imagePrefetcher: @escaping ([URL]) async -> Void,
+        imagePrefetchTimeout: Duration = .seconds(2)
+    ) {
+        self.cache = cache
+        self.postsLoader = postsLoader
+        self.imagePrefetcher = imagePrefetcher
+        self.imagePrefetchTimeout = imagePrefetchTimeout
+        self.posts = posts ?? []
+        self.isLoading = isLoading
+        self.error = error
+    }
+
+    func activateCacheScope(_ scope: String) {
+        guard activeCacheScope != scope else { return }
+        loadGeneration += 1
+        activeCacheScope = scope
+        posts = cache.freshPosts(scope: scope) ?? []
+        error = nil
+        isLoading = posts.isEmpty
+    }
+
+    func load(token: String?, cacheScope: String = "anonymous") async {
+        if activeCacheScope != cacheScope {
+            activateCacheScope(cacheScope)
+        }
+        loadGeneration += 1
+        let generation = loadGeneration
         isLoading = true
         error = nil
-        defer { isLoading = false }
-        do { posts = try await APIClient.shared.posts(accessToken: token) }
-        catch APIError.sessionExpired { self.error = nil }
-        catch { self.error = error.localizedDescription }
+        do {
+            let refreshedPosts = try await postsLoader(token)
+            guard !Task.isCancelled else {
+                if generation == loadGeneration { isLoading = false }
+                return
+            }
+            var seenImageURLs = Set<URL>()
+            let firstScreenImages = refreshedPosts.prefix(3).compactMap(\.imageURL).filter {
+                seenImageURLs.insert($0).inserted
+            }
+            await prefetchWithinPublicationBudget(firstScreenImages)
+            guard !Task.isCancelled, generation == loadGeneration else {
+                if generation == loadGeneration { isLoading = false }
+                return
+            }
+            posts = refreshedPosts
+            cache.save(refreshedPosts, scope: cacheScope)
+            isLoading = false
+        } catch is CancellationError {
+            guard generation == loadGeneration else { return }
+            isLoading = false
+        } catch APIError.sessionExpired {
+            guard generation == loadGeneration else { return }
+            error = nil
+            isLoading = false
+        } catch {
+            guard generation == loadGeneration else { return }
+            self.error = error.localizedDescription
+            isLoading = false
+        }
+    }
+
+    private func prefetchWithinPublicationBudget(_ urls: [URL]) async {
+        guard !urls.isEmpty else { return }
+        let prefetcher = imagePrefetcher
+        let timeout = imagePrefetchTimeout
+        let completion = FeedPrefetchCompletionGate()
+        let prefetchTask = Task {
+            await prefetcher(urls)
+            await completion.finish()
+        }
+        let timeoutTask = Task {
+            try? await Task.sleep(for: timeout)
+            guard !Task.isCancelled else { return }
+            await completion.finish()
+        }
+        await withTaskCancellationHandler {
+            await completion.wait()
+        } onCancel: {
+            prefetchTask.cancel()
+            timeoutTask.cancel()
+            Task { await completion.finish() }
+        }
+        timeoutTask.cancel()
+        if Task.isCancelled { prefetchTask.cancel() }
     }
 }
 
@@ -34,18 +155,26 @@ struct FeedView: View {
     @State private var dateFilter: FeedDateFilter = .any
     @State private var isShowingFilters = false
     @State private var isShowingWallet = false
+    @State private var selectedPost: GanamosPost?
 
     init() {
-        _model = State(initialValue: FeedModel())
+        let model = FeedModel()
+        let persistedUserID = (
+            UserDefaults.standard.string(forKey: "activeUserID")
+                ?? UserDefaults.standard.string(forKey: "sessionUserID")
+        )
+            .flatMap(UUID.init(uuidString:))
+        model.activateCacheScope(FeedSnapshotCache.scope(userID: persistedUserID))
+        _model = State(initialValue: model)
         disablesAutomaticLoad = false
     }
 
 #if DEBUG
     init(regressionState: FeedRegressionState) {
         switch regressionState {
-        case .loading: _model = State(initialValue: FeedModel(isLoading: true))
-        case .error: _model = State(initialValue: FeedModel(error: "Check your connection and try again."))
-        case .empty: _model = State(initialValue: FeedModel())
+        case .loading: _model = State(initialValue: FeedModel(posts: [], isLoading: true))
+        case .error: _model = State(initialValue: FeedModel(posts: [], error: "Check your connection and try again."))
+        case .empty: _model = State(initialValue: FeedModel(posts: []))
         case .loaded(let posts): _model = State(initialValue: FeedModel(posts: posts))
         }
         disablesAutomaticLoad = true
@@ -79,30 +208,23 @@ struct FeedView: View {
             } else if filteredPosts.isEmpty {
                 EmptyState(icon: "wrench.and.screwdriver", title: "No open fixes", message: "Try another search or check back soon.")
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            HomeSearchField(text: $searchText, filterCount: activeFilterCount) { isShowingFilters = true }
-                                .padding(.horizontal, 18)
-
-                            Color.clear.frame(height: 1).id("feed-start")
-
-                            LazyVStack(spacing: 26) {
-                                ForEach(filteredPosts) { post in
-                                    NavigationLink(value: post) { PostCard(post: post) }
-                                        .buttonStyle(.plain)
-                                }
+                ScrollView {
+                    LazyVStack(spacing: 26) {
+                        ForEach(filteredPosts) { post in
+                            Button {
+                                selectedPost = post
+                            } label: {
+                                PostCard(post: post)
                             }
-                            .padding(.horizontal, 18)
-                            .padding(.bottom, 24)
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("feedPost-\(post.id.uuidString.lowercased())")
                         }
                     }
-                    .task {
-                        await Task.yield()
-                        proxy.scrollTo("feed-start", anchor: .top)
-                    }
-                    .refreshable { await model.load(token: session.accessToken) }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
                 }
+                .refreshable { await model.load(token: session.accessToken, cacheScope: cacheScope) }
             }
 
         }
@@ -110,7 +232,19 @@ struct FeedView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(HomeTopBarFadeStyle.gradient, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .navigationDestination(item: $selectedPost) { post in
+            PostDetailView(post: post)
+        }
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search fixes")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button { isShowingFilters = true } label: {
+                    Image(systemName: activeFilterCount == 0 ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
+                        .foregroundStyle(activeFilterCount == 0 ? .white : GanamosColor.green)
+                }
+                .accessibilityLabel("Filters")
+                .accessibilityValue(activeFilterCount == 0 ? "None active" : "\(activeFilterCount) active")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if session.isAuthenticated {
                     AccountBalanceMenu(isShowingWallet: $isShowingWallet)
@@ -118,13 +252,24 @@ struct FeedView: View {
                 else { Button("Sign In") { session.isPresentingLogin = true } }
             }
         }
-        .navigationDestination(for: GanamosPost.self) { PostDetailView(post: $0) }
-        .task { if !disablesAutomaticLoad && model.posts.isEmpty { await model.load(token: session.accessToken) } }
+        .task {
+            guard !disablesAutomaticLoad else { return }
+            model.activateCacheScope(cacheScope)
+            await model.load(token: session.accessToken, cacheScope: cacheScope)
+        }
+        .onChange(of: session.userID) { _, _ in
+            guard !disablesAutomaticLoad else { return }
+            Task {
+                model.activateCacheScope(cacheScope)
+                await model.load(token: session.accessToken, cacheScope: cacheScope)
+            }
+        }
         .onChange(of: session.accessToken) { previousToken, refreshedToken in
             guard !disablesAutomaticLoad,
+                  previousToken != nil,
                   previousToken != refreshedToken,
                   refreshedToken != nil else { return }
-            Task { await model.load(token: refreshedToken) }
+            Task { await model.load(token: refreshedToken, cacheScope: cacheScope) }
         }
         .sheet(isPresented: $isShowingFilters) {
             FeedFilterSheet(maximumReward: $maximumReward, dateFilter: $dateFilter)
@@ -136,6 +281,10 @@ struct FeedView: View {
     }
 
     private var activeFilterCount: Int { (maximumReward < 10_000 ? 1 : 0) + (dateFilter == .any ? 0 : 1) }
+
+    private var cacheScope: String {
+        FeedSnapshotCache.scope(userID: session.userID)
+    }
 }
 
 struct HomeTopBarFadeStyle {
@@ -223,42 +372,6 @@ private extension String {
 enum FeedRegressionState { case loading, error, empty, loaded([GanamosPost]) }
 #endif
 
-private struct HomeSearchField: View {
-    @Binding var text: String
-    let filterCount: Int
-    let showFilters: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .foregroundStyle(GanamosColor.mutedText)
-
-            TextField("Search fixes", text: $text)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-
-            if !text.isEmpty {
-                Button { text = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(GanamosColor.mutedText)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
-            }
-            Button(action: showFilters) {
-                Image(systemName: filterCount == 0 ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
-                    .foregroundStyle(filterCount == 0 ? GanamosColor.mutedText : GanamosColor.green)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Filters")
-            .accessibilityValue(filterCount == 0 ? "None active" : "\(filterCount) active")
-        }
-        .padding(.horizontal, 14)
-        .frame(height: 46)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-}
-
 private enum FeedDateFilter: String, CaseIterable, Identifiable {
     case any = "Any Time"
     case today = "Today"
@@ -317,9 +430,7 @@ private struct PostCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            AsyncImage(url: post.imageURL) { image in image.resizable().scaledToFill() } placeholder: {
-                ZStack { GanamosColor.green.opacity(0.12); Image(systemName: "wrench.and.screwdriver").foregroundStyle(GanamosColor.green) }
-            }
+            FeedCardImage(url: post.imageURL)
             .frame(maxWidth: .infinity)
             .frame(height: 201)
             .clipped()
@@ -360,6 +471,36 @@ private struct PostCard: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(GanamosColor.border, lineWidth: 1))
         .shadow(color: .black.opacity(0.24), radius: 12, y: 7)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct FeedCardImage: View {
+    let url: URL?
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            GanamosColor.green.opacity(0.12)
+            Image(systemName: "wrench.and.screwdriver")
+                .foregroundStyle(GanamosColor.green)
+
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+            }
+        }
+        .task(id: url) {
+            image = nil
+            guard let url,
+                  let data = try? await FeedImageStore.shared.data(for: url),
+                  !Task.isCancelled,
+                  let loadedImage = UIImage(data: data) else { return }
+            withAnimation(.easeOut(duration: 0.22)) {
+                image = loadedImage
+            }
+        }
     }
 }
 
@@ -565,30 +706,27 @@ struct PostDetailView: View {
             }
             .ignoresSafeArea(edges: .top)
 
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.16), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 16)
-            .padding(.top, 8)
-            .accessibilityLabel("Back")
-        }
-        .navigationBarBackButtonHidden(true)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: URL(string: "https://ganamos.earth/post/\(post.id.uuidString.lowercased())")!) {
-                    Image(systemName: "square.and.arrow.up")
+            HStack {
+                Button { dismiss() } label: {
+                    detailControlIcon("chevron.left")
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+
+                Spacer()
+
+                ShareLink(item: URL(string: "https://ganamos.earth/post/\(post.id.uuidString.lowercased())")!) {
+                    detailControlIcon("square.and.arrow.up")
+                }
+                .buttonStyle(.plain)
                 .accessibilityLabel("Share issue")
             }
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
         }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $isPresentingFix) { NavigationStack { SubmitFixView(post: post) } }
         .sheet(item: $webDestination) { destination in NativeWebSheet(url: destination.url).ignoresSafeArea() }
         .sheet(item: $actionSheet) { destination in
@@ -614,6 +752,16 @@ struct PostDetailView: View {
             deadline = post.expiresAt
         }
         .preferredColorScheme(.dark)
+    }
+
+    private func detailControlIcon(_ systemName: String) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 21, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 46, height: 46)
+            .background(.ultraThinMaterial, in: Circle())
+            .overlay(Circle().stroke(.white.opacity(0.16), lineWidth: 1))
+            .contentShape(Circle())
     }
 
     private var reviewCard: some View {

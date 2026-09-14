@@ -16,6 +16,37 @@ final class AppConfigurationTests: XCTestCase {
         )
     }
 
+    func testRootDoesNotBlockTabsBehindSessionRestoreSpinner() throws {
+        let rootSource = try source(named: "RootView.swift")
+
+        XCTAssertFalse(rootSource.contains("hasRestoredSession"))
+        XCTAssertFalse(rootSource.contains("accessibilityLabel(\"Restoring your session\")"))
+    }
+
+    func testLaunchScreenUsesDarkCanvasColor() throws {
+        let launchScreen = try XCTUnwrap(Bundle.main.object(forInfoDictionaryKey: "UILaunchScreen") as? [String: Any])
+        XCTAssertEqual(launchScreen["UIColorName"] as? String, "LaunchBackground")
+        XCTAssertNotNil(UIColor(named: "LaunchBackground"))
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "UIStatusBarStyle") as? String, "UIStatusBarStyleLightContent")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "UIUserInterfaceStyle") as? String, "Dark")
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "UIViewControllerBasedStatusBarAppearance") as? Bool, false)
+    }
+
+    func testCameraAndPhotoLibraryTransitionsResetReusableState() throws {
+        let source = try source(named: "NewFixView.swift")
+        let disappearance = try XCTUnwrap(source.range(of: "override func viewWillDisappear"))
+        let configureCamera = try XCTUnwrap(source.range(of: "private func configureCamera", range: disappearance.lowerBound..<source.endIndex))
+        let disappearanceBody = String(source[disappearance.lowerBound..<configureCamera.lowerBound])
+        XCTAssertTrue(disappearanceBody.contains("activeCaptureID = nil"))
+        XCTAssertTrue(disappearanceBody.contains("didCapture = false"))
+
+        let selectionChange = try XCTUnwrap(source.range(of: ".onChange(of: photoItem)"))
+        let destination = try XCTUnwrap(source.range(of: ".navigationDestination", range: selectionChange.lowerBound..<source.endIndex))
+        let selectionBody = String(source[selectionChange.lowerBound..<destination.lowerBound])
+        XCTAssertTrue(selectionBody.contains("photoItem = nil"))
+        XCTAssertTrue(selectionBody.contains("UIImage(data: data) != nil"))
+    }
+
     func testHomeTopBarFadesIntoFeedInsteadOfUsingHardBackground() throws {
         let feedSource = try source(named: "FeedView.swift")
 

@@ -38,11 +38,11 @@ struct NewFixView: View {
     }
 
     @Environment(SessionStore.self) private var session
+    private let cancelCamera: () -> Void
     @State private var step: Step = .photo
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
-    @State private var isShowingCamera = false
-    @State private var hasAttemptedAutomaticCamera = false
+    @State private var cameraAuthorized: Bool?
     @State private var description = ""
     @State private var location = ""
     @State private var latitude: Double?
@@ -61,14 +61,16 @@ struct NewFixView: View {
     @State private var navigateToPost: GanamosPost?
     @FocusState private var isDescriptionFocused: Bool
 
-    init() {
+    init(cancelCamera: @escaping () -> Void = {}) {
+        self.cancelCamera = cancelCamera
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let showDetails = arguments.contains("--ganamos-new-issue-details")
         let disableAutomaticCamera = arguments.contains("--ganamos-disable-auto-camera")
         _step = State(initialValue: showDetails ? .details : .photo)
-        _hasAttemptedAutomaticCamera = State(initialValue: showDetails || disableAutomaticCamera)
+        _cameraAuthorized = State(initialValue: showDetails || disableAutomaticCamera ? false : nil)
         if arguments.contains("--ganamos-camera-denied") {
+            _cameraAuthorized = State(initialValue: false)
             _cameraError = State(initialValue: "Camera access is unavailable. Choose a photo from your library instead.")
         }
         if showDetails {
@@ -97,19 +99,15 @@ struct NewFixView: View {
         }
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(isPresented: $isShowingCamera) {
-            DirectIssueCameraPicker { image in
-                photoData = image.jpegData(compressionQuality: 0.86)
-                step = .details
-                Task { await useCurrentLocation() }
-            }
-            .ignoresSafeArea()
-        }
+        .toolbar(step == .photo ? .hidden : .visible, for: .tabBar)
         .onChange(of: photoItem) { _, item in
             Task {
-                guard let data = try? await item?.loadTransferable(type: Data.self) else { return }
+                guard let data = try? await item?.loadTransferable(type: Data.self),
+                      UIImage(data: data) != nil else { return }
+                photoItem = nil
                 photoData = data
                 step = .details
+                await useCurrentLocation()
             }
         }
         .navigationDestination(item: $navigateToPost) { post in
@@ -139,85 +137,23 @@ struct NewFixView: View {
 
     private var photoStep: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color.black, GanamosColor.canvas.opacity(0.9)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Text("Take photo of the issue")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .padding(.top, 18)
-
-                Spacer()
-
-                Image(systemName: "camera.viewfinder")
-                    .font(.system(size: 72, weight: .ultraLight))
-                    .foregroundStyle(.white.opacity(0.2))
-                    .accessibilityHidden(true)
-
-                Spacer()
-
-                VStack(spacing: 14) {
-                    Button {
-                        Task { await openCamera() }
-                    } label: {
-                        Label("Take Photo", systemImage: "camera.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 54)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(GanamosColor.green)
-                    .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-
-                    if let cameraError {
-                        Label(cameraError, systemImage: "camera.fill.badge.exclamationmark")
-                            .font(.subheadline)
-                            .foregroundStyle(.orange)
-                            .multilineTextAlignment(.center)
-                            .accessibilityIdentifier("newIssueCameraError")
-                    }
-
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("Choose from Photos", systemImage: "photo.on.rectangle")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 52)
-                            .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .stroke(GanamosColor.border)
-                            }
-                    }
-
-                    Button("Skip photo") { step = .details }
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(GanamosColor.mutedText)
-                        .frame(height: 42)
-                }
-                .padding(.horizontal, 22)
-                .padding(.bottom, 26)
+            if cameraAuthorized == true {
+                DirectIssueCameraPicker(
+                    completion: acceptCameraImage
+                )
+                .ignoresSafeArea()
             }
+
+            cameraOverlay
         }
-        .onAppear {
-            guard !hasAttemptedAutomaticCamera else { return }
-            hasAttemptedAutomaticCamera = true
-            guard UIImagePickerController.isSourceTypeAvailable(.camera) else { return }
-            Task { await openCamera() }
-        }
+        .task { await resolveCameraAuthorization() }
     }
 
     @MainActor
-    private func openCamera() async {
-        guard UIImagePickerController.isSourceTypeAvailable(.camera) else { return }
+    private func resolveCameraAuthorization() async {
+        guard cameraAuthorized == nil else { return }
         let authorized: Bool
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
@@ -231,10 +167,97 @@ struct NewFixView: View {
         }
         guard authorized else {
             cameraError = "Camera access is unavailable. Choose a photo from your library instead."
+            cameraAuthorized = false
             return
         }
         cameraError = nil
-        isShowingCamera = true
+        cameraAuthorized = true
+    }
+
+    private var cameraOverlay: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                Text("Take a photo of the issue")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .frame(height: 40)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .padding(.top, 14)
+                    .accessibilityIdentifier("issueCameraInstruction")
+
+                Spacer()
+
+                if let cameraError {
+                    Label(cameraError, systemImage: "camera.fill.badge.exclamationmark")
+                        .font(.subheadline)
+                        .foregroundStyle(.orange)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 18)
+                        .accessibilityIdentifier("newIssueCameraError")
+                }
+
+                HStack {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(.black.opacity(0.48), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.2)))
+                    }
+                    .accessibilityLabel("Choose from Photos")
+                    .accessibilityIdentifier("issueCameraPhotos")
+
+                    Spacer()
+
+                    Button {
+                        photoItem = nil
+                        photoData = nil
+                        step = .details
+                    } label: {
+                        Text("Skip")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(.black.opacity(0.48), in: Circle())
+                            .overlay(Circle().stroke(.white.opacity(0.2)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Continue without photo")
+                    .accessibilityIdentifier("issueCameraSkip")
+                }
+                .frame(height: 68)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+
+            Button(action: cancelCamera) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(.black.opacity(0.48), in: Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.2)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close camera")
+            .accessibilityIdentifier("issueCameraClose")
+            .padding(.top, 12)
+            .padding(.trailing, 18)
+        }
+    }
+
+    private func acceptCameraImage(_ image: UIImage) {
+        photoData = image.jpegData(compressionQuality: 0.86)
+        step = .details
+        Task { await useCurrentLocation() }
+    }
+
+    private func returnToPhotoStep() {
+        photoItem = nil
+        step = .photo
     }
 
     private var detailsStep: some View {
@@ -293,7 +316,7 @@ struct NewFixView: View {
 
                 VStack {
                     HStack {
-                        headerButton("chevron.left", label: "Retake") { step = .photo }
+                        headerButton("chevron.left", label: "Retake", action: returnToPhotoStep)
                         Spacer()
                         headerButton("xmark", label: "Remove photo") { self.photoData = nil }
                     }
@@ -310,7 +333,7 @@ struct NewFixView: View {
             .padding(.top, 12)
         } else {
             HStack {
-                headerButton("chevron.left", label: "Add photo") { step = .photo }
+                headerButton("chevron.left", label: "Add photo", action: returnToPhotoStep)
                 Spacer()
                 Color.clear.frame(width: 42, height: 42)
             }
@@ -684,7 +707,6 @@ struct NewFixView: View {
 
     private func resetComposer() {
         step = .photo
-        hasAttemptedAutomaticCamera = false
         photoItem = nil
         photoData = nil
         description = ""
@@ -753,6 +775,7 @@ final class DirectIssueCameraViewController: UIViewController, @preconcurrency A
         isCameraVisible = false
         activeCaptureGeneration = nil
         activeCaptureID = nil
+        didCapture = false
         sessionGeneration += 1
         shutterButton.isEnabled = false
         shutterButton.alpha = 0.45
@@ -885,14 +908,6 @@ final class DirectIssueCameraViewController: UIViewController, @preconcurrency A
     }
 
     private func configureControls() {
-        let closeButton = UIButton(type: .system)
-        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
-        closeButton.tintColor = .white
-        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
-        closeButton.layer.cornerRadius = 22
-        closeButton.accessibilityLabel = "Close camera"
-        closeButton.addTarget(self, action: #selector(closeCamera), for: .touchUpInside)
-
         shutterButton.backgroundColor = .white
         shutterButton.layer.cornerRadius = 34
         shutterButton.layer.borderWidth = 5
@@ -910,16 +925,12 @@ final class DirectIssueCameraViewController: UIViewController, @preconcurrency A
         cameraErrorLabel.isHidden = true
         cameraErrorLabel.accessibilityIdentifier = "issueCameraCaptureError"
 
-        for control in [closeButton, shutterButton, cameraErrorLabel] {
+        for control in [shutterButton, cameraErrorLabel] {
             control.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(control)
         }
 
         NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
-            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 44),
             shutterButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             shutterButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
             shutterButton.widthAnchor.constraint(equalToConstant: 68),
@@ -930,9 +941,6 @@ final class DirectIssueCameraViewController: UIViewController, @preconcurrency A
         ])
     }
 
-    @objc private func closeCamera() {
-        dismiss(animated: true)
-    }
 
     @objc private func takePhoto() {
         guard isCameraVisible, shutterButton.isEnabled, captureSession.isRunning, !didCapture else { return }
@@ -978,7 +986,6 @@ final class DirectIssueCameraViewController: UIViewController, @preconcurrency A
                 return
             }
             self.completion(image)
-            self.dismiss(animated: true)
         }
     }
 }

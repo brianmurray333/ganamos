@@ -21,6 +21,8 @@
 		99F86616D6C431D457A53765 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */; };
 		9EF110ACEB94D3CBD4BF44D3 /* ProfileDestinationViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */; };
 		A1DF72880BD007BBD80AD426 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13252AE3EB92C6090E30652A /* RootView.swift */; };
+		A56954151745424B099B5FAC /* FeedLoadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35A9C6478D26D393AF8CE8FD /* FeedLoadingTests.swift */; };
+		BD9121E233BA07BF077BCBCD /* FeedLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 744A235C1BA6AF90B14488D2 /* FeedLoading.swift */; };
 		C095935130AFD1C235240063 /* AppConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */; };
 		CB6F3DC976EF403E1C70F5DD /* WalletFlowViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3695C0B4083985641684F80 /* WalletFlowViews.swift */; };
 		ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66901815C87EF5036DF3603D /* FeatureViews.swift */; };
@@ -49,6 +51,7 @@
 		13252AE3EB92C6090E30652A /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		20784E5C6F49D20EF279CE2C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		3435974672E61EBE1B8A6D67 /* ProfileDestinationViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileDestinationViews.swift; sourceTree = "<group>"; };
+		35A9C6478D26D393AF8CE8FD /* FeedLoadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLoadingTests.swift; sourceTree = "<group>"; };
 		3E41F91BB3AD1A6182DC5C6E /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		4AE6EBF79EE8648AFE8B15D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59A6AF0F120E7D85787CC547 /* GanamosApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GanamosApp.swift; sourceTree = "<group>"; };
@@ -56,6 +59,7 @@
 		5DDBB30FA9942279641EE62F /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		66901815C87EF5036DF3603D /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 		6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfigurationTests.swift; sourceTree = "<group>"; };
+		744A235C1BA6AF90B14488D2 /* FeedLoading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLoading.swift; sourceTree = "<group>"; };
 		778168F60F211241852312B4 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		81B65BA73739A6FA14366CB6 /* GanamosFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GanamosFlowTests.swift; sourceTree = "<group>"; };
 		8299FF108209968CB41CB354 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
@@ -80,6 +84,7 @@
 				FC9194ECB0998EAB5E27A0E2 /* DesignSystem.swift */,
 				B6D52156DE7D15E14DE02415 /* DonateView.swift */,
 				66901815C87EF5036DF3603D /* FeatureViews.swift */,
+				744A235C1BA6AF90B14488D2 /* FeedLoading.swift */,
 				99346C351DF86CB41A03E4B8 /* FeedView.swift */,
 				59A6AF0F120E7D85787CC547 /* GanamosApp.swift */,
 				D273201B8090BE20B5B8E362 /* Info.plist */,
@@ -99,6 +104,7 @@
 			isa = PBXGroup;
 			children = (
 				6FD3F17F13AC0751A3607265 /* AppConfigurationTests.swift */,
+				35A9C6478D26D393AF8CE8FD /* FeedLoadingTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -262,6 +268,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C095935130AFD1C235240063 /* AppConfigurationTests.swift in Sources */,
+				A56954151745424B099B5FAC /* FeedLoadingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -274,6 +281,7 @@
 				FB87B3FF7060012897027C19 /* DesignSystem.swift in Sources */,
 				74BA5CAF90E2BB49EC6AE71B /* DonateView.swift in Sources */,
 				ED08792AB5F498AF7F1DCBBC /* FeatureViews.swift in Sources */,
+				BD9121E233BA07BF077BCBCD /* FeedLoading.swift in Sources */,
 				1299F05E249A6F32EA5CF444 /* FeedView.swift in Sources */,
 				995AA530FC3613C7AE37687C /* GanamosApp.swift in Sources */,
 				87BA130F433942129D3482DA /* KeychainStore.swift in Sources */,

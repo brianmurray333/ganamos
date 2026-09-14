@@ -23,12 +23,19 @@ final class GanamosFlowTests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.tabBars.buttons["Wallet"].firstMatch.waitForExistence(timeout: 15))
-        tapTab(.new, in: app)
-        XCTAssertTrue(app.buttons["Take Photo"].waitForExistence(timeout: 5))
+        let cameraInstruction = app.staticTexts["Take a photo of the issue"]
+        tap(app.tabBars.buttons["New"].firstMatch, until: cameraInstruction)
         XCTAssertTrue(app.buttons["Choose from Photos"].exists)
+        XCTAssertTrue(app.buttons["Continue without photo"].exists)
+        XCTAssertFalse(app.buttons["Take Photo"].exists)
+        capture("new-issue-direct-camera", app: app)
 
-        tapTab(.wallet, in: app)
-        XCTAssertTrue(app.staticTexts["Sign up to access your wallet"].waitForExistence(timeout: 5))
+        app.buttons["Continue without photo"].tap()
+        XCTAssertTrue(app.textFields["newIssueDescription"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Wallet"].waitForExistence(timeout: 5))
+
+        let walletPrompt = app.staticTexts["Sign up to access your wallet"]
+        tap(app.tabBars.buttons["Wallet"].firstMatch, until: walletPrompt)
         XCTAssertTrue(app.buttons["Sign up"].exists)
         XCTAssertTrue(app.buttons["Log in"].exists)
     }
@@ -457,9 +464,15 @@ final class GanamosFlowTests: XCTestCase {
         app.launch()
 
         XCTAssertTrue(app.buttons["Choose from Photos"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Continue without photo"].exists)
+        XCTAssertTrue(app.staticTexts["Take a photo of the issue"].exists)
+        XCTAssertFalse(app.buttons["Take Photo"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["newIssueCameraError"].exists)
         XCTAssertTrue(app.staticTexts["Camera access is unavailable. Choose a photo from your library instead."].exists)
         capture("new-issue-camera-denied", app: app)
+
+        app.buttons["Continue without photo"].tap()
+        XCTAssertTrue(app.textFields["newIssueDescription"].waitForExistence(timeout: 5))
     }
 
     @MainActor
@@ -567,6 +580,37 @@ final class GanamosFlowTests: XCTestCase {
         XCTAssertTrue(balance.waitForExistence(timeout: 10))
         XCTAssertEqual(balance.label, "Balance: 27.9k sats")
         capture("home-balance-web-parity", app: app)
+    }
+
+    @MainActor
+    func testHomeUsesNativeSearchAndCardsRemainResponsiveAfterBack() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "feedAuthenticated"
+        app.launch()
+
+        XCTAssertTrue(app.searchFields["Search fixes"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Filters"].exists)
+        capture("home-native-search", app: app)
+
+        let firstCard = app.buttons["feedPost-00000000-0000-0000-0000-000000000301"]
+        XCTAssertTrue(firstCard.waitUntilHittable(timeout: 5))
+        firstCard.tap()
+
+        let back = app.buttons["Back"]
+        let share = app.buttons["Share issue"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(abs(back.frame.midY - share.frame.midY), 1)
+        XCTAssertEqual(back.frame.size, share.frame.size)
+        capture("issue-detail-unified-controls", app: app)
+
+        dismiss(back, until: share)
+
+        let secondCard = app.buttons["feedPost-00000000-0000-0000-0000-000000000302"]
+        XCTAssertTrue(secondCard.waitUntilHittable(timeout: 5))
+        secondCard.tap()
+        XCTAssertTrue(app.buttons["Share issue"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Report the broken fountain"].exists)
     }
 
     @MainActor

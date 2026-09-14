@@ -5,25 +5,10 @@ struct RootView: View {
     @Environment(\.openURL) private var openURL
     @State private var selection: AppTab = .home
     @State private var accessPrompt: AppTab?
-    @State private var hasRestoredSession = false
 
     var body: some View {
-        Group {
-            if hasRestoredSession {
-                appTabs
-            } else {
-                ZStack {
-                    GanamosColor.canvas.ignoresSafeArea()
-                    ProgressView()
-                        .tint(GanamosColor.green)
-                        .accessibilityLabel("Restoring your session")
-                }
-            }
-        }
-        .task {
-            await session.restore()
-            hasRestoredSession = true
-        }
+        appTabs
+        .task { await session.restore() }
         .onReceive(NotificationCenter.default.publisher(for: .ganamosSessionExpired)) { notification in
             guard let context = notification.object as? SessionExpirationContext else { return }
             Task {
@@ -41,7 +26,7 @@ struct RootView: View {
             NavigationStack { MapScreen() }
                 .tag(AppTab.map)
                 .tabItem { Label("Map", image: "LucideMap") }
-            NavigationStack { NewFixView() }
+            NavigationStack { NewFixView(cancelCamera: { selection = .home }) }
                 .tag(AppTab.new)
                 .tabItem { Label("New", systemImage: "plus") }
             NavigationStack { WalletView() }
@@ -53,7 +38,7 @@ struct RootView: View {
         }
         .tint(GanamosColor.green)
         .overlay(alignment: .bottom) {
-            if !session.isAuthenticated {
+            if !session.isAuthenticated, selection != .new {
                 SignedOutTabInterceptors { requestedTab in
                     accessPrompt = requestedTab
                 }

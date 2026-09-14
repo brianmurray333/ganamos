@@ -33,10 +33,10 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>6</string>
-	<key>GANAMOS_API_BASE_URL</key>
-	<string>$(GANAMOS_API_BASE_URL)</string>
 	<key>GANAMOS_ADMIN_EMAIL</key>
 	<string>$(GANAMOS_ADMIN_EMAIL)</string>
+	<key>GANAMOS_API_BASE_URL</key>
+	<string>$(GANAMOS_API_BASE_URL)</string>
 	<key>GANAMOS_SUPABASE_ANON_KEY</key>
 	<string>$(GANAMOS_SUPABASE_ANON_KEY)</string>
 	<key>GANAMOS_SUPABASE_URL</key>
@@ -50,10 +50,19 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Ganamos lets you choose photos for community fixes and proof of completion.</string>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
 </dict>
 </plist>
