@@ -40,4 +40,92 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertEqual(transaction.amount, 500)
         XCTAssertEqual(transaction.type, .deposit)
     }
+
+    func testUnauthorizedResponseNeverExposesJWTMessage() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnauthorizedURLProtocol.self]
+        let client = APIClient(
+            configuration: AppConfiguration(
+                apiBaseURL: URL(string: "https://example.com")!,
+                supabaseURL: URL(string: "https://example.com")!,
+                supabaseAnonKey: "anon-key"),
+            session: URLSession(configuration: configuration))
+        let expiryBroadcast = expectation(description: "Session expiry is broadcast")
+        let observer = NotificationCenter.default.addObserver(
+            forName: .ganamosSessionExpired,
+            object: nil,
+            queue: nil) { notification in
+                XCTAssertEqual(
+                    notification.object as? SessionExpirationContext,
+                    SessionExpirationContext(accessToken: "expired-token"))
+                expiryBroadcast.fulfill()
+            }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        do {
+            _ = try await client.posts(accessToken: "expired-token")
+            XCTFail("Expected an expired session error")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Your session has expired. Please sign in again.")
+            XCTAssertFalse(error.localizedDescription.localizedCaseInsensitiveContains("JWT"))
+        }
+        await fulfillment(of: [expiryBroadcast], timeout: 1)
+    }
+
+    @MainActor
+    func testExpiredSessionClearsCredentialsAndPresentsLoginOnce() throws {
+        let store = SessionStore()
+        store.signOut()
+        try store.installRegressionSession(
+            accessToken: "expired-access-token",
+            refreshToken: "expired-refresh-token",
+            userID: UUID(),
+            email: "person@example.com")
+
+        store.handleSessionExpired()
+        store.handleSessionExpired()
+
+        XCTAssertFalse(store.isAuthenticated)
+        XCTAssertNil(KeychainStore.read(account: "accessToken"))
+        XCTAssertNil(KeychainStore.read(account: "refreshToken"))
+        XCTAssertTrue(store.isPresentingLogin)
+        XCTAssertEqual(store.authNotice, "Your session has expired. Please sign in again.")
+    }
+
+    @MainActor
+    func testStaleUnauthorizedResponseCannotExpireCurrentSession() async throws {
+        let store = SessionStore()
+        store.signOut()
+        try store.installRegressionSession(
+            accessToken: "current-access-token",
+            refreshToken: "current-refresh-token",
+            userID: UUID(),
+            email: "person@example.com")
+
+        await store.recoverSessionAfterExpiration(
+            context: SessionExpirationContext(accessToken: "stale-access-token"))
+
+        XCTAssertTrue(store.isAuthenticated)
+        XCTAssertEqual(store.accessToken, "current-access-token")
+        XCTAssertFalse(store.isPresentingLogin)
+        XCTAssertNil(store.authNotice)
+    }
+}
+
+private final class UnauthorizedURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 401,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(#"{"message":"JWT expired"}"#.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

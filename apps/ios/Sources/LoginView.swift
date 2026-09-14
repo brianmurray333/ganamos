@@ -33,6 +33,25 @@ struct LoginView: View {
                         .font(.system(size: 34, weight: .bold))
                         .foregroundStyle(.white)
 
+                    if let notice = session.authNotice {
+                        Label {
+                            Text(notice)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.88))
+                        } icon: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .foregroundStyle(GanamosColor.green)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(GanamosColor.border)
+                        }
+                        .accessibilityIdentifier("sessionExpiredNotice")
+                    }
+
                     if let confirmationEmail {
                         confirmation(email: confirmationEmail)
                     } else {

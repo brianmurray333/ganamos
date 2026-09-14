@@ -20,6 +20,16 @@ struct GanamosApp: App {
 #if DEBUG
         if ProcessInfo.processInfo.environment["GANAMOS_PREVIEW_SCREEN"] == "authentication" {
             LoginView()
+        } else if ProcessInfo.processInfo.environment["GANAMOS_PREVIEW_SCREEN"] == "sessionExpired" {
+            LoginView()
+                .task {
+                    try? session.installRegressionSession(
+                        accessToken: "expired-access-token",
+                        refreshToken: "expired-refresh-token",
+                        userID: UUID(),
+                        email: "preview@ganamos.earth")
+                    session.handleSessionExpired()
+                }
         } else if ProcessInfo.processInfo.environment["GANAMOS_PREVIEW_SCREEN"] == "donate" {
             NavigationStack { DonateView() }
         } else if ProcessInfo.processInfo.environment["GANAMOS_PREVIEW_SCREEN"] == "map" {

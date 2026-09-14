@@ -5,10 +5,36 @@ struct RootView: View {
     @Environment(\.openURL) private var openURL
     @State private var selection: AppTab = .home
     @State private var accessPrompt: AppTab?
+    @State private var hasRestoredSession = false
 
     var body: some View {
+        Group {
+            if hasRestoredSession {
+                appTabs
+            } else {
+                ZStack {
+                    GanamosColor.canvas.ignoresSafeArea()
+                    ProgressView()
+                        .tint(GanamosColor.green)
+                        .accessibilityLabel("Restoring your session")
+                }
+            }
+        }
+        .task {
+            await session.restore()
+            hasRestoredSession = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ganamosSessionExpired)) { notification in
+            guard let context = notification.object as? SessionExpirationContext else { return }
+            Task {
+                await session.recoverSessionAfterExpiration(context: context)
+            }
+        }
+    }
+
+    private var appTabs: some View {
         @Bindable var session = session
-        TabView(selection: tabSelection) {
+        return TabView(selection: tabSelection) {
             NavigationStack { FeedView() }
                 .tag(AppTab.home)
                 .tabItem { Label("Home", image: "LucideHome") }
@@ -61,7 +87,6 @@ struct RootView: View {
                 .presentationCornerRadius(24)
                 .presentationBackground(GanamosColor.surface)
         }
-        .task { await session.restore() }
     }
 
     private var tabSelection: Binding<AppTab> {

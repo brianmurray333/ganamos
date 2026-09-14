@@ -1,14 +1,34 @@
+import CryptoKit
 import Foundation
+
+extension Notification.Name {
+    static let ganamosSessionExpired = Notification.Name("GanamosSessionExpired")
+}
+
+struct SessionExpirationContext: Equatable, Sendable {
+    let accessTokenFingerprint: [UInt8]
+
+    init(accessToken: String) {
+        accessTokenFingerprint = Array(SHA256.hash(data: Data(accessToken.utf8)))
+    }
+
+    func matches(accessToken: String?) -> Bool {
+        guard let accessToken else { return false }
+        return self == SessionExpirationContext(accessToken: accessToken)
+    }
+}
 
 enum APIError: LocalizedError {
     case notConfigured
     case invalidResponse
+    case sessionExpired
     case server(String)
 
     var errorDescription: String? {
         switch self {
         case .notConfigured: "Connect the app to the existing Supabase project in Config/Local.xcconfig."
         case .invalidResponse: "Ganamos returned an unexpected response."
+        case .sessionExpired: "Your session has expired. Please sign in again."
         case let .server(message): message
         }
     }
@@ -182,8 +202,8 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
         request.httpBody = data
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        let (_, http) = try await validatedResponse(for: request)
+        guard (200..<300).contains(http.statusCode) else {
             throw APIError.server("Photo upload failed.")
         }
         return baseURL.appending(path: "storage/v1/object/public/post-images/\(path)")
@@ -308,8 +328,7 @@ actor APIClient {
     }
 
     private func expectSuccess(_ request: URLRequest) async throws {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        let (data, http) = try await validatedResponse(for: request)
         guard (200..<300).contains(http.statusCode) else {
             let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             throw APIError.server(payload?["message"] as? String ?? "Request failed (\(http.statusCode)).")
@@ -517,8 +536,8 @@ actor APIClient {
         var request = authorizedRequest(url: components.url!, accessToken: accessToken)
         request.setValue("count=exact", forHTTPHeaderField: "Prefer")
         request.setValue("0-0", forHTTPHeaderField: "Range")
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
+        let (_, http) = try await validatedResponse(for: request)
+        guard (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
         return http.value(forHTTPHeaderField: "Content-Range")?.split(separator: "/").last.flatMap { Int($0) } ?? 0
     }
 
@@ -614,8 +633,8 @@ actor APIClient {
         var request = authorizedRequest(url: components.url!, accessToken: accessToken)
         request.setValue("count=exact", forHTTPHeaderField: "Prefer")
         request.setValue("0-0", forHTTPHeaderField: "Range")
-        let (_, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
+        let (_, http) = try await validatedResponse(for: request)
+        guard (200..<300).contains(http.statusCode) else { throw APIError.invalidResponse }
         return http.value(forHTTPHeaderField: "Content-Range")?.split(separator: "/").last.flatMap { Int($0) } ?? 0
     }
 
@@ -724,14 +743,34 @@ actor APIClient {
     }
 
     private func decode<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        let (data, http) = try await validatedResponse(for: request)
         guard (200..<300).contains(http.statusCode) else {
             let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
             let message = payload?["msg"] as? String ?? payload?["message"] as? String ?? payload?["error_description"] as? String ?? "Request failed (\(http.statusCode))."
             throw APIError.server(message)
         }
         return try decoder.decode(type, from: data)
+    }
+
+    private func validatedResponse(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        if http.statusCode == 401 {
+            await postSessionExpired(for: request)
+            throw APIError.sessionExpired
+        }
+        return (data, http)
+    }
+
+    private func postSessionExpired(for request: URLRequest) async {
+        guard let authorization = request.value(forHTTPHeaderField: "Authorization"),
+              authorization.hasPrefix("Bearer ") else { return }
+        let rejectedAccessToken = String(authorization.dropFirst("Bearer ".count))
+        await MainActor.run {
+            NotificationCenter.default.post(
+                name: .ganamosSessionExpired,
+                object: SessionExpirationContext(accessToken: rejectedAccessToken))
+        }
     }
 }
 

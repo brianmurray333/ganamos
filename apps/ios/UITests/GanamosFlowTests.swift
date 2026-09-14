@@ -76,6 +76,20 @@ final class GanamosFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testExpiredSessionUsesFriendlyRecoveryCopy() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "sessionExpired"
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["Your session has expired. Please sign in again."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["JWT expired"].exists)
+        XCTAssertTrue(app.buttons["Sign in with Google"].exists)
+        XCTAssertTrue(app.buttons["Sign in with email"].exists)
+        XCTAssertTrue(app.buttons["Sign in with phone"].exists)
+        capture("session-expired-recovery", app: app)
+    }
+
+    @MainActor
     func testAuthenticatedCoreNavigationWhenCredentialsAreProvided() throws {
         let accessToken = regressionValue("GANAMOS_TEST_ACCESS_TOKEN")
         let refreshToken = regressionValue("GANAMOS_TEST_REFRESH_TOKEN")

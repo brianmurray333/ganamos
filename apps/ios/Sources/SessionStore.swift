@@ -12,8 +12,11 @@ final class SessionStore {
     private(set) var mainProfile: UserProfile?
     private(set) var connectedAccounts: [UserProfile] = []
     private(set) var isRestoring = false
+    private var sessionGeneration = 0
+    private var lastRecoveryAttemptedFingerprint: [UInt8]?
     var isPresentingLogin = false
     var authPresentation: AuthPresentation = .login
+    private(set) var authNotice: String?
 
     init() {
         accessToken = KeychainStore.read(account: "accessToken")
@@ -76,6 +79,8 @@ final class SessionStore {
             let response = try await APIClient.shared.refreshSession(refreshToken: refreshToken)
             try persist(response, fallbackEmail: email, preservesActiveAccount: true)
             try await refreshProfile()
+        } catch APIError.sessionExpired {
+            handleSessionExpired()
         } catch {
             signOut()
         }
@@ -126,6 +131,8 @@ final class SessionStore {
     }
 
     func signOut() {
+        sessionGeneration += 1
+        lastRecoveryAttemptedFingerprint = nil
         KeychainStore.delete(account: "accessToken")
         KeychainStore.delete(account: "refreshToken")
         UserDefaults.standard.removeObject(forKey: "sessionEmail")
@@ -141,6 +148,37 @@ final class SessionStore {
         connectedAccounts = []
     }
 
+    func handleSessionExpired() {
+        guard isAuthenticated else { return }
+        signOut()
+        authNotice = "Your session has expired. Please sign in again."
+        authPresentation = .login
+        isPresentingLogin = true
+    }
+
+    func recoverSessionAfterExpiration(context: SessionExpirationContext) async {
+        guard context.matches(accessToken: accessToken),
+              !isRestoring,
+              lastRecoveryAttemptedFingerprint != context.accessTokenFingerprint else { return }
+        let generation = sessionGeneration
+        lastRecoveryAttemptedFingerprint = context.accessTokenFingerprint
+        guard let refreshToken = KeychainStore.read(account: "refreshToken") else {
+            handleSessionExpired()
+            return
+        }
+
+        do {
+            let response = try await APIClient.shared.refreshSession(refreshToken: refreshToken)
+            guard sessionGeneration == generation,
+                  context.matches(accessToken: accessToken) else { return }
+            try persist(response, fallbackEmail: email, preservesActiveAccount: true)
+        } catch {
+            guard sessionGeneration == generation,
+                  context.matches(accessToken: accessToken) else { return }
+            handleSessionExpired()
+        }
+    }
+
 #if DEBUG
     func installRegressionSession(accessToken: String, refreshToken: String, userID: UUID, email: String?) throws {
         try KeychainStore.save(accessToken, account: "accessToken")
@@ -150,6 +188,8 @@ final class SessionStore {
         self.activeUserID = nil
         self.userID = userID
         self.email = email
+        sessionGeneration += 1
+        lastRecoveryAttemptedFingerprint = nil
         UserDefaults.standard.set(email, forKey: "sessionEmail")
         UserDefaults.standard.set(userID.uuidString, forKey: "sessionUserID")
         UserDefaults.standard.removeObject(forKey: "activeUserID")
@@ -180,6 +220,8 @@ final class SessionStore {
     ) throws {
         try KeychainStore.save(response.accessToken, account: "accessToken")
         try KeychainStore.save(response.refreshToken, account: "refreshToken")
+        sessionGeneration += 1
+        lastRecoveryAttemptedFingerprint = nil
         accessToken = response.accessToken
         primaryUserID = response.user.id
         if !preservesActiveAccount {
@@ -188,6 +230,7 @@ final class SessionStore {
         }
         userID = activeUserID ?? response.user.id
         email = response.user.email ?? fallbackEmail
+        authNotice = nil
         UserDefaults.standard.set(email, forKey: "sessionEmail")
         UserDefaults.standard.set(response.user.id.uuidString, forKey: "sessionUserID")
     }

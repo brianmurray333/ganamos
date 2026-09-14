@@ -20,6 +20,7 @@ final class FeedModel {
         error = nil
         defer { isLoading = false }
         do { posts = try await APIClient.shared.posts(accessToken: token) }
+        catch APIError.sessionExpired { self.error = nil }
         catch { self.error = error.localizedDescription }
     }
 }
@@ -118,6 +119,12 @@ struct FeedView: View {
         }
         .navigationDestination(for: GanamosPost.self) { PostDetailView(post: $0) }
         .task { if !disablesAutomaticLoad && model.posts.isEmpty { await model.load(token: session.accessToken) } }
+        .onChange(of: session.accessToken) { previousToken, refreshedToken in
+            guard !disablesAutomaticLoad,
+                  previousToken != refreshedToken,
+                  refreshedToken != nil else { return }
+            Task { await model.load(token: refreshedToken) }
+        }
         .sheet(isPresented: $isShowingFilters) {
             FeedFilterSheet(maximumReward: $maximumReward, dateFilter: $dateFilter)
                 .presentationDetents([.medium])
