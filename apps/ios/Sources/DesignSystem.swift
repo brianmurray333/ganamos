@@ -4,7 +4,8 @@ import SwiftUI
 enum GanamosColor {
     static let green = Color(red: 0.13, green: 0.77, blue: 0.37)
     static let amber = Color(red: 0.996, green: 0.835, blue: 0.42)
-    static let canvas = Color(red: 0.025, green: 0.047, blue: 0.09)
+    // Matches the web dark-mode `--background` token (hsl(222.2 84% 4.9%)).
+    static let canvas = Color(red: 2.0 / 255.0, green: 8.0 / 255.0, blue: 23.0 / 255.0)
     static let surface = Color(red: 0.055, green: 0.08, blue: 0.14)
     static let mutedText = Color(red: 0.58, green: 0.64, blue: 0.72)
     static let border = Color(red: 0.16, green: 0.21, blue: 0.29)

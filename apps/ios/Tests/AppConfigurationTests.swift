@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Ganamos
 
@@ -18,15 +19,20 @@ final class AppConfigurationTests: XCTestCase {
     func testHomeTopBarFadesIntoFeedInsteadOfUsingHardBackground() throws {
         let feedSource = try source(named: "FeedView.swift")
 
-        let homeViewSource = try XCTUnwrap(feedSource.components(separatedBy: "private struct HomeTopBarFade").first)
-        XCTAssertTrue(feedSource.contains("HomeTopBarFade()"))
-        XCTAssertTrue(homeViewSource.contains(".toolbarBackground(.hidden, for: .navigationBar)"))
-        XCTAssertTrue(feedSource.contains(".allowsHitTesting(false)"))
-        XCTAssertTrue(feedSource.contains(".accessibilityHidden(true)"))
-        XCTAssertFalse(
-            homeViewSource.contains(".toolbarBackground(GanamosColor.canvas, for: .navigationBar)"),
-            "Home should not draw an opaque navigation-bar band above the feed."
-        )
+        let color = UIColor(HomeTopBarFadeStyle.background)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        XCTAssertTrue(color.getRed(&red, green: &green, blue: &blue, alpha: &alpha))
+        XCTAssertEqual(red, 2.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(green, 8.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(blue, 23.0 / 255.0, accuracy: 0.001)
+        XCTAssertEqual(alpha, 1, accuracy: 0.001)
+
+        XCTAssertTrue(feedSource.contains(".toolbarBackground(HomeTopBarFadeStyle.gradient, for: .navigationBar)"))
+        XCTAssertTrue(feedSource.contains(".toolbarBackground(.visible, for: .navigationBar)"))
+        XCTAssertFalse(feedSource.contains("private struct HomeTopBarFade"))
     }
 
     private func source(named filename: String) throws -> String {

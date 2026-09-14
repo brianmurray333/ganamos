@@ -105,12 +105,11 @@ struct FeedView: View {
                 }
             }
 
-            HomeTopBarFade()
-                .frame(maxHeight: .infinity, alignment: .top)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(HomeTopBarFadeStyle.gradient, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if session.isAuthenticated {
@@ -139,20 +138,17 @@ struct FeedView: View {
     private var activeFilterCount: Int { (maximumReward < 10_000 ? 1 : 0) + (dateFilter == .any ? 0 : 1) }
 }
 
-private struct HomeTopBarFade: View {
-    var body: some View {
+struct HomeTopBarFadeStyle {
+    static let background = GanamosColor.canvas
+    static var gradient: LinearGradient {
         LinearGradient(
             stops: [
-                .init(color: GanamosColor.canvas, location: 0),
-                .init(color: GanamosColor.canvas, location: 0.5),
+                .init(color: background, location: 0),
+                .init(color: background, location: 0.5),
                 .init(color: .clear, location: 1)
             ],
             startPoint: .top,
             endPoint: .bottom)
-            .frame(height: 128)
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 }
 
