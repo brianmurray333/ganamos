@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import CoreLocation
 import PhotosUI
 import SwiftUI
@@ -47,13 +47,14 @@ struct NewFixView: View {
     @State private var location = ""
     @State private var latitude: Double?
     @State private var longitude: Double?
+    @State private var isPresentingLocationEditor = false
     @State private var audience: Audience = .publicPost
     @State private var groups: [UserGroup] = []
     @State private var people: [FamilyMember] = []
     @State private var bitcoinPrice: Double?
     @State private var reward = 2_000
-    @State private var expiresAt: Date?
     @State private var isLocating = false
+    @State private var locationRequestGeneration = 0
     @State private var isSubmitting = false
     @State private var error: String?
     @State private var cameraError: String?
@@ -70,6 +71,20 @@ struct NewFixView: View {
         if arguments.contains("--ganamos-camera-denied") {
             _cameraError = State(initialValue: "Camera access is unavailable. Choose a photo from your library instead.")
         }
+        if showDetails {
+            let renderer = UIGraphicsImageRenderer(size: CGSize(width: 900, height: 540))
+            let image = renderer.image { context in
+                UIColor(red: 0.04, green: 0.12, blue: 0.10, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 900, height: 540))
+                UIColor(red: 0.14, green: 0.29, blue: 0.23, alpha: 1).setFill()
+                context.fill(CGRect(x: 0, y: 310, width: 900, height: 230))
+                UIColor(red: 0.35, green: 0.40, blue: 0.36, alpha: 1).setFill()
+                context.fill(CGRect(x: 330, y: 0, width: 240, height: 540))
+            }
+            _photoData = State(initialValue: image.jpegData(compressionQuality: 0.82))
+            _location = State(initialValue: "San Francisco, CA")
+            _bitcoinPrice = State(initialValue: 76_500)
+        }
 #endif
     }
 
@@ -83,7 +98,7 @@ struct NewFixView: View {
         .background(Color.black.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(isPresented: $isShowingCamera) {
-            CameraPicker { image in
+            DirectIssueCameraPicker { image in
                 photoData = image.jpegData(compressionQuality: 0.86)
                 step = .details
                 Task { await useCurrentLocation() }
@@ -100,6 +115,7 @@ struct NewFixView: View {
         .navigationDestination(item: $navigateToPost) { post in
             PostDetailView(post: post)
         }
+        .sheet(isPresented: $isPresentingLocationEditor) { locationEditor }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -111,7 +127,13 @@ struct NewFixView: View {
             async let audienceOptions: Void = loadAudienceOptions()
             async let price = APIClient.shared.bitcoinPrice()
             _ = await audienceOptions
+#if DEBUG
+            if ProcessInfo.processInfo.environment["GANAMOS_PREVIEW_SCREEN"] != "newIssueDetails" {
+                bitcoinPrice = try? await price
+            }
+#else
             bitcoinPrice = try? await price
+#endif
         }
     }
 
@@ -219,11 +241,9 @@ struct NewFixView: View {
         VStack(spacing: 0) {
             photoHeader
             ScrollView {
-                VStack(spacing: 22) {
+                VStack(spacing: 18) {
                     descriptionEditor
                     audienceControl
-                    locationControl
-                    deadlineControl
                     rewardControl
 
                     if let error {
@@ -253,7 +273,7 @@ struct NewFixView: View {
                     .disabled(!canSubmit)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 22)
+                .padding(.top, 18)
                 .padding(.bottom, 32)
             }
         }
@@ -263,20 +283,31 @@ struct NewFixView: View {
 
     @ViewBuilder private var photoHeader: some View {
         if let photoData, let image = UIImage(data: photoData) {
-            ZStack(alignment: .top) {
+            ZStack {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(height: 230)
+                    .frame(height: 210)
                     .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                HStack {
-                    headerButton("chevron.left", label: "Retake") { step = .photo }
+                VStack {
+                    HStack {
+                        headerButton("chevron.left", label: "Retake") { step = .photo }
+                        Spacer()
+                        headerButton("xmark", label: "Remove photo") { self.photoData = nil }
+                    }
                     Spacer()
-                    headerButton("xmark", label: "Remove photo") { self.photoData = nil }
+                    HStack {
+                        locationPill
+                        Spacer()
+                    }
                 }
-                .padding(14)
+                .padding(12)
             }
+            .frame(height: 210)
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
         } else {
             HStack {
                 headerButton("chevron.left", label: "Add photo") { step = .photo }
@@ -290,7 +321,89 @@ struct NewFixView: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
+            HStack {
+                locationPill
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
         }
+    }
+
+    private var locationPill: some View {
+        Button { isPresentingLocationEditor = true } label: {
+            HStack(spacing: 7) {
+                Image(systemName: "mappin")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(location.isEmpty ? "Add location" : location.split(separator: ",").first.map(String.init) ?? location)
+                    .lineLimit(1)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(.black.opacity(0.62), in: Capsule())
+            .overlay { Capsule().stroke(.white.opacity(0.14)) }
+        }
+        .accessibilityIdentifier("newIssueLocationOverlay")
+    }
+
+    private var locationEditor: some View {
+        NavigationStack {
+            VStack(spacing: 18) {
+                TextField("City or address", text: manualLocationBinding)
+                    .textContentType(.fullStreetAddress)
+                    .padding(.horizontal, 15)
+                    .frame(height: 54)
+                    .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: 14).stroke(GanamosColor.border) }
+
+                Button { Task { await useCurrentLocation() } } label: {
+                    if isLocating {
+                        ProgressView().tint(.white)
+                    } else {
+                        Label("Use current location", systemImage: "location.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(GanamosColor.green)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("Location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { isPresentingLocationEditor = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .preferredColorScheme(.dark)
+    }
+
+    private var manualLocationBinding: Binding<String> {
+        Binding(
+            get: { location },
+            set: { value in
+                location = value
+                latitude = nil
+                longitude = nil
+                locationRequestGeneration += 1
+                isLocating = false
+                error = nil
+            }
+        )
     }
 
     private func headerButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
@@ -315,7 +428,7 @@ struct NewFixView: View {
             .focused($isDescriptionFocused)
             .submitLabel(.done)
             .onSubmit { isDescriptionFocused = false }
-            .font(.title3)
+            .font(.body)
             .foregroundStyle(.white)
             .lineLimit(3...5)
             .padding(16)
@@ -380,107 +493,33 @@ struct NewFixView: View {
         }
     }
 
-    private var locationControl: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "location.fill")
-                .foregroundStyle(location.isEmpty ? GanamosColor.mutedText : GanamosColor.green)
-            TextField(
-                "",
-                text: $location,
-                prompt: Text("Add location").foregroundStyle(GanamosColor.mutedText)
-            )
-                .foregroundStyle(.white)
-                .textContentType(.fullStreetAddress)
-            Button { Task { await useCurrentLocation() } } label: {
-                if isLocating { ProgressView().controlSize(.small).tint(GanamosColor.green) }
-                else { Image(systemName: "location.circle") }
-            }
-            .foregroundStyle(GanamosColor.green)
-            .accessibilityLabel("Use current location")
-        }
-        .padding(.horizontal, 15)
-        .frame(height: 54)
-        .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 14).stroke(GanamosColor.border) }
-        .accessibilityIdentifier("newIssueLocation")
-    }
-
-    private var deadlineControl: some View {
-        Menu {
-            deadlineButton("1 hour", hours: 1)
-            deadlineButton("12 hours", hours: 12)
-            deadlineButton("1 day", hours: 24)
-            deadlineButton("3 days", hours: 72)
-            deadlineButton("7 days", hours: 168)
-
-            if expiresAt != nil {
-                Divider()
-                Button("Remove deadline", role: .destructive) { expiresAt = nil }
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "timer")
-                    .foregroundStyle(expiresAt == nil ? GanamosColor.mutedText : GanamosColor.green)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Deadline")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Text(deadlineSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(GanamosColor.mutedText)
-                }
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(GanamosColor.mutedText)
-            }
-            .padding(.horizontal, 15)
-            .frame(height: 58)
-            .background(GanamosColor.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 14).stroke(GanamosColor.border) }
-        }
-        .accessibilityIdentifier("newIssueDeadline")
-    }
-
-    private func deadlineButton(_ label: String, hours: Double) -> some View {
-        Button(label) { expiresAt = Date().addingTimeInterval(hours * 3_600) }
-    }
-
-    private var deadlineSubtitle: String {
-        guard let expiresAt else { return "No deadline" }
-        return "Expires \(expiresAt.formatted(date: .abbreviated, time: .shortened))"
-    }
-
     private var rewardControl: some View {
-        VStack(spacing: 8) {
-            Text("Reward")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(GanamosColor.mutedText)
-
+        VStack(spacing: 12) {
             HStack(spacing: 14) {
                 rewardButton("minus") { reward = max(0, reward - 500) }
-                VStack(spacing: 4) {
-                    Text(reward.formatted())
-                        .font(.system(size: 48, weight: .light, design: .rounded))
+                VStack(spacing: 6) {
+                    Text(compactSats(reward))
+                        .font(.system(size: 36, weight: .light, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(.white)
-                    HStack(spacing: 6) {
-                        Image(systemName: "bitcoinsign.circle.fill")
-                            .foregroundStyle(.orange)
+
+                    HStack(spacing: 7) {
+                        Image("BitcoinLogo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 22, height: 22)
+                            .accessibilityElement()
+                            .accessibilityLabel("Bitcoin")
+                            .accessibilityIdentifier("newIssueBitcoinLogo")
                         Text("sats reward")
+                            .font(.body)
                             .foregroundStyle(GanamosColor.mutedText)
                     }
-                    .font(.subheadline)
+                    .accessibilityElement(children: .contain)
                 }
+                .accessibilityElement(children: .contain)
                 .frame(maxWidth: .infinity)
                 rewardButton("plus") { reward = min(50_000, reward + 500) }
-            }
-
-            if let balance = session.profile?.balance {
-                Text("\(balance.formatted()) sats available")
-                    .font(.caption)
-                    .foregroundStyle(reward > balance ? .red : GanamosColor.mutedText)
             }
 
             if let bitcoinPrice {
@@ -489,8 +528,16 @@ struct NewFixView: View {
                     .foregroundStyle(GanamosColor.mutedText)
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .accessibilityIdentifier("newIssueReward")
+    }
+
+    private func compactSats(_ value: Int) -> String {
+        guard value >= 1_000 else { return value.formatted() }
+        let thousands = Double(value) / 1_000
+        return thousands == thousands.rounded()
+            ? "\(Int(thousands))k"
+            : String(format: "%.1fk", thousands)
     }
 
     private func rewardButton(_ icon: String, action: @escaping () -> Void) -> some View {
@@ -514,22 +561,37 @@ struct NewFixView: View {
     }
 
     private func useCurrentLocation() async {
+        locationRequestGeneration += 1
+        let requestGeneration = locationRequestGeneration
         isLocating = true
-        defer { isLocating = false }
+        error = nil
+        defer {
+            if locationRequestGeneration == requestGeneration { isLocating = false }
+        }
         do {
             let result = try await CurrentLocationService.location()
-            latitude = result.coordinate.latitude
-            longitude = result.coordinate.longitude
             let placemarks = try await CLGeocoder().reverseGeocodeLocation(result)
+            let resolvedLocation: String
             if let place = placemarks.first {
-                location = [place.name, place.locality, place.administrativeArea]
+                resolvedLocation = [place.name, place.locality, place.administrativeArea]
                     .compactMap { $0 }
                     .reduce(into: [String]()) { parts, value in
                         if !parts.contains(value) { parts.append(value) }
                     }
                     .joined(separator: ", ")
+            } else {
+                resolvedLocation = String(
+                    format: "%.5f, %.5f",
+                    result.coordinate.latitude,
+                    result.coordinate.longitude
+                )
             }
+            guard locationRequestGeneration == requestGeneration else { return }
+            latitude = result.coordinate.latitude
+            longitude = result.coordinate.longitude
+            location = resolvedLocation
         } catch {
+            guard locationRequestGeneration == requestGeneration else { return }
             self.error = "Location is unavailable. You can enter it manually."
         }
     }
@@ -567,7 +629,7 @@ struct NewFixView: View {
                 reward: reward,
                 groupID: groupID,
                 assignedTo: assignedTo,
-                expiresAt: expiresAt,
+                expiresAt: nil,
                 accessToken: token,
                 userID: userID,
                 profile: session.profile
@@ -583,7 +645,7 @@ struct NewFixView: View {
                 longitude: longitude,
                 reward: reward,
                 createdAt: Date(),
-                expiresAt: expiresAt,
+                expiresAt: nil,
                 group: selectedPostGroup,
                 userID: userID,
                 fixed: false,
@@ -629,9 +691,295 @@ struct NewFixView: View {
         location = ""
         latitude = nil
         longitude = nil
+        locationRequestGeneration += 1
+        isLocating = false
         audience = .publicPost
         reward = 2_000
-        expiresAt = nil
+    }
+}
+
+struct DirectIssueCameraPicker: UIViewControllerRepresentable {
+    let completion: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> DirectIssueCameraViewController {
+        DirectIssueCameraViewController(completion: completion)
+    }
+
+    func updateUIViewController(_ uiViewController: DirectIssueCameraViewController, context: Context) {}
+}
+
+final class DirectIssueCameraViewController: UIViewController, @preconcurrency AVCapturePhotoCaptureDelegate {
+    private let captureSession = AVCaptureSession()
+    private let photoOutput = AVCapturePhotoOutput()
+    private let sessionQueue = DispatchQueue(label: "earth.ganamos.issue-camera.session", qos: .userInitiated)
+    private let completion: (UIImage) -> Void
+    private let shutterButton = UIButton(type: .custom)
+    private let cameraErrorLabel = UILabel()
+    private var previewLayer: AVCaptureVideoPreviewLayer?
+    private var didCapture = false
+    private var supportsAutoFlash = false
+    private var cameraConfigured = false
+    private var isCameraVisible = false
+    private var isSessionInterrupted = false
+    private var sessionGeneration = 0
+    private var activeCaptureGeneration: Int?
+    private var activeCaptureID: Int64?
+
+    init(completion: @escaping (UIImage) -> Void) {
+        self.completion = completion
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        configureControls()
+        configureCamera()
+        observeSessionLifecycle()
+    }
+
+    deinit { NotificationCenter.default.removeObserver(self) }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        previewLayer?.frame = view.bounds
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        isCameraVisible = false
+        activeCaptureGeneration = nil
+        activeCaptureID = nil
+        sessionGeneration += 1
+        shutterButton.isEnabled = false
+        shutterButton.alpha = 0.45
+        let session = captureSession
+        sessionQueue.async {
+            if session.isRunning { session.stopRunning() }
+        }
+    }
+
+    private func configureCamera() {
+        let session = captureSession
+        let output = photoOutput
+        let configuration = sessionQueue.sync { () -> (configured: Bool, supportsAutoFlash: Bool) in
+            session.beginConfiguration()
+            session.sessionPreset = .photo
+            defer { session.commitConfiguration() }
+
+            guard
+                let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+                let input = try? AVCaptureDeviceInput(device: device),
+                session.canAddInput(input),
+                session.canAddOutput(output)
+            else { return (false, false) }
+
+            session.addInput(input)
+            session.addOutput(output)
+            return (true, device.hasFlash && output.supportedFlashModes.contains(.auto))
+        }
+
+        guard configuration.configured else {
+            cameraErrorLabel.text = "Camera is unavailable."
+            cameraErrorLabel.isHidden = false
+            return
+        }
+
+        cameraConfigured = true
+        supportsAutoFlash = configuration.supportsAutoFlash
+
+        let layer = AVCaptureVideoPreviewLayer(session: captureSession)
+        layer.videoGravity = .resizeAspectFill
+        view.layer.insertSublayer(layer, at: 0)
+        previewLayer = layer
+    }
+
+    private func observeSessionLifecycle() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(cameraSessionWasInterrupted),
+            name: AVCaptureSession.wasInterruptedNotification,
+            object: captureSession
+        )
+        center.addObserver(
+            self,
+            selector: #selector(cameraSessionInterruptionEnded),
+            name: AVCaptureSession.interruptionEndedNotification,
+            object: captureSession
+        )
+        center.addObserver(
+            self,
+            selector: #selector(cameraSessionRuntimeError),
+            name: AVCaptureSession.runtimeErrorNotification,
+            object: captureSession
+        )
+    }
+
+    @objc private func cameraSessionWasInterrupted(_ notification: Notification) {
+        showCameraError("Camera paused. Close and try again.")
+    }
+
+    @objc private func cameraSessionInterruptionEnded(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isCameraVisible else { return }
+            self.isSessionInterrupted = false
+            self.sessionGeneration += 1
+            self.startSession()
+        }
+    }
+
+    @objc private func cameraSessionRuntimeError(_ notification: Notification) {
+        showCameraError("Camera stopped. Close and try again.")
+    }
+
+    private func showCameraError(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isSessionInterrupted = true
+            self.sessionGeneration += 1
+            self.activeCaptureGeneration = nil
+            self.activeCaptureID = nil
+            self.didCapture = false
+            self.shutterButton.isEnabled = false
+            self.shutterButton.alpha = 0.45
+            self.cameraErrorLabel.text = message
+            self.cameraErrorLabel.isHidden = false
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        isCameraVisible = true
+        isSessionInterrupted = false
+        sessionGeneration += 1
+        startSession()
+    }
+
+    private func startSession() {
+        guard cameraConfigured, isCameraVisible, !isSessionInterrupted else { return }
+        let generation = sessionGeneration
+        let session = captureSession
+        sessionQueue.async { [weak self] in
+            if !session.isRunning { session.startRunning() }
+            let isRunning = session.isRunning
+            DispatchQueue.main.async {
+                guard
+                    let self,
+                    self.isCameraVisible,
+                    self.sessionGeneration == generation
+                else { return }
+                self.shutterButton.isEnabled = isRunning
+                self.shutterButton.alpha = isRunning ? 1 : 0.45
+                if isRunning {
+                    self.cameraErrorLabel.isHidden = true
+                } else {
+                    self.cameraErrorLabel.text = "Camera couldn't start. Close and try again."
+                    self.cameraErrorLabel.isHidden = false
+                }
+            }
+        }
+    }
+
+    private func configureControls() {
+        let closeButton = UIButton(type: .system)
+        closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
+        closeButton.tintColor = .white
+        closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.45)
+        closeButton.layer.cornerRadius = 22
+        closeButton.accessibilityLabel = "Close camera"
+        closeButton.addTarget(self, action: #selector(closeCamera), for: .touchUpInside)
+
+        shutterButton.backgroundColor = .white
+        shutterButton.layer.cornerRadius = 34
+        shutterButton.layer.borderWidth = 5
+        shutterButton.layer.borderColor = UIColor.white.withAlphaComponent(0.42).cgColor
+        shutterButton.accessibilityLabel = "Take photo"
+        shutterButton.addTarget(self, action: #selector(takePhoto), for: .touchUpInside)
+        shutterButton.isEnabled = false
+        shutterButton.alpha = 0.45
+
+        cameraErrorLabel.textColor = .white
+        cameraErrorLabel.font = .preferredFont(forTextStyle: .subheadline)
+        cameraErrorLabel.textAlignment = .center
+        cameraErrorLabel.numberOfLines = 0
+        cameraErrorLabel.text = "Couldn't take photo. Try again."
+        cameraErrorLabel.isHidden = true
+        cameraErrorLabel.accessibilityIdentifier = "issueCameraCaptureError"
+
+        for control in [closeButton, shutterButton, cameraErrorLabel] {
+            control.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(control)
+        }
+
+        NSLayoutConstraint.activate([
+            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 14),
+            closeButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 44),
+            shutterButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            shutterButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -24),
+            shutterButton.widthAnchor.constraint(equalToConstant: 68),
+            shutterButton.heightAnchor.constraint(equalToConstant: 68),
+            cameraErrorLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            cameraErrorLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+            cameraErrorLabel.bottomAnchor.constraint(equalTo: shutterButton.topAnchor, constant: -18),
+        ])
+    }
+
+    @objc private func closeCamera() {
+        dismiss(animated: true)
+    }
+
+    @objc private func takePhoto() {
+        guard isCameraVisible, shutterButton.isEnabled, captureSession.isRunning, !didCapture else { return }
+        didCapture = true
+        shutterButton.isEnabled = false
+        shutterButton.alpha = 0.45
+        cameraErrorLabel.isHidden = true
+        let settings = AVCapturePhotoSettings()
+        settings.flashMode = supportsAutoFlash ? .auto : .off
+        activeCaptureGeneration = sessionGeneration
+        activeCaptureID = settings.uniqueID
+        photoOutput.capturePhoto(with: settings, delegate: self)
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishProcessingPhoto photo: AVCapturePhoto,
+        error: Error?
+    ) {
+        let captureID = photo.resolvedSettings.uniqueID
+        let image: UIImage?
+        if error == nil, let data = photo.fileDataRepresentation() {
+            image = UIImage(data: data)
+        } else {
+            image = nil
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard
+                self.isCameraVisible,
+                self.activeCaptureGeneration == self.sessionGeneration,
+                self.activeCaptureID == captureID
+            else { return }
+            self.activeCaptureGeneration = nil
+            self.activeCaptureID = nil
+
+            guard let image else {
+                self.didCapture = false
+                self.shutterButton.isEnabled = !self.isSessionInterrupted && self.captureSession.isRunning
+                self.shutterButton.alpha = self.shutterButton.isEnabled ? 1 : 0.45
+                self.cameraErrorLabel.text = "Couldn't take photo. Try again."
+                self.cameraErrorLabel.isHidden = false
+                return
+            }
+            self.completion(image)
+            self.dismiss(animated: true)
+        }
     }
 }
 

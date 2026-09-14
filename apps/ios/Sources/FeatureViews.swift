@@ -15,7 +15,6 @@ struct MapScreen: View {
     @State private var selectedPost: GanamosPost?
     @State private var searchText = ""
     @State private var isSearching = false
-    @State private var rewardedOnly = false
     @State private var isShowingDonate = false
 
     init(regressionPosts: [GanamosPost]? = nil) {
@@ -25,7 +24,7 @@ struct MapScreen: View {
 
     private var mappedPosts: [GanamosPost] {
         posts.filter {
-            $0.latitude != nil && $0.longitude != nil && (!rewardedOnly || $0.reward > 0)
+            $0.latitude != nil && $0.longitude != nil
         }
     }
 
@@ -63,9 +62,6 @@ struct MapScreen: View {
                         }
                         MapGlassButton(image: "LucideEarth", label: "Show all fixes", isActive: false) {
                             showAllPosts()
-                        }
-                        MapGlassButton(image: "LucideGift", label: "Rewarded fixes only", isActive: rewardedOnly) {
-                            rewardedOnly.toggle()
                         }
                     }
                 }
@@ -224,8 +220,7 @@ private struct MapGlassButton: View {
         switch label {
         case "Donate to community fixes": "mapDonate"
         case "Show all fixes": "mapShowAll"
-        case "Rewarded fixes only": "mapRewardedOnly"
-        default: "mapControl"
+        default: "mapAction"
         }
     }
 }
@@ -853,28 +848,46 @@ struct ProfileView: View {
             Button { isConfirmingLogout = true } label: {
                 HStack(spacing: 16) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.title3).frame(width: 24).foregroundStyle(GanamosColor.mutedText)
-                    Text("Log out").font(.system(size: 15)).foregroundStyle(.white)
+                        .font(.system(size: 20, weight: .regular))
+                        .frame(width: 24)
+                        .foregroundStyle(GanamosColor.mutedText)
+                    Text("Log out")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.white)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
                 .padding(.horizontal, 4)
-            }.buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("profileMenu-Log-out")
         }
     }
 
     private func menuRow<Destination: View>(_ title: String, icon: String, @ViewBuilder destination: () -> Destination) -> some View {
         NavigationLink(destination: profileDestination { destination() }) {
             HStack(spacing: 16) {
-                Image(systemName: icon).font(.title3).frame(width: 24).foregroundStyle(GanamosColor.mutedText)
-                Text(title).font(.system(size: 15)).foregroundStyle(.white)
+                Image(systemName: icon)
+                    .font(.system(size: 20, weight: .regular))
+                    .frame(width: 24)
+                    .foregroundStyle(GanamosColor.mutedText)
+                Text(title)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
                 Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(GanamosColor.mutedText)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(GanamosColor.mutedText.opacity(0.42))
+                    .accessibilityHidden(true)
             }
-            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
             .padding(.horizontal, 4)
-        }.buttonStyle(.plain)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("profileMenu-\(title.replacingOccurrences(of: " ", with: "-"))")
     }
 
     private func profileDestination<Content: View>(@ViewBuilder content: () -> Content) -> some View {

@@ -53,7 +53,18 @@ struct NativeWebSheet: UIViewControllerRepresentable {
 }
 
 struct SatsBadge: View {
+    enum Style {
+        case filled
+        case transparent
+    }
+
     let amount: Int
+    let style: Style
+
+    init(amount: Int, style: Style = .filled) {
+        self.amount = amount
+        self.style = style
+    }
 
     private var formattedAmount: String {
         if amount >= 1_000_000 {
@@ -85,7 +96,12 @@ struct SatsBadge: View {
             .foregroundStyle(Color(red: 1.0, green: 0.83, blue: 0.62))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(red: 0.32, green: 0.13, blue: 0.02), in: Capsule())
+            .background {
+                if style == .filled {
+                    Capsule()
+                        .fill(Color(red: 0.32, green: 0.13, blue: 0.02))
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Balance: \(formattedAmount)")
             .accessibilityIdentifier("home-balance-badge")

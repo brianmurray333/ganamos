@@ -6,6 +6,20 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertEqual(AppConfiguration.current.apiBaseURL.scheme, "https")
     }
 
+    func testHomeBalanceUsesTransparentBadgeStyle() throws {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let feedSource = try String(
+            contentsOf: testsDirectory
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/FeedView.swift"),
+            encoding: .utf8)
+
+        XCTAssertTrue(
+            feedSource.contains("SatsBadge(amount: session.profile?.balance ?? 0, style: .transparent)"),
+            "The Home balance control should keep its content and touch target without a filled badge background."
+        )
+    }
+
     func testPostDecodesExistingWebShape() throws {
         let json = #"{"id":"00000000-0000-0000-0000-000000000001","title":"Fix the park","description":"Broken bench","image_url":null,"location":"Mission","latitude":37.7,"longitude":-122.4,"reward":500,"created_at":"2026-08-02T12:00:00Z","group":null}"#.data(using: .utf8)!
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601

@@ -2,6 +2,21 @@ import XCTest
 
 final class GanamosFlowTests: XCTestCase {
     @MainActor
+    func testProfileMenuUsesComfortableSingleLineRows() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "profile"
+        app.launch()
+
+        for title in ["Account settings", "Groups", "Activity", "Posts", "Log out"] {
+            let identifier = "profileMenu-" + title.replacingOccurrences(of: " ", with: "-")
+            let row = app.buttons[identifier]
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "Missing profile menu row: \(title)")
+            XCTAssertGreaterThanOrEqual(row.frame.height, 56, "Profile menu row is too short: \(title)")
+            XCTAssertTrue(app.staticTexts[title].exists)
+        }
+    }
+
+    @MainActor
     func testSignedOutCoreNavigation() throws {
         let app = XCUIApplication()
         app.launchArguments += ["--ganamos-reset-session", "--ganamos-disable-auto-camera"]
@@ -268,7 +283,7 @@ final class GanamosFlowTests: XCTestCase {
     }
 
     @MainActor
-    func testNewIssueDetailsSupportsLocationDeadlineAndSafeRewardConfiguration() throws {
+    func testNewIssueDetailsSupportsLocationAndSafeRewardConfiguration() throws {
         let app = XCUIApplication()
         app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "newIssueDetails"
         app.launchArguments += ["--ganamos-new-issue-details", "--ganamos-disable-auto-camera"]
@@ -276,8 +291,8 @@ final class GanamosFlowTests: XCTestCase {
 
         let description = app.descendants(matching: .any)["newIssueDescription"]
         XCTAssertTrue(description.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["newIssueLocation"].exists)
-        XCTAssertTrue(app.descendants(matching: .any)["newIssueDeadline"].exists)
+        XCTAssertTrue(app.buttons["newIssueLocationOverlay"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["newIssueDeadline"].exists)
         XCTAssertFalse(app.buttons["Post"].isEnabled)
 
         description.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
@@ -285,17 +300,6 @@ final class GanamosFlowTests: XCTestCase {
         description.typeText("Regression-only neighborhood cleanup issue")
         XCTAssertTrue(app.buttons["Post"].isEnabled)
         dismissKeyboard(in: app)
-
-        let deadline = app.descendants(matching: .any)["newIssueDeadline"]
-        let oneHour = app.buttons["1 hour"]
-        deadline.tap()
-        if !oneHour.waitForExistence(timeout: 2) {
-            // Under full-suite simulator load, iOS 26 can acknowledge the
-            // semantic menu tap without presenting the menu on the first try.
-            deadline.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
-        XCTAssertTrue(oneHour.waitForExistence(timeout: 5))
-        oneHour.tap()
 
         app.swipeUp()
         let decreaseReward = app.buttons["Decrease reward"]
@@ -375,19 +379,12 @@ final class GanamosFlowTests: XCTestCase {
         app.buttons["Dismiss keyboard"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
 
-        let rewardFilter = app.buttons["mapRewardedOnly"]
-        XCTAssertTrue(rewardFilter.exists)
-        XCTAssertEqual(rewardFilter.value as? String, "Off")
-        rewardFilter.tap()
-        if !rewardFilter.waitForValue("On", timeout: 2) {
-            rewardFilter.tap()
-        }
-        XCTAssertEqual(rewardFilter.value as? String, "On")
+        XCTAssertFalse(app.buttons["mapRewardedOnly"].exists)
         XCTAssertTrue(rewardedPost.exists)
-        XCTAssertTrue(unrewardedPost.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(unrewardedPost.exists)
         XCTAssertTrue(app.buttons["mapShowAll"].exists)
         app.buttons["mapShowAll"].tap()
-        capture("map-rewarded-filter", app: app)
+        capture("map-single-donate-action", app: app)
 
         let donate = app.buttons["mapDonate"]
         let donationAmount = app.staticTexts["Donation Amount"]
@@ -404,12 +401,32 @@ final class GanamosFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testNewIssueDetailsMatchStreamlinedWebComposition() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "newIssueDetails"
+        app.launchArguments += ["--ganamos-new-issue-details", "--ganamos-disable-auto-camera"]
+        app.launch()
+
+        XCTAssertTrue(app.textFields["newIssueDescription"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["newIssueDeadline"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["newIssueLocation"].exists)
+        XCTAssertTrue(app.buttons["newIssueLocationOverlay"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["newIssueBitcoinLogo"].exists)
+        XCTAssertTrue(app.staticTexts["2k"].exists)
+        XCTAssertTrue(app.staticTexts["sats reward"].exists)
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "sats available")).count, 0)
+        capture("new-issue-details-web-composition", app: app)
+    }
+
+    @MainActor
     func testNewIssueLocationDenialIsRecoverable() throws {
         let app = XCUIApplication()
         app.launchEnvironment["GANAMOS_PREVIEW_SCREEN"] = "newIssueDetails"
         app.launchArguments += ["--ganamos-new-issue-details", "--ganamos-disable-auto-camera"]
 
         app.launch()
+        XCTAssertTrue(app.buttons["newIssueLocationOverlay"].waitForExistence(timeout: 10))
+        app.buttons["newIssueLocationOverlay"].tap()
         XCTAssertTrue(app.buttons["Use current location"].waitForExistence(timeout: 10))
         app.buttons["Use current location"].tap()
 
@@ -425,7 +442,7 @@ final class GanamosFlowTests: XCTestCase {
 
         let message = app.staticTexts["Location is unavailable. You can enter it manually."]
         XCTAssertTrue(message.waitForExistence(timeout: 10))
-        XCTAssertTrue(app.descendants(matching: .any)["newIssueLocation"].exists)
+        XCTAssertTrue(app.textFields["City or address"].exists)
         capture("new-issue-location-denied", app: app)
     }
 

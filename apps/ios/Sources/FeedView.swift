@@ -169,7 +169,7 @@ private struct AccountBalanceMenu: View {
                     }
             }
         } label: {
-            SatsBadge(amount: session.profile?.balance ?? 0)
+            SatsBadge(amount: session.profile?.balance ?? 0, style: .transparent)
         }
         .accessibilityLabel(Text(verbatim: accountMenuAccessibilityLabel))
         .accessibilityIdentifier("homeAccountMenu")
