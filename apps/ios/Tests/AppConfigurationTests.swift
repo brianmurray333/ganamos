@@ -7,17 +7,35 @@ final class AppConfigurationTests: XCTestCase {
     }
 
     func testHomeBalanceUsesTransparentBadgeStyle() throws {
-        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-        let feedSource = try String(
-            contentsOf: testsDirectory
-                .deletingLastPathComponent()
-                .appendingPathComponent("Sources/FeedView.swift"),
-            encoding: .utf8)
+        let feedSource = try source(named: "FeedView.swift")
 
         XCTAssertTrue(
             feedSource.contains("SatsBadge(amount: session.profile?.balance ?? 0, style: .transparent)"),
             "The Home balance control should keep its content and touch target without a filled badge background."
         )
+    }
+
+    func testHomeTopBarFadesIntoFeedInsteadOfUsingHardBackground() throws {
+        let feedSource = try source(named: "FeedView.swift")
+
+        let homeViewSource = try XCTUnwrap(feedSource.components(separatedBy: "private struct HomeTopBarFade").first)
+        XCTAssertTrue(feedSource.contains("HomeTopBarFade()"))
+        XCTAssertTrue(homeViewSource.contains(".toolbarBackground(.hidden, for: .navigationBar)"))
+        XCTAssertTrue(feedSource.contains(".allowsHitTesting(false)"))
+        XCTAssertTrue(feedSource.contains(".accessibilityHidden(true)"))
+        XCTAssertFalse(
+            homeViewSource.contains(".toolbarBackground(GanamosColor.canvas, for: .navigationBar)"),
+            "Home should not draw an opaque navigation-bar band above the feed."
+        )
+    }
+
+    private func source(named filename: String) throws -> String {
+        let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        return try String(
+            contentsOf: testsDirectory
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/\(filename)"),
+            encoding: .utf8)
     }
 
     func testPostDecodesExistingWebShape() throws {

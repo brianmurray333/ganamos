@@ -104,11 +104,13 @@ struct FeedView: View {
                     .refreshable { await model.load(token: session.accessToken) }
                 }
             }
+
+            HomeTopBarFade()
+                .frame(maxHeight: .infinity, alignment: .top)
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(GanamosColor.canvas, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if session.isAuthenticated {
@@ -135,6 +137,23 @@ struct FeedView: View {
     }
 
     private var activeFilterCount: Int { (maximumReward < 10_000 ? 1 : 0) + (dateFilter == .any ? 0 : 1) }
+}
+
+private struct HomeTopBarFade: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: GanamosColor.canvas, location: 0),
+                .init(color: GanamosColor.canvas, location: 0.5),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom)
+            .frame(height: 128)
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
 }
 
 private struct AccountBalanceMenu: View {
