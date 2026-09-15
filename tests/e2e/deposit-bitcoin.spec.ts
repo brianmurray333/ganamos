@@ -6,6 +6,30 @@ import { WalletPage } from './pages/wallet.page'
 import { DepositPage } from './pages/deposit.page'
 import { ProfilePage } from './pages/profile.page'
 
+async function mockDepositAPI(page: import('@playwright/test').Page) {
+  await page.route('**/api/mobile/wallet/deposit**', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          invoiceId: '00000000-0000-4000-8000-000000000021',
+          paymentRequest: 'lnbc100n1ganamosteste2einvoice',
+          amount: 100,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        }),
+      })
+      return
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, status: 'pending', settled: false }),
+    })
+  })
+}
+
 /**
  * Bitcoin Deposit E2E Test
  *
@@ -20,6 +44,7 @@ import { ProfilePage } from './pages/profile.page'
  */
 test.describe('Bitcoin Deposit Flow', () => {
   test('should complete navigation from login through deposit to verification', async ({ page }) => {
+    await mockDepositAPI(page)
     // Initialize Page Objects
     const authPage = new AuthPage(page)
     const dashboardPage = new DashboardPage(page)
@@ -48,7 +73,7 @@ test.describe('Bitcoin Deposit Flow', () => {
     })
 
     await test.step('Verify invoice generation', async () => {
-      // The deposit page auto-generates an invoice on load
+      await depositPage.submitAmount('100')
       await depositPage.waitForInvoice(15000)
       
       // Verify QR code and invoice are displayed
@@ -88,6 +113,7 @@ test.describe('Bitcoin Deposit Flow', () => {
   })
 
   test('should handle deposit flow with amount specification', async ({ page }) => {
+    await mockDepositAPI(page)
     // Initialize Page Objects
     const authPage = new AuthPage(page)
     const dashboardPage = new DashboardPage(page)
@@ -106,7 +132,8 @@ test.describe('Bitcoin Deposit Flow', () => {
       await depositPage.verifyPage()
     })
 
-    await test.step('Wait for auto-generated invoice', async () => {
+    await test.step('Enter amount and wait for invoice', async () => {
+      await depositPage.submitAmount('100')
       await depositPage.waitForInvoice(15000)
     })
 

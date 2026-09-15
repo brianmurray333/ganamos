@@ -16,6 +16,7 @@ type AuthContextType = {
   session: Session | null
   loading: boolean
   sessionLoaded: boolean
+  accountContextReady: boolean
   signInWithGoogle: () => Promise<void>
   signInWithEmail: (email: string, password: string) => Promise<{ success: boolean; message?: string }>
   signInWithPhone: (phone: string) => Promise<{ success: boolean; message?: string }>
@@ -80,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true) // Start with true
   const [sessionLoaded, setSessionLoaded] = useState(false) // Start with false
+  const [accountContextReady, setAccountContextReady] = useState(false)
   const router = useRouter()
   const supabase = useMemo(() => createBrowserSupabaseClient(), [])
 
@@ -153,7 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         window.history.replaceState(null, "", window.location.pathname)
       }
     } catch (e) {
-      console.error("[AUTH] Error parsing hash params:", e)
+      console.error("[AUTH] Error parsing hash params")
     }
   }, [router])
 
@@ -223,8 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .single()
 
         if (createError) {
-          console.error("Error creating profile:", createError)
-          console.error("Profile data that failed:", newProfile)
+          console.error("Error creating profile")
           return null
         }
         
@@ -291,7 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq("id", userId)
 
         if (updateError) {
-          console.error("Error updating username:", updateError)
+          console.error("Error updating username")
         } else {
           data.username = defaultUsername
         }
@@ -361,7 +362,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Connected accounts relationships:', connections, connectionsError)
 
       if (connectionsError) {
-        console.error('Error fetching connected accounts:', connectionsError)
+        console.error('Error fetching connected accounts')
         return
       }
 
@@ -381,7 +382,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('Bulk profile fetch results:', profiles, profilesError)
         
         if (profilesError) {
-          console.error('Error fetching profiles:', profilesError)
+          console.error('Error fetching profiles')
           setConnectedAccounts([])
           return
         }
@@ -403,7 +404,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setConnectedAccounts([])
       }
     } catch (error) {
-      console.error('fetchConnectedAccounts catch:', error)
+      console.error('fetchConnectedAccounts failed')
     } finally {
       fetchingConnectedAccounts.current = false
     }
@@ -584,7 +585,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             } catch (checkError) {
               // If connected account check fails or times out, clear localStorage and use main account
-              console.error('[AUTH] Error checking connected account, falling back to main:', checkError);
+              console.error('[AUTH] Error checking connected account, falling back to main');
               localStorage.removeItem(ACTIVE_USER_KEY);
               const mainProfile = await fetchProfile(userId);
               if (isMounted && mainProfile) {
@@ -600,13 +601,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await Promise.race([profilePromise, timeoutPromise]);
       } catch (error) {
         // If profile loading fails or times out, clear potentially corrupted localStorage and load main profile
-        console.error('[AUTH] Error in loadProfileWithActiveAccount, clearing localStorage and loading main profile:', error);
+        console.error('[AUTH] Error loading active account; falling back to main');
         
         // Clear potentially corrupted localStorage
         try {
           localStorage.removeItem(ACTIVE_USER_KEY);
         } catch (e) {
-          console.error('[AUTH] Error clearing localStorage:', e);
+          console.error('[AUTH] Error clearing localStorage');
         }
         
         // Try to load just the main profile
@@ -619,7 +620,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsConnectedAccount(false);
           }
         } catch (profileError) {
-          console.error('[AUTH] Error loading main profile after fallback:', profileError);
+          console.error('[AUTH] Error loading main profile after fallback');
           // Even if profile loading fails, we should still allow the app to render
           // The user can still use the app, they just won't have profile data initially
         }
@@ -634,17 +635,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       setSessionLoaded(true);
       if (session?.user) {
-        // Don't await - let it load in background, errors are handled internally
-        loadProfileWithActiveAccount(session.user.id).catch((error) => {
-          console.error('[AUTH] Unhandled error in loadProfileWithActiveAccount:', error);
-        });
+        setAccountContextReady(false)
+        loadProfileWithActiveAccount(session.user.id)
+          .catch(() => console.error('[AUTH] Unable to load active account'))
+          .finally(() => { if (isMounted) setAccountContextReady(true) })
       } else {
         setProfile(null);
         setMainAccountProfile(null);
+        setAccountContextReady(true)
       }
     }).catch((error) => {
       if (!isMounted) return;
-      console.error("Error getting session:", error);
+      console.error("Error getting session");
       clearTimeout(sessionTimeout);
       setSession(null);
       setUser(null);
@@ -652,6 +654,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSessionLoaded(true);
       setProfile(null);
       setMainAccountProfile(null);
+      setAccountContextReady(true);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isMounted) return;
@@ -759,10 +762,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         
-        // Don't await - let it load in background, errors are handled internally
-        loadProfileWithActiveAccount(session.user.id).catch((error) => {
-          console.error('[AUTH] Unhandled error in loadProfileWithActiveAccount:', error);
-        });
+        setAccountContextReady(false)
+        loadProfileWithActiveAccount(session.user.id)
+          .catch(() => console.error('[AUTH] Unable to load active account'))
+          .finally(() => { if (isMounted) setAccountContextReady(true) })
         
         // Check for pending anonymous rewards and claim them
         if (typeof window !== 'undefined') {
@@ -789,13 +792,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   refreshProfileRef.current()
                 }, 1000)
               } else {
-                console.error("Failed to claim anonymous reward:", result.error)
+                console.error("Failed to claim anonymous reward")
                 toast.error("Reward Claim Failed", {
                   description: result.error || "Unable to claim your anonymous reward.",
                 })
               }
             } catch (error) {
-              console.error("Error claiming anonymous reward:", error)
+              console.error("Error claiming anonymous reward")
               toast.error("Reward Claim Error", {
                 description: "There was an error claiming your anonymous reward.",
               })
@@ -821,11 +824,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Clear the pending fix from localStorage
                 localStorage.removeItem('pending_anonymous_fix_post')
               } else {
-                console.error("Failed to associate anonymous fix:", result.error)
+                console.error("Failed to associate anonymous fix")
                 // Don't show error toast - it's not critical, the fix can still be approved manually
               }
             } catch (error) {
-              console.error("Error associating anonymous fix:", error)
+              console.error("Error associating anonymous fix")
               // Don't show error toast - it's not critical
             }
           }
@@ -833,6 +836,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
         setMainAccountProfile(null);
+        setAccountContextReady(true);
       }
     });
     return () => {
@@ -929,10 +933,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setMainAccountProfile(freshProfile)
               }
             } else {
-              console.error('🔔 Error fetching fresh profile:', error)
+              console.error('🔔 Error fetching fresh profile')
             }
           } catch (err) {
-            console.error('🔔 Exception fetching fresh profile:', err)
+            console.error('🔔 Exception fetching fresh profile')
           }
         },
       )
@@ -1050,7 +1054,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { error } = await supabase.auth.signOut()
       if (error) {
-        console.error("[AUTH] Sign out error:", error)
+        console.error("[AUTH] Sign out error")
         toast.error("Sign out failed", {
           description: error.message || "Please try again",
         })
@@ -1065,7 +1069,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       router.push("/")
     } catch (error) {
-      console.error("[AUTH] Unexpected sign out error:", error)
+      console.error("[AUTH] Unexpected sign out error")
       toast.error("Sign out failed", {
         description: "An unexpected error occurred. Please try again.",
       })
@@ -1110,7 +1114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Profile update result:', data, error)
 
       if (error) {
-        console.error('Profile update error:', error)
+        console.error('Profile update error')
         throw error
       }
 
@@ -1120,7 +1124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Also refresh connected accounts to update family section immediately
       await fetchConnectedAccounts()
     } catch (error) {
-      console.error('updateProfile catch block:', error)
+      console.error('updateProfile catch block')
       throw error
     }
   }
@@ -1271,6 +1275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         session,
         loading,
         sessionLoaded,
+        accountContextReady,
         signInWithGoogle,
         signInWithEmail,
         signInWithPhone,
