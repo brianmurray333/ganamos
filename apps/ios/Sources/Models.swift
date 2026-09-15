@@ -229,6 +229,28 @@ struct WalletActionResponse: Decodable, Sendable {
     }
 }
 
+struct DepositInvoice: Codable, Sendable {
+    let success: Bool
+    let invoiceID: String
+    let paymentRequest: String
+    let amount: Int
+    let expiresAt: String
+
+    enum CodingKeys: String, CodingKey {
+        case success
+        case invoiceID = "invoiceId"
+        case paymentRequest, amount, expiresAt
+    }
+}
+
+struct DepositStatus: Decodable, Sendable {
+    let success: Bool
+    let status: String
+    let settled: Bool
+    let amount: Int
+    let newBalance: Int?
+}
+
 struct AccountActivity: Decodable, Identifiable, Sendable {
     let id: UUID
     let type: String

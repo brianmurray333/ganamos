@@ -1,3 +1,5 @@
+import CoreImage
+import SwiftUI
 import UIKit
 import XCTest
 @testable import Ganamos
@@ -64,6 +66,131 @@ final class AppConfigurationTests: XCTestCase {
         XCTAssertTrue(feedSource.contains(".toolbarBackground(HomeTopBarFadeStyle.gradient, for: .navigationBar)"))
         XCTAssertTrue(feedSource.contains(".toolbarBackground(.visible, for: .navigationBar)"))
         XCTAssertFalse(feedSource.contains("private struct HomeTopBarFade"))
+    }
+
+    func testReceiveScreenUsesNativeInvoiceFlowInsteadOfWebLoginHandoff() throws {
+        let source = try source(named: "WalletFlowViews.swift")
+        let receiveStart = try XCTUnwrap(source.range(of: "struct WalletReceiveView"))
+        let sendStart = try XCTUnwrap(source.range(of: "struct WalletSendView", range: receiveStart.lowerBound..<source.endIndex))
+        let receiveSource = String(source[receiveStart.lowerBound..<sendStart.lowerBound])
+
+        XCTAssertFalse(receiveSource.contains("WebDestination"))
+        XCTAssertFalse(receiveSource.contains("/wallet/deposit"))
+        XCTAssertTrue(receiveSource.contains("createDepositInvoice"))
+        XCTAssertTrue(receiveSource.contains("walletInvoiceQRCode"))
+    }
+
+    func testDepositInvoiceRequestUsesNativeBearerAuthentication() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DepositInvoiceURLProtocol.self]
+        let client = APIClient(
+            configuration: AppConfiguration(
+                apiBaseURL: URL(string: "https://example.com")!,
+                supabaseURL: URL(string: "https://supabase.example.com")!,
+                supabaseAnonKey: "anon-key"),
+            session: URLSession(configuration: configuration))
+        let userID = UUID(uuidString: "00000000-0000-4000-8000-000000000123")!
+
+        let invoice = try await client.createDepositInvoice(
+            amount: 2_500,
+            userID: userID,
+            requestID: UUID(uuidString: "00000000-0000-4000-8000-000000000124")!,
+            accessToken: "native-access-token")
+
+        XCTAssertEqual(invoice.paymentRequest, "lnbc2500n1testinvoice")
+        XCTAssertEqual(invoice.invoiceID, "00000000-0000-4000-8000-000000000010")
+        XCTAssertEqual(invoice.amount, 2_500)
+    }
+
+    func testDepositStatusUsesAuthenticatedInvoiceIdentifier() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [DepositInvoiceURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let client = APIClient(
+            configuration: AppConfiguration(
+                apiBaseURL: URL(string: "https://example.com")!,
+                supabaseURL: URL(string: "https://supabase.example.com")!,
+                supabaseAnonKey: "anon-key"),
+            session: session)
+
+        let status = try await client.depositStatus(
+            invoiceID: "00000000-0000-4000-8000-000000000010",
+            accessToken: "native-access-token")
+
+        XCTAssertTrue(status.settled)
+        XCTAssertEqual(status.status, "completed")
+        XCTAssertEqual(status.newBalance, 7_500)
+    }
+
+    func testDepositInvoiceExpiryAcceptsServerISO8601Formats() {
+        XCTAssertNotNil(depositInvoiceExpirationDate("2026-09-14T18:00:00.123Z"))
+        XCTAssertNotNil(depositInvoiceExpirationDate("2026-09-14T18:00:00Z"))
+        XCTAssertNil(depositInvoiceExpirationDate("not-a-date"))
+    }
+
+    func testLightningQRCodeFailsClosedAndRoundTripsInvoice() throws {
+        XCTAssertNil(lightningQRCode(for: ""))
+        let invoice = "lnbc2500n1testinvoice"
+        let image = try XCTUnwrap(lightningQRCode(for: invoice))
+        let detector = try XCTUnwrap(CIDetector(ofType: CIDetectorTypeQRCode, context: nil))
+        let features = detector.features(in: try XCTUnwrap(CIImage(image: image)))
+        let qr = try XCTUnwrap(features.first as? CIQRCodeFeature)
+        XCTAssertEqual(qr.messageString, invoice.uppercased())
+    }
+
+    func testDepositRecoveryStorePersistsIdempotencyAndInvoiceSecurely() throws {
+        let ownerID = UUID(uuidString: "00000000-0000-4000-8000-000000000125")!
+        defer {
+            DepositRecoveryStore.clearPending(ownerID: ownerID)
+            DepositRecoveryStore.clearInvoice(ownerID: ownerID)
+        }
+        let request = PendingDepositRequest(
+            requestID: UUID(uuidString: "00000000-0000-4000-8000-000000000126")!,
+            ownerID: ownerID,
+            amount: 2_500,
+            createdAt: Date())
+        try DepositRecoveryStore.save(request)
+        XCTAssertEqual(DepositRecoveryStore.pending(ownerID: ownerID)?.requestID, request.requestID)
+
+        let invoice = DepositInvoice(
+            success: true,
+            invoiceID: "00000000-0000-4000-8000-000000000010",
+            paymentRequest: "lnbc2500n1recoveryfixture",
+            amount: 2_500,
+            expiresAt: "2026-09-14T19:00:00.000Z")
+        try DepositRecoveryStore.save(StoredDepositInvoice(ownerID: ownerID, invoice: invoice))
+        XCTAssertEqual(DepositRecoveryStore.invoice(ownerID: ownerID)?.invoice.invoiceID, invoice.invoiceID)
+    }
+
+    @MainActor
+    func testNativeReceiveInvoiceRendersDeterministically() throws {
+        let ownerID = UUID(uuidString: "00000000-0000-4000-8000-000000000123")!
+        let invoice = DepositInvoice(
+            success: true,
+            invoiceID: "00000000-0000-4000-8000-000000000010",
+            paymentRequest: "lnbc2500n1testinvoicefixtureforvisualverification",
+            amount: 2_500,
+            expiresAt: "2026-09-14T19:00:00.000Z")
+        let view = WalletReceiveView(
+            initialInvoice: invoice,
+            initialOwnerID: ownerID,
+            monitoringEnabled: false)
+            .environment(SessionStore())
+        let bounds = CGRect(x: 0, y: 0, width: 393, height: 852)
+        let host = UIHostingController(rootView: view)
+        let window = UIWindow(frame: bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = bounds
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: bounds).image { _ in
+            XCTAssertTrue(host.view.drawHierarchy(in: bounds, afterScreenUpdates: true))
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Native Receive Invoice"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private func source(named filename: String) throws -> String {
@@ -194,6 +321,75 @@ private final class UnauthorizedURLProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(#"{"message":"JWT expired"}"#.utf8))
         client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private static func readAll(_ stream: InputStream) -> Data? {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1_024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { return nil }
+            if count == 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
+    }
+
+    override func stopLoading() {}
+}
+
+private final class DepositInvoiceURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        XCTAssertEqual(request.url?.path, "/api/mobile/wallet/deposit")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer native-access-token")
+
+        if request.httpMethod == "GET" {
+            let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+            XCTAssertEqual(components?.queryItems?.first(where: { $0.name == "invoiceId" })?.value,
+                           "00000000-0000-4000-8000-000000000010")
+            respond(statusCode: 200, body: #"{"success":true,"status":"completed","settled":true,"amount":2500,"newBalance":7500}"#)
+            return
+        }
+
+        XCTAssertEqual(request.httpMethod, "POST")
+        let bodyData = request.httpBody ?? request.httpBodyStream.flatMap(Self.readAll)
+        let payload = try? JSONSerialization.jsonObject(with: bodyData ?? Data()) as? [String: Any]
+        XCTAssertEqual(payload?["amount"] as? Int, 2_500)
+        XCTAssertEqual(payload?["userId"] as? String, "00000000-0000-4000-8000-000000000123")
+        XCTAssertEqual(payload?["requestId"] as? String, "00000000-0000-4000-8000-000000000124")
+        respond(
+            statusCode: 201,
+            body: #"{"success":true,"invoiceId":"00000000-0000-4000-8000-000000000010","paymentRequest":"lnbc2500n1testinvoice","paymentHash":"abc123","amount":2500,"expiresAt":"2026-09-14T18:00:00.123Z"}"#)
+    }
+
+    private func respond(statusCode: Int, body: String) {
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: statusCode,
+            httpVersion: nil,
+            headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    private static func readAll(_ stream: InputStream) -> Data? {
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 1_024)
+        while stream.hasBytesAvailable {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count >= 0 else { return nil }
+            if count == 0 { break }
+            data.append(buffer, count: count)
+        }
+        return data
     }
 
     override func stopLoading() {}

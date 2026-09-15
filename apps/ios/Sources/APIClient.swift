@@ -689,6 +689,25 @@ actor APIClient {
         return response.price
     }
 
+    func createDepositInvoice(amount: Int, userID: UUID, requestID: UUID, accessToken: String) async throws -> DepositInvoice {
+        var request = URLRequest(url: configuration.apiBaseURL.appending(path: "api/mobile/wallet/deposit"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "amount": amount,
+            "userId": userID.uuidString.lowercased(),
+            "requestId": requestID.uuidString.lowercased(),
+        ])
+        return try await decode(request, as: DepositInvoice.self)
+    }
+
+    func depositStatus(invoiceID: String, accessToken: String) async throws -> DepositStatus {
+        var components = URLComponents(url: configuration.apiBaseURL.appending(path: "api/mobile/wallet/deposit"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "invoiceId", value: invoiceID)]
+        return try await decode(authorizedRequest(url: components.url!, accessToken: accessToken), as: DepositStatus.self)
+    }
+
     func createDonation(amount: Int, locationType: String, locationName: String, donorName: String?, message: String?) async throws -> DonationInvoice {
         var request = URLRequest(url: URL(string: "https://ganamos.earth/api/mobile/donations")!)
         request.httpMethod = "POST"
