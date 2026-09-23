@@ -47,7 +47,7 @@ targets:
         CFBundleDisplayName: Ganamos!
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "6"
+        CFBundleVersion: "7"
         CFBundleURLTypes:
           - CFBundleURLName: earth.ganamos.oauth
             CFBundleURLSchemes:
