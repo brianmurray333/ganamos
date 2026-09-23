@@ -73,7 +73,8 @@ struct MapScreen: View {
                         MapGlassButton(image: "LucideEarth", label: "Show all fixes", isActive: false) {
                             showAllPosts()
                         }
-                        MapGlassButton(image: "LucideGift", label: "Rewarded fixes only", isActive: rewardedOnly) {
+                        // Use a non-gift control for the rewarded-only filter
+                        MapGlassButton(image: "LucideWallet", label: "Rewarded fixes only", isActive: rewardedOnly) {
                             rewardedOnly.toggle()
                         }
                     }
