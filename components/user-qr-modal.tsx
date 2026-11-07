@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/components/auth-provider"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import QRCode from "@/components/qr-code"
 import { Copy, Check, X } from "lucide-react"
 

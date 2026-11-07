@@ -107,9 +107,9 @@ vi.mock('@/components/auth-provider', () => ({
   })),
 }))
 
-// Mock toast notifications (Sonner)
-vi.mock('sonner', () => ({
-  toast: vi.fn(),
+// Mock toast notifications
+vi.mock('@/components/ui/toast', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() }),
 }))
 
 describe('PostDetailPage - Metadata Visibility Handler', () => {

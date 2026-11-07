@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/components/auth-provider"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { v4 as uuidv4 } from "@/lib/uuid"
 
 interface GroupSearchResult {

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CreateGroupDialog } from "@/components/create-group-dialog";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import type { Group } from "@/lib/types";
 
 interface GroupsListProps {

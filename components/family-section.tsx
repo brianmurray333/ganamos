@@ -8,7 +8,7 @@ import { useAuth } from "@/components/auth-provider"
 import { formatSatsValue } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import type { Profile } from "@/lib/database.types"
 
 type AddedMember = { id: string; username: string; name: string; avatar_url: string | null }

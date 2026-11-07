@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/auth-provider";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { GroupsList, fetchUserGroups } from "@/components/groups-list";
 import { CreateGroupDialog } from "@/components/create-group-dialog";

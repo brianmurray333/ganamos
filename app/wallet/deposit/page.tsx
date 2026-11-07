@@ -6,7 +6,7 @@ import { createDepositInvoice, checkDepositStatus } from "@/app/actions/lightnin
 import QRCode from "@/components/qr-code"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { ArrowLeft, Copy, Check, X } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"

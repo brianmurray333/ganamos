@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { useAuth } from "@/components/auth-provider"
 import { v4 as uuidv4 } from "@/lib/uuid"
 import { formatSatsValue } from "@/lib/utils"
@@ -1407,14 +1407,7 @@ export default function NewPostPage() {
               </div>
             </div>
             <div className="flex justify-center my-4">
-              {(() => {
-                console.log("QRCode component rendering with:", {
-                  fundingPaymentRequest,
-                  length: fundingPaymentRequest?.length,
-                  size: 200,
-                })
-                return <QRCode value={fundingPaymentRequest} size={200} />
-              })()}
+              <QRCode data={fundingPaymentRequest} size={200} />
             </div>
 
             {isAwaitingPayment && (

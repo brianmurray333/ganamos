@@ -34,7 +34,7 @@ import {
 } from "lucide-react"
 import { searchTransactions } from "@/app/actions/admin-actions"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 interface TransactionResult {
   id: string

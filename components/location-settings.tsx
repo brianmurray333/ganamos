@@ -11,7 +11,7 @@ import {
   clearLocationData, 
   getCurrentLocationWithName 
 } from "@/lib/geocoding"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 export function LocationSettings() {
   const [permissionState, setPermissionState] = useState<LocationPermissionState>({ status: 'unknown', lastChecked: 0 })

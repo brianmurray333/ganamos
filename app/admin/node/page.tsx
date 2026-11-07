@@ -14,7 +14,7 @@ import {
   Activity
 } from "lucide-react"
 import { getNodeHealth } from "@/app/actions/admin-actions"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 interface NodeHealth {
   online: boolean

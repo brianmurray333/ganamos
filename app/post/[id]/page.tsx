@@ -7,7 +7,7 @@ import { formatDistanceToNow } from "date-fns"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { useAuth } from "@/components/auth-provider"
 import { CameraCapture } from "@/components/camera-capture" // CORRECTED IMPORT
 import { getCurrentLocation } from "@/lib/mock-location"
