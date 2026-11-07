@@ -12,6 +12,7 @@ import { formatSatsValue } from "@/lib/utils"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { Plus, X, Filter, User, SlidersHorizontal, ChevronDown, ArrowUpDown } from "lucide-react"
 import dynamic from "next/dynamic"
+import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { DonationModal } from "@/components/donation-modal"
 import { useDonationModal } from "@/components/donation-modal-provider"
 
@@ -61,6 +62,7 @@ export default function DashboardPage() {
     resetToMainAccount,
   } = useAuth()
   const router = useRouter()
+  const isDesktop = useIsDesktop()
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
   const [currentLocation, setCurrentLocation] = useState(getCurrentLocation())
   const [posts, setPosts] = useState<Post[]>(cache.posts)
@@ -737,15 +739,18 @@ export default function DashboardPage() {
         </div>
         {/* End Left Panel */}
 
-        {/* Right Panel - Map (Desktop only) */}
+        {/* Right Panel - Map (Desktop only). Only mounted at lg+ so phones
+            don't download and initialize Google Maps for a hidden map. */}
         <div className="hidden lg:block flex-1 relative">
-          <MapView 
-            posts={[]}
-            isModal={true}
-            onNewIssue={() => router.push("/post/new")}
-            showPreviewCard={true}
-            hideSearchOverlay={true}
-          />
+          {isDesktop && (
+            <MapView 
+              posts={[]}
+              isModal={true}
+              onNewIssue={() => router.push("/post/new")}
+              showPreviewCard={true}
+              hideSearchOverlay={true}
+            />
+          )}
         </div>
       </div>
       

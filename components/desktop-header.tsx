@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { formatSatsValue } from "@/lib/utils"
 import { useDonationModal } from "@/components/donation-modal-provider"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { AuthPromptModal } from "@/components/auth-prompt-modal"
 import {
   DropdownMenu,
@@ -64,9 +65,14 @@ export function DesktopHeader() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authFeature, setAuthFeature] = useState<'wallet' | 'profile'>('wallet')
 
+  const isDesktop = useIsDesktop()
+
   // Initialize Google Maps Places services
   // IMPORTANT: All hooks must be called BEFORE any conditional returns
+  // Desktop only: this header is CSS-hidden below lg, and loading Google Maps
+  // there would just tie up the main thread on phones.
   useEffect(() => {
+    if (!isDesktop) return
     const initializeGoogleServices = () => {
       if (!window.google?.maps?.places) {
         console.warn('Google Maps Places API not available')
@@ -96,7 +102,7 @@ export function DesktopHeader() {
     }
 
     loadGoogleMapsLocal()
-  }, [])
+  }, [isDesktop])
 
   // Close search results when clicking outside
   useEffect(() => {
