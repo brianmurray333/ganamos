@@ -816,8 +816,8 @@ export default function NewPostPage() {
     <div className={step === "photo" && cameraActive ? "" : "container px-4 py-6 mx-auto max-w-md"}>
       {step === "photo" && cameraActive && (
         <>
-          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '40px' }}>
-            <div className="bg-black/50 text-white/70 px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
+          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '56px' }}>
+            <div className="bg-black/40 text-white/90 px-5 py-3 rounded-full text-base font-medium whitespace-nowrap backdrop-blur-sm">
               Take photo of the issue
             </div>
           </div>
