@@ -386,6 +386,25 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
   })
 
   describe('Error Scenarios', () => {
+    // cleanupBitcoinPrices() only removes rows from the last minute (and old 'diadata.org'
+    // rows), so rows left by other suites (e.g. bitcoin-price.test.ts, source 'DIA') can
+    // survive between runs. "Nothing was persisted" is therefore checked as "the row count
+    // did not change" rather than "the table is empty".
+    let rowsBefore: number
+    const countBitcoinPrices = async () => {
+      const client = await getPool().connect()
+      try {
+        const { rows } = await client.query('SELECT COUNT(*)::int AS n FROM bitcoin_prices')
+        return rows[0].n as number
+      } finally {
+        client.release()
+      }
+    }
+
+    beforeEach(async () => {
+      rowsBefore = await countBitcoinPrices()
+    })
+
     it('should handle external API errors gracefully', async () => {
       mockDIAApiError(503)
       const request = createMockRequestWithVercelHeaders()
@@ -398,8 +417,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
       expect(data.success).toBeUndefined()
       
       // Verify no data was persisted
-      const latestPrice = await getLatestBitcoinPrice()
-      expect(latestPrice).toBeNull()
+      expect(await countBitcoinPrices()).toBe(rowsBefore)
     })
 
     it('should handle network failures', async () => {
@@ -413,8 +431,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
       expect(data.error).toBeDefined()
       
       // Verify no data was persisted
-      const latestPrice = await getLatestBitcoinPrice()
-      expect(latestPrice).toBeNull()
+      expect(await countBitcoinPrices()).toBe(rowsBefore)
     })
 
     it('should handle invalid API response data', async () => {
@@ -428,8 +445,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
       expect(data.error).toBeDefined()
       
       // Verify no data was persisted
-      const latestPrice = await getLatestBitcoinPrice()
-      expect(latestPrice).toBeNull()
+      expect(await countBitcoinPrices()).toBe(rowsBefore)
     })
 
     it('should handle API returning non-numeric price', async () => {
@@ -441,8 +457,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
       expect(response.status).toBe(500)
       
       // Verify no data was persisted
-      const latestPrice = await getLatestBitcoinPrice()
-      expect(latestPrice).toBeNull()
+      expect(await countBitcoinPrices()).toBe(rowsBefore)
     })
 
     it('should handle API returning negative price', async () => {

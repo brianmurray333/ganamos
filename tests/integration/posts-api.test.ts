@@ -366,9 +366,10 @@ describe('POST /api/posts - Integration Tests', () => {
   })
 
   describe('Database Integrity', () => {
-    // Note: This test verifies database-level unique constraint on payment_hash
-    // The constraint may not be enforced in all test environments
-    it.skip('should not create duplicate posts with same payment hash', async () => {
+    // Replay protection (3f4a002): the payment hash is recorded in l402_used_tokens
+    // (PRIMARY KEY) before the post is created; a reused token gets 409 Conflict with the
+    // existing post's id. (Previously skipped expecting a 500 from a posts unique constraint.)
+    it('should not create duplicate posts with same payment hash', async () => {
       const postData = {
         description: 'First post',
         reward: 1000,
@@ -406,11 +407,28 @@ describe('POST /api/posts - Integration Tests', () => {
       })
 
       const response2 = await POST(request2)
-      
-      // Should fail due to unique constraint on payment_hash
-      expect(response2.status).toBe(500)
+
+      // Rejected as a replay of an already-used L402 token
+      expect(response2.status).toBe(409)
       const data2 = await response2.json()
-      expect(data2.error).toContain('Failed to create post')
+      expect(data2.error).toContain('already been used')
+      expect(data2.existing_post_id).toBe(data1.post_id)
+      if (data2.post_id) createdPostIds.push(data2.post_id)
+
+      // Exactly one post exists for this payment, and the replay did not create another
+      const { data: postsForHash, error } = await supabase
+        .from('posts')
+        .select('id, description')
+        .eq('funding_r_hash', testPaymentHash)
+      expect(error).toBeNull()
+      expect(postsForHash).toHaveLength(1)
+      expect(postsForHash![0].id).toBe(data1.post_id)
+      const { count } = await supabase
+        .from('posts')
+        .select('id', { count: 'exact', head: true })
+        .eq('description', 'Second post')
+        .gte('created_at', new Date(Date.now() - 60_000).toISOString())
+      expect(count).toBe(0)
     })
 
     it('should handle long descriptions', async () => {

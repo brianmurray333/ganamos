@@ -417,18 +417,32 @@ describe('GET /api/alexa/authorize - Integration Tests', () => {
   })
 
   describe('Error Handling', () => {
-    // Note: Database-level error handling is difficult to test in integration tests
-    // without mocking the database layer itself. The error path in the route handler
-    // (lines 110-122) handles database insert failures, but forcing such failures
-    // in a real database environment is unreliable and would require:
-    // - Dropping/modifying constraints mid-test
-    // - Intentionally corrupting data
-    // - Using table locks or connection failures
-    // These approaches are brittle and don't reflect real production scenarios.
-    // Error handling should be verified via unit tests or manual failure injection.
-    it.skip('should redirect with error when code generation fails', async () => {
-      // Skipped: Cannot reliably force database errors in integration test
-      // See comment above for rationale
+    it('should redirect with error when code generation fails', async () => {
+      // A session whose user has no profile row: storing the code violates the
+      // alexa_auth_codes.user_id -> profiles(id) foreign key, a genuine database error.
+      const ghostUserId = crypto.randomUUID()
+      authState.userId = ghostUserId
+
+      const request = createAuthorizeRequest({
+        client_id: VALID_CLIENT_ID,
+        redirect_uri: VALID_REDIRECT_URI,
+        response_type: 'code',
+        state: VALID_STATE,
+      })
+
+      const response = await GET(request)
+
+      expect([302, 307]).toContain(response.status)
+      const redirectUrl = new URL(response.headers.get('location')!)
+      expect(redirectUrl.origin + redirectUrl.pathname).toBe(VALID_REDIRECT_URI)
+      expect(redirectUrl.searchParams.get('error')).toBe('server_error')
+      expect(redirectUrl.searchParams.get('error_description')).toBe('Failed to generate authorization code')
+      expect(redirectUrl.searchParams.get('state')).toBe(VALID_STATE)
+      // No authorization code is handed out on failure
+      expect(redirectUrl.searchParams.get('code')).toBeNull()
+
+      const codes = await queryDB('SELECT id FROM alexa_auth_codes WHERE user_id = $1', [ghostUserId])
+      expect(codes).toHaveLength(0)
     })
 
     it('should handle malformed request gracefully', async () => {
