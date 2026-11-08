@@ -13,6 +13,12 @@ interface LocationEditorModalProps {
   onLocationChange: (location: { name: string; lat: number; lng: number; displayName?: string } | null) => void
   onGetCurrentLocation?: () => void
   isGettingLocation?: boolean
+  /**
+   * Called with the selected place's name while its coordinates are being
+   * looked up (the modal is already closed), and with null when done. Lets
+   * the page show the pending choice and hold submission until it resolves.
+   */
+  onPendingChange?: (pendingName: string | null) => void
 }
 
 declare global {
@@ -28,6 +34,7 @@ export function LocationEditorModal({
   onLocationChange,
   onGetCurrentLocation,
   isGettingLocation = false,
+  onPendingChange,
 }: LocationEditorModalProps) {
   const [searchQuery, setSearchQuery] = useState(currentLocation?.displayName || currentLocation?.name || "")
   const [searchResults, setSearchResults] = useState<google.maps.places.AutocompletePrediction[]>([])
@@ -38,6 +45,9 @@ export function LocationEditorModal({
   // Groups the keystrokes + the details lookup of one search into a single
   // billed Places session.
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
+  // Only the most recent selection may apply; a slower earlier lookup (or one
+  // superseded by "remove"/"use current location") is discarded.
+  const lookupIdRef = useRef(0)
 
   // Initialize Google Maps services
   useEffect(() => {
@@ -125,14 +135,18 @@ export function LocationEditorModal({
     if (!placesService) return
 
     // Close right away; the location fills in when the details arrive.
+    const lookupId = ++lookupIdRef.current
     setSearchQuery(description)
     setShowResults(false)
+    onPendingChange?.(description)
     onOpenChange(false)
 
     const sessionToken = sessionTokenRef.current ?? undefined
     sessionTokenRef.current = null
 
     placesService.getDetails({ placeId, fields: ["geometry"], sessionToken }, (place, status) => {
+      if (lookupId !== lookupIdRef.current) return // superseded
+      onPendingChange?.(null)
       const loc = place?.geometry?.location
       if (status === window.google.maps.places.PlacesServiceStatus.OK && loc) {
         onLocationChange({
@@ -147,7 +161,13 @@ export function LocationEditorModal({
     })
   }
 
+  const cancelPendingLookup = () => {
+    lookupIdRef.current++
+    onPendingChange?.(null)
+  }
+
   const handleRemoveLocation = () => {
+    cancelPendingLookup()
     onLocationChange(null)
     setSearchQuery("")
     setShowResults(false)
@@ -156,6 +176,7 @@ export function LocationEditorModal({
 
   const handleUseCurrentLocation = () => {
     if (onGetCurrentLocation) {
+      cancelPendingLookup()
       onGetCurrentLocation()
       // Don't close modal - let user see the location being fetched
     }
