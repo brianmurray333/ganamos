@@ -21,7 +21,7 @@ import {
   createFundedAnonymousPostAction,
 } from "@/app/actions/post-actions"
 import QRCode from "@/components/qr-code"
-import { getCurrentLocationWithName } from "@/lib/geocoding" // Import the geocoding utility
+import { getCurrentLocationWithName, getPlaceLabel } from "@/lib/geocoding" // Import the geocoding utility
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
 import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
@@ -53,6 +53,8 @@ export default function NewPostPage() {
     displayName?: string // Keep displayName for UI consistency
   } | null>(null)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
+  // Name of a place picked in the location modal whose coordinates are still loading
+  const [pendingPlaceName, setPendingPlaceName] = useState<string | null>(null)
   const [userGroups, setUserGroups] = useState<Group[]>([])
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [loadingGroups, setLoadingGroups] = useState(true)
@@ -411,13 +413,14 @@ export default function NewPostPage() {
       const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false })
 
       if (locationInfo) {
+        const label = await getPlaceLabel(locationInfo.latitude, locationInfo.longitude).catch(() => locationInfo.name)
         setCurrentLocation({
-          name: locationInfo.name,
+          name: label,
           lat: locationInfo.latitude,
           lng: locationInfo.longitude,
-          displayName: locationInfo.name,
+          displayName: label,
         })
-        console.log('✅ Auto-populated location from current position:', locationInfo.name)
+        console.log('✅ Auto-populated location from current position:', label)
       }
     } catch (error) {
       console.log('Could not get current location:', error)
@@ -456,9 +459,7 @@ export default function NewPostPage() {
           setIsGettingLocation(true)
           
           // Reverse geocode to get location name
-          const { reverseGeocode, getStandardizedLocation } = await import('@/lib/geocoding')
-          const name = await reverseGeocode(exifLocation.latitude, exifLocation.longitude)
-          const standardized = await getStandardizedLocation(exifLocation.latitude, exifLocation.longitude)
+          const name = await getPlaceLabel(exifLocation.latitude, exifLocation.longitude)
           
           setCurrentLocation({
             name,
@@ -486,11 +487,13 @@ export default function NewPostPage() {
       const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false }) // User explicitly requested fresh location
 
       if (locationInfo) {
+        // Place-level label (e.g. "Dolores Park, San Francisco, CA"), falling back to city
+        const label = await getPlaceLabel(locationInfo.latitude, locationInfo.longitude).catch(() => locationInfo.name)
         setCurrentLocation({
-          name: locationInfo.name, // This is the geocoded name (e.g., "City, State")
+          name: label,
           lat: locationInfo.latitude,
           lng: locationInfo.longitude,
-          displayName: locationInfo.name, // Use the geocoded name for display
+          displayName: label,
         })
       } else {
         // This case handles if getCurrentLocationWithName returns null (e.g., geolocation not supported)
@@ -553,6 +556,8 @@ export default function NewPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    // A place picked in the location modal is still resolving its coordinates
+    if (pendingPlaceName) return
     setIsSubmitting(true)
 
     const isAnonymousSubmit = !user
@@ -890,7 +895,11 @@ export default function NewPostPage() {
                     onClick={() => setShowLocationModal(true)}
                     className="absolute bottom-3 left-3 flex items-center gap-2 px-3 py-2 bg-black/60 backdrop-blur-sm text-white rounded-full text-sm font-medium hover:bg-black/70 transition-colors"
                   >
-                    {currentLocation ? (
+                    {pendingPlaceName ? (
+                      <span className="max-w-[180px] truncate animate-pulse">
+                        {pendingPlaceName.split(",")[0].trim()}
+                      </span>
+                    ) : currentLocation ? (
                       <>
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -1351,7 +1360,7 @@ export default function NewPostPage() {
               </div>
 
               {/* Submit button */}
-              <Button type="submit" className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" disabled={isSubmitting || isAwaitingPayment}>
+              <Button type="submit" className="w-full h-12 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold" disabled={isSubmitting || isAwaitingPayment || !!pendingPlaceName}>
                 {isAwaitingPayment ? "Awaiting Payment..." : isSubmitting ? "Processing..." : "Post"}
               </Button>
             </form>
@@ -1502,6 +1511,7 @@ export default function NewPostPage() {
         onLocationChange={setCurrentLocation}
         onGetCurrentLocation={handleGetLocation}
         isGettingLocation={isGettingLocation}
+        onPendingChange={setPendingPlaceName}
       />
 
       {/* Create Group Dialog */}

@@ -453,3 +453,117 @@ export async function getTravelTimes(
     return { walking: null, driving: null }
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Place-level labels (new post flow)                                 */
+/* ------------------------------------------------------------------ */
+
+// Place types that make a poor "where is this issue" label on their own.
+const NON_PLACE_TYPES = new Set([
+  "locality",
+  "political",
+  "sublocality",
+  "sublocality_level_1",
+  "neighborhood",
+  "administrative_area_level_1",
+  "administrative_area_level_2",
+  "country",
+  "postal_code",
+  "route",
+  "plus_code",
+])
+
+const PLACE_RADIUS_METERS = 75
+
+function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+/** Nearest named place (park, business, landmark...) within PLACE_RADIUS_METERS, via Maps JS Places. */
+async function nearestNamedPlace(latitude: number, longitude: number): Promise<string | null> {
+  if (typeof window === "undefined") return null
+  try {
+    const { loadGoogleMaps } = await import("./google-maps-loader")
+    await loadGoogleMaps()
+    const places = window.google?.maps?.places
+    if (!places) return null
+
+    const service = new places.PlacesService(document.createElement("div"))
+    const results: google.maps.places.PlaceResult[] = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve([]), 4000)
+      service.nearbySearch(
+        { location: { lat: latitude, lng: longitude }, radius: PLACE_RADIUS_METERS },
+        (res: google.maps.places.PlaceResult[] | null, status: google.maps.places.PlacesServiceStatus) => {
+          clearTimeout(timer)
+          resolve(status === places.PlacesServiceStatus.OK && res ? res : [])
+        }
+      )
+    })
+
+    let best: { name: string; d: number } | null = null
+    for (const r of results) {
+      const loc = r.geometry?.location
+      if (!r.name || !loc) continue
+      const types = r.types ?? []
+      if (types.length > 0 && types.every((t) => NON_PLACE_TYPES.has(t))) continue
+      const d = distanceMeters(latitude, longitude, loc.lat(), loc.lng())
+      if (d <= PLACE_RADIUS_METERS && (!best || d < best.d)) best = { name: r.name, d }
+    }
+    return best?.name ?? null
+  } catch (error) {
+    console.warn("Nearby place lookup failed:", error)
+    return null
+  }
+}
+
+/** Street-level label ("123 Main St") from the Geocoding API, or null. */
+async function streetLabel(latitude: number, longitude: number): Promise<string | null> {
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+    if (!apiKey) return null
+    const res = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&result_type=street_address|premise|route&key=${apiKey}`
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    const result = data.status === "OK" ? data.results?.[0] : null
+    if (!result) return null
+    let number = ""
+    let route = ""
+    for (const c of result.address_components ?? []) {
+      if (c.types.includes("street_number")) number = c.short_name
+      else if (c.types.includes("route")) route = c.short_name
+    }
+    if (!route) return null
+    return number ? `${number} ${route}` : route
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Precise, human-readable label for where an issue is, e.g.
+ * "Dolores Park, San Francisco, CA" or "123 Main St, Austin, TX".
+ * Falls back to the city-level reverseGeocode() label.
+ *
+ * The leading segment is the most specific part (post cards show only that),
+ * followed by the city for context.
+ */
+export async function getPlaceLabel(latitude: number, longitude: number): Promise<string> {
+  const [place, cityLabel] = await Promise.all([
+    nearestNamedPlace(latitude, longitude),
+    reverseGeocode(latitude, longitude),
+  ])
+  const specific = place ?? (await streetLabel(latitude, longitude))
+  if (!specific) return cityLabel
+  // Don't append a coordinate fallback or repeat the city.
+  const isCoords = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(cityLabel)
+  if (isCoords || cityLabel.startsWith(specific)) return specific
+  return `${specific}, ${cityLabel}`
+}

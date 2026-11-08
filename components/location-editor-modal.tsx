@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { toast } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +13,12 @@ interface LocationEditorModalProps {
   onLocationChange: (location: { name: string; lat: number; lng: number; displayName?: string } | null) => void
   onGetCurrentLocation?: () => void
   isGettingLocation?: boolean
+  /**
+   * Called with the selected place's name while its coordinates are being
+   * looked up (the modal is already closed), and with null when done. Lets
+   * the page show the pending choice and hold submission until it resolves.
+   */
+  onPendingChange?: (pendingName: string | null) => void
 }
 
 declare global {
@@ -27,6 +34,7 @@ export function LocationEditorModal({
   onLocationChange,
   onGetCurrentLocation,
   isGettingLocation = false,
+  onPendingChange,
 }: LocationEditorModalProps) {
   const [searchQuery, setSearchQuery] = useState(currentLocation?.displayName || currentLocation?.name || "")
   const [searchResults, setSearchResults] = useState<google.maps.places.AutocompletePrediction[]>([])
@@ -34,6 +42,12 @@ export function LocationEditorModal({
   const [autocompleteService, setAutocompleteService] = useState<google.maps.places.AutocompleteService | null>(null)
   const [placesService, setPlacesService] = useState<google.maps.places.PlacesService | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
+  // Groups the keystrokes + the details lookup of one search into a single
+  // billed Places session.
+  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
+  // Only the most recent selection may apply; a slower earlier lookup (or one
+  // superseded by "remove"/"use current location") is discarded.
+  const lookupIdRef = useRef(0)
 
   // Initialize Google Maps services
   useEffect(() => {
@@ -90,10 +104,20 @@ export function LocationEditorModal({
       return
     }
 
+    const sessionToken =
+      sessionTokenRef.current ?? new window.google.maps.places.AutocompleteSessionToken()
+    sessionTokenRef.current = sessionToken
+
     autocompleteService.getPlacePredictions(
       {
         input: query,
-        types: ["establishment", "geocode"],
+        // No type filter: specific places (parks, businesses, addresses) as
+        // well as areas. Bias toward the current location so nearby places
+        // rank first instead of the same-named city elsewhere.
+        sessionToken,
+        ...(currentLocation
+          ? { locationBias: { center: { lat: currentLocation.lat, lng: currentLocation.lng }, radius: 20000 } }
+          : { locationBias: "IP_BIAS" }),
       },
       (predictions, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
@@ -110,22 +134,40 @@ export function LocationEditorModal({
   const handlePlaceSelect = (placeId: string, description: string) => {
     if (!placesService) return
 
-    placesService.getDetails({ placeId }, (place, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && place) {
-        const location = {
+    // Close right away; the location fills in when the details arrive.
+    const lookupId = ++lookupIdRef.current
+    setSearchQuery(description)
+    setShowResults(false)
+    onPendingChange?.(description)
+    onOpenChange(false)
+
+    const sessionToken = sessionTokenRef.current ?? undefined
+    sessionTokenRef.current = null
+
+    placesService.getDetails({ placeId, fields: ["geometry"], sessionToken }, (place, status) => {
+      if (lookupId !== lookupIdRef.current) return // superseded
+      onPendingChange?.(null)
+      const loc = place?.geometry?.location
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && loc) {
+        onLocationChange({
           name: description,
-          lat: place.geometry?.location?.lat() || 0,
-          lng: place.geometry?.location?.lng() || 0,
+          lat: loc.lat(),
+          lng: loc.lng(),
           displayName: description,
-        }
-        onLocationChange(location)
-        setSearchQuery(description)
-        setShowResults(false)
+        })
+      } else {
+        toast.error("Couldn't set location", { description: "Please try selecting it again." })
       }
     })
   }
 
+  const cancelPendingLookup = () => {
+    lookupIdRef.current++
+    onPendingChange?.(null)
+  }
+
   const handleRemoveLocation = () => {
+    cancelPendingLookup()
     onLocationChange(null)
     setSearchQuery("")
     setShowResults(false)
@@ -134,6 +176,7 @@ export function LocationEditorModal({
 
   const handleUseCurrentLocation = () => {
     if (onGetCurrentLocation) {
+      cancelPendingLookup()
       onGetCurrentLocation()
       // Don't close modal - let user see the location being fetched
     }
