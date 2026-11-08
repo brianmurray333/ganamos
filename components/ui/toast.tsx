@@ -199,6 +199,19 @@ function CompactToast({ toastItem }: { toastItem: ToastPrimitive.Root.ToastObjec
             "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 gap-y-1 rounded-2xl"
         )}
         onClick={extra ? () => setOpen((v) => !v) : undefined}
+        // Keyboard users can reveal the detail too
+        role={extra ? "button" : undefined}
+        tabIndex={extra ? 0 : undefined}
+        onKeyDown={
+          extra
+            ? (e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault()
+                  setOpen((v) => !v)
+                }
+              }
+            : undefined
+        }
         aria-expanded={extra ? open : undefined}
       >
         <ToastIcon type={toastItem.type} icon={toastItem.data?.icon} />

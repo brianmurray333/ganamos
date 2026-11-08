@@ -47,4 +47,18 @@ describe('compact toast actions', () => {
     fireEvent.click(screen.getByText('Post created'))
     await waitFor(() => expect(screen.getByText('2,000 sats reward is live.')).toBeTruthy())
   })
+
+  it('expands the detail with the keyboard (Enter or Space)', async () => {
+    await mount()
+    act(() => {
+      toast('Post created', { description: 'Your reward is live.' })
+    })
+    const pill = (await screen.findByText('Post created')).closest('[data-slot="toast-content"]') as HTMLElement
+    expect(pill.getAttribute('tabindex')).toBe('0')
+    expect(pill.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.keyDown(pill, { key: 'Enter' })
+    await waitFor(() => expect(pill.getAttribute('aria-expanded')).toBe('true'))
+    fireEvent.keyDown(pill, { key: ' ' })
+    await waitFor(() => expect(pill.getAttribute('aria-expanded')).toBe('false'))
+  })
 })
