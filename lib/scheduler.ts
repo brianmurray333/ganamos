@@ -29,7 +29,8 @@ export function initializeScheduler() {
       const response = await fetch(`${appUrl}/api/admin/daily-summary`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.CRON_SECRET}`,
         }
       })
 

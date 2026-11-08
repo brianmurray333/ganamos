@@ -66,26 +66,28 @@ describe('GET /api/admin/check-env', () => {
       expect(typeof data).toBe('object');
     });
 
-    it('should return 200 with x-vercel-cron header (bypasses auth)', async () => {
+    // SECURITY: these headers used to bypass auth. x-vercel-cron can be sent by anyone and
+    // Vercel adds x-vercel-id to every request, so only Bearer CRON_SECRET authorizes now.
+    it('should return 401 for a spoofed x-vercel-cron header', async () => {
       process.env.CRON_SECRET = testCronSecret;
       
       const request = createVercelCronRequest('x-vercel-cron');
       const response = await GET(request);
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toBeDefined();
+      expect(response.status).toBe(401);
+      expect(data).toEqual({ error: 'Unauthorized' });
     });
 
-    it('should return 200 with x-vercel-id header (bypasses auth)', async () => {
+    it('should return 401 for an x-vercel-id header', async () => {
       process.env.CRON_SECRET = testCronSecret;
       
       const request = createVercelCronRequest('x-vercel-id');
       const response = await GET(request);
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toBeDefined();
+      expect(response.status).toBe(401);
+      expect(data).toEqual({ error: 'Unauthorized' });
     });
 
     it('should return 401 when CRON_SECRET is set but no auth provided', async () => {
@@ -110,15 +112,17 @@ describe('GET /api/admin/check-env', () => {
       expect(data.error).toBe('Unauthorized');
     });
 
-    it('should return 200 when CRON_SECRET is not set (no auth required)', async () => {
+    // SECURITY: used to fail open ("no auth required") when CRON_SECRET was unset.
+    it('should return 401 when CRON_SECRET is not set (fail closed)', async () => {
       delete process.env.CRON_SECRET;
       
-      const request = createUnauthenticatedRequest();
-      const response = await GET(request);
-      const data = await response.json();
+      for (const request of [createUnauthenticatedRequest(), createAuthenticatedRequest('undefined'), createAuthenticatedRequest('')]) {
+        const response = await GET(request);
+        const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toBeDefined();
+        expect(response.status).toBe(401);
+        expect(data).toEqual({ error: 'Unauthorized' });
+      }
     });
 
     it('should return 401 with malformed authorization header (missing Bearer prefix)', async () => {
@@ -206,9 +210,9 @@ describe('GET /api/admin/check-env', () => {
     });
 
     it('should return correct types for all response fields', async () => {
-      delete process.env.CRON_SECRET; // Test without auth requirement
+      process.env.CRON_SECRET = testCronSecret;
       
-      const request = createUnauthenticatedRequest();
+      const request = createAuthenticatedRequest(testCronSecret);
       const response = await GET(request);
       const data = await response.json();
 
@@ -247,9 +251,9 @@ describe('GET /api/admin/check-env', () => {
     });
 
     it('should validate prefix lengths for configured env vars', async () => {
-      delete process.env.CRON_SECRET;
+      process.env.CRON_SECRET = testCronSecret;
       
-      const request = createUnauthenticatedRequest();
+      const request = createAuthenticatedRequest(testCronSecret);
       const response = await GET(request);
       const data = await response.json();
 
@@ -264,11 +268,11 @@ describe('GET /api/admin/check-env', () => {
 
   describe('Edge Cases', () => {
     it('should handle missing environment variables gracefully', async () => {
-      delete process.env.CRON_SECRET;
+      process.env.CRON_SECRET = testCronSecret;
       const originalResendKey = process.env.RESEND_API_KEY;
       delete process.env.RESEND_API_KEY;
       
-      const request = createUnauthenticatedRequest();
+      const request = createAuthenticatedRequest(testCronSecret);
       const response = await GET(request);
       const data = await response.json();
 
@@ -283,11 +287,11 @@ describe('GET /api/admin/check-env', () => {
     });
 
     it('should return "not set" for USE_MOCKS when environment variable is not defined', async () => {
-      delete process.env.CRON_SECRET;
+      process.env.CRON_SECRET = testCronSecret;
       const originalUseMocks = process.env.USE_MOCKS;
       delete process.env.USE_MOCKS;
       
-      const request = createUnauthenticatedRequest();
+      const request = createAuthenticatedRequest(testCronSecret);
       const response = await GET(request);
       const data = await response.json();
 
@@ -301,11 +305,11 @@ describe('GET /api/admin/check-env', () => {
     });
 
     it('should return actual USE_MOCKS value when set', async () => {
-      delete process.env.CRON_SECRET;
+      process.env.CRON_SECRET = testCronSecret;
       const originalUseMocks = process.env.USE_MOCKS;
       process.env.USE_MOCKS = 'true';
       
-      const request = createUnauthenticatedRequest();
+      const request = createAuthenticatedRequest(testCronSecret);
       const response = await GET(request);
       const data = await response.json();
 
@@ -320,7 +324,7 @@ describe('GET /api/admin/check-env', () => {
       }
     });
 
-    it('should handle both Vercel header types simultaneously', async () => {
+    it('should reject both Vercel header types sent together', async () => {
       process.env.CRON_SECRET = testCronSecret;
       
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
@@ -334,8 +338,8 @@ describe('GET /api/admin/check-env', () => {
       const response = await GET(request);
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data).toBeDefined();
+      expect(response.status).toBe(401);
+      expect(data).toEqual({ error: 'Unauthorized' });
     });
 
     it('should include CRON_SECRET boolean in response when set', async () => {
@@ -349,15 +353,16 @@ describe('GET /api/admin/check-env', () => {
       expect(data.CRON_SECRET).toBe(true);
     });
 
-    it('should show CRON_SECRET as false when not set', async () => {
+    it('should not reveal the environment at all when CRON_SECRET is not set', async () => {
       delete process.env.CRON_SECRET;
       
       const request = createUnauthenticatedRequest();
       const response = await GET(request);
       const data = await response.json();
 
-      expect(response.status).toBe(200);
-      expect(data.CRON_SECRET).toBe(false);
+      expect(response.status).toBe(401);
+      expect(data).not.toHaveProperty('CRON_SECRET');
+      expect(data).not.toHaveProperty('NEXT_PUBLIC_SUPABASE_URL_PREFIX');
     });
   });
 });

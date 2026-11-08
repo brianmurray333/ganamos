@@ -28,7 +28,9 @@ describe('GET /api/admin/check-env', () => {
   })
 
   describe('Authorization', () => {
-    it('should allow access with x-vercel-cron header', async () => {
+    // SECURITY: Vercel headers are not proof of a cron call (anyone can send x-vercel-cron;
+    // Vercel adds x-vercel-id to every request). Only Bearer CRON_SECRET authorizes.
+    it('should reject a spoofed x-vercel-cron header', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
@@ -39,12 +41,11 @@ describe('GET /api/admin/check-env', () => {
       const response = await GET(request)
       const data = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(data.error).toBeUndefined()
-      expect(data.NEXT_PUBLIC_SUPABASE_URL).toBe(true)
+      expect(response.status).toBe(401)
+      expect(data).toEqual({ error: 'Unauthorized' })
     })
 
-    it('should allow access with x-vercel-id header', async () => {
+    it('should reject an x-vercel-id header', async () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
@@ -55,9 +56,8 @@ describe('GET /api/admin/check-env', () => {
       const response = await GET(request)
       const data = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(data.error).toBeUndefined()
-      expect(data.NEXT_PUBLIC_SUPABASE_URL).toBe(true)
+      expect(response.status).toBe(401)
+      expect(data).toEqual({ error: 'Unauthorized' })
     })
 
     it('should allow access with valid Bearer token', async () => {
@@ -103,19 +103,21 @@ describe('GET /api/admin/check-env', () => {
       expect(data.error).toBe('Unauthorized')
     })
 
-    it('should allow access when CRON_SECRET is not set and no headers provided', async () => {
-      // Remove CRON_SECRET to test fallback behavior
+    it('should fail closed when CRON_SECRET is not set (no headers, Vercel headers, or "Bearer undefined")', async () => {
       delete process.env.CRON_SECRET
 
-      const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
-        method: 'GET',
-      })
+      for (const headers of [{}, { 'x-vercel-cron': 'true' }, { Authorization: 'Bearer undefined' }, { Authorization: 'Bearer ' }] as Record<string, string>[]) {
+        const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
+          method: 'GET',
+          headers,
+        })
 
-      const response = await GET(request)
-      const data = await response.json()
+        const response = await GET(request)
+        const data = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(data.CRON_SECRET).toBe(false)
+        expect(response.status).toBe(401)
+        expect(data).toEqual({ error: 'Unauthorized' })
+      }
     })
   })
 
@@ -124,7 +126,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -158,7 +160,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -183,7 +185,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -202,7 +204,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -220,7 +222,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -237,7 +239,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -254,7 +256,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -282,7 +284,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -300,7 +302,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -320,7 +322,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -337,7 +339,7 @@ describe('GET /api/admin/check-env', () => {
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -348,14 +350,14 @@ describe('GET /api/admin/check-env', () => {
       expect(data.VERCEL_ENV).toBeUndefined()
     })
 
-    it('should handle completely empty environment', async () => {
-      // Clear all environment variables
-      process.env = {}
+    it('should handle an otherwise empty environment', async () => {
+      // Clear all environment variables except the secret needed to call the endpoint
+      process.env = { CRON_SECRET: 'test-cron-secret' } as unknown as NodeJS.ProcessEnv
 
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',
         headers: {
-          'x-vercel-cron': 'true',
+          Authorization: 'Bearer test-cron-secret',
         },
       })
 
@@ -368,7 +370,7 @@ describe('GET /api/admin/check-env', () => {
       expect(data.NEXT_PUBLIC_SUPABASE_URL).toBe(false)
       expect(data.SUPABASE_SECRET_API_KEY).toBe(false)
       expect(data.RESEND_API_KEY).toBe(false)
-      expect(data.CRON_SECRET).toBe(false)
+      expect(data.CRON_SECRET).toBe(true)
       expect(data.VERCEL).toBe(false)
 
       // USE_MOCKS should be 'not set'

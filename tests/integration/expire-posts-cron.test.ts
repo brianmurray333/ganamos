@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { GET } from '@/app/api/cron/expire-posts/route'
 import { NextRequest } from 'next/server'
 import { getServiceClient } from './helpers/db-client'
@@ -23,6 +23,8 @@ describe('POST Expiration Cron - Integration Tests', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    // Only `Authorization: Bearer ${CRON_SECRET}` authorizes (lib/cron-auth.ts)
+    process.env.CRON_SECRET = 'integration-cron-secret'
 
     // Initialize Supabase client using the helper
     testSupabase = getServiceClient()
@@ -47,14 +49,109 @@ describe('POST Expiration Cron - Integration Tests', () => {
     testFixerEmail = fixer.email
   })
 
+  afterEach(() => {
+    delete process.env.CRON_SECRET
+  })
+
   // Cleanup is handled automatically by setup-db.ts afterEach
+
+  async function createFundingTransaction(reward: number) {
+    const { data, error } = await testSupabase
+      .from('transactions')
+      .insert({ user_id: testUserId, type: 'internal', amount: -reward, status: 'completed', memo: 'Post reward for: Integration Test Post' })
+      .select('id')
+      .single()
+    if (error) throw error
+    return (data as any).id as string
+  }
+
+  async function insertExpiredPost(overrides: Record<string, any> = {}) {
+    const { data, error } = await testSupabase
+      .from('posts')
+      .insert({
+        user_id: testUserId,
+        title: 'Integration Test Post',
+        description: 'This post should expire',
+        reward: 1000,
+        expires_at: new Date(Date.now() - 3600_000).toISOString(),
+        fixed: false,
+        under_review: false,
+        ...overrides,
+      } as any)
+      .select('id')
+      .single()
+    if (error) throw error
+    return (data as any).id as string
+  }
+
+  const runCron = () =>
+    GET(new NextRequest('http://localhost:3000/api/cron/expire-posts', {
+      method: 'GET',
+      headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
+    }))
+
+  async function balanceOf(userId: string) {
+    const { data } = await testSupabase.from('profiles').select('balance').eq('id', userId).single()
+    return (data as any).balance as number
+  }
+
+  async function refundCount() {
+    const { data } = await testSupabase
+      .from('transactions')
+      .select('id')
+      .eq('user_id', testUserId)
+      .eq('type', 'internal')
+      .gt('amount', 0)
+      .like('memo', 'Refund for expired post%')
+    return (data ?? []).length
+  }
+
+  describe('Refunds only funded rewards, once', () => {
+    it('expires but does not refund a post whose reward was never funded', async () => {
+      const before = await balanceOf(testUserId)
+      const postId = await insertExpiredPost({ reward: 50000 })
+
+      const response = await runCron()
+
+      expect(response.status).toBe(200)
+      const { data: p } = await testSupabase.from('posts').select('deleted_at').eq('id', postId).single()
+      expect((p as any).deleted_at).not.toBeNull()
+      expect(await balanceOf(testUserId)).toBe(before)
+      expect(await refundCount()).toBe(0)
+    })
+
+    it('running the cron twice refunds a funded post once', async () => {
+      const before = await balanceOf(testUserId)
+      await insertExpiredPost({ funding_transaction_id: await createFundingTransaction(1000) })
+
+      await runCron()
+      await runCron()
+
+      expect(await balanceOf(testUserId)).toBe(before + 1000)
+      expect(await refundCount()).toBe(1)
+    })
+
+    it('two overlapping cron runs refund a funded post once', async () => {
+      const before = await balanceOf(testUserId)
+      await insertExpiredPost({ funding_transaction_id: await createFundingTransaction(1000) })
+
+      await Promise.all([runCron(), runCron()])
+
+      expect(await balanceOf(testUserId)).toBe(before + 1000)
+      expect(await refundCount()).toBe(1)
+    })
+  })
 
   describe('End-to-End Expiration Flow', () => {
     it('should expire post and update database', async () => {
+      // The owner's reward deduction (as create_post_atomic records it)
+      const fundingTxId = await createFundingTransaction(1000)
+
       // Create an expired post
       const { data: post, error: insertError } = await testSupabase
         .from('posts')
         .insert({
+          funding_transaction_id: fundingTxId,
           user_id: testUserId,
           title: 'Integration Test Post',
           description: 'This post should expire',
@@ -95,7 +192,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -184,7 +281,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -238,7 +335,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       await GET(request)
@@ -282,7 +379,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -303,14 +400,29 @@ describe('POST Expiration Cron - Integration Tests', () => {
   })
 
   describe('Authentication', () => {
-    it('should authenticate with Vercel cron headers', async () => {
+    // SECURITY: Vercel headers used to bypass auth; anyone can send x-vercel-cron and Vercel
+    // adds x-vercel-id to every request. Expiring posts refunds balances, so this must be locked.
+    it('should reject Vercel cron headers without the Bearer secret', async () => {
+      for (const headers of [{ 'x-vercel-cron': '1' }, { 'x-vercel-id': 'iad1::abc' }] as Record<string, string>[]) {
+        const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
+          method: 'GET',
+          headers,
+        })
+
+        const response = await GET(request)
+        expect(response.status).toBe(401)
+      }
+    })
+
+    it('should fail closed when CRON_SECRET is not configured', async () => {
+      delete process.env.CRON_SECRET
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer undefined' },
       })
 
       const response = await GET(request)
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
     })
 
     it('should authenticate with valid Bearer token', async () => {

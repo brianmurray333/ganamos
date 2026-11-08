@@ -305,45 +305,28 @@ export async function checkDepositStatus(rHash: string) {
         console.log(`[Safety Caps] Balance cap ${balanceCapCheck.capLevel} triggered for user ${userId}`)
       }
       
-      const newBalance = calculatedNewBalance
-      // When user earns sats (deposit), also add to pet_coins (1:1 conversion)
-      const currentCoins = parseInt(profile.pet_coins || "0")
-      const newCoins = currentCoins + actualAmountPaid
-      console.log("New balance will be:", newBalance, "New coins will be:", newCoins, "Adding:", actualAmountPaid)
 
-      // Update transaction status AND amount with actual amount paid
-      const { error: txError } = await adminSupabase
-        .from("transactions")
-        .update({
-          status: "completed",
-          amount: actualAmountPaid, // Update with actual amount paid
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", transaction.id)
+      // Atomically complete the pending deposit AND credit the balance (one DB
+      // transaction). Overlapping checks of the same invoice credit only once,
+      // and a failed balance update leaves the deposit pending/retryable.
+      const { data: creditedBalance, error: creditError } = await adminSupabase.rpc("credit_deposit", {
+        p_transaction_id: transaction.id,
+        p_user_id: userId,
+        p_amount: actualAmountPaid,
+      })
 
-      if (txError) {
-        console.error("Error updating transaction:", txError)
-        return { success: false, error: "Failed to update transaction" }
-      }
-
-      console.log("Transaction updated successfully")
-
-      // Update user balance and pet_coins
-      const { error: balanceError } = await adminSupabase
-        .from("profiles")
-        .update({
-          balance: newBalance,
-          pet_coins: newCoins,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", userId)
-
-      if (balanceError) {
-        console.error("Error updating balance:", balanceError)
+      if (creditError) {
+        console.error("Error crediting deposit:", creditError)
         return { success: false, error: "Failed to update balance" }
       }
 
-      console.log("Balance updated successfully to:", newBalance, "Coins updated to:", newCoins)
+      if (creditedBalance === null || creditedBalance === undefined) {
+        // Another check already completed this deposit
+        console.log("Deposit already credited by a concurrent check:", transaction.id)
+        return { success: true, settled: true, amount: actualAmountPaid, newBalance: null }
+      }
+
+      console.log("Deposit credited. Balance:", creditedBalance, "(+", actualAmountPaid, "sats)")
 
       // Revalidate the profile page to show updated balance
       revalidatePath("/profile")
@@ -392,7 +375,7 @@ export async function checkDepositStatus(rHash: string) {
         success: true,
         settled: true,
         amount: actualAmountPaid,
-        newBalance,
+        newBalance: creditedBalance,
       }
     }
 

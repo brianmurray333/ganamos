@@ -1,5 +1,6 @@
 "use client"
 
+import { getClaimToken } from "@/lib/anonymous-claim"
 import type React from "react"
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react"
@@ -774,7 +775,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               // Import and call the claim action
               const { claimAnonymousRewardAction } = await import('@/app/actions/post-actions')
-              const result = await claimAnonymousRewardAction(pendingRewardPost, session.user.id)
+              const result = await claimAnonymousRewardAction(pendingRewardPost, session.user.id, getClaimToken(pendingRewardPost))
               
               if (result.success) {
                 console.log("Successfully claimed anonymous reward!")
@@ -811,7 +812,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             try {
               // Import and call the associate action
               const { associateAnonymousFixWithAccountAction } = await import('@/app/actions/post-actions')
-              const result = await associateAnonymousFixWithAccountAction(pendingFixPost, session.user.id)
+              const result = await associateAnonymousFixWithAccountAction(pendingFixPost, session.user.id, getClaimToken(pendingFixPost))
               
               if (result.success) {
                 console.log("Successfully associated anonymous fix with account!")

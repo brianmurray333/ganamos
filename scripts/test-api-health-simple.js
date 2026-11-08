@@ -18,7 +18,10 @@ async function testVoltageAPI() {
   
   try {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3457'
-    const response = await fetch(`${appUrl}/api/admin/node-balance`)
+    // node-balance requires the cron secret
+    const response = await fetch(`${appUrl}/api/admin/node-balance`, {
+      headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+    })
     
     if (!response.ok) {
       console.log(`❌ Voltage API: HTTP ${response.status}`)

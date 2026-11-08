@@ -1,3 +1,4 @@
+import { isAuthorizedCronRequest } from "@/lib/cron-auth"
 import { NextRequest, NextResponse } from "next/server"
 import { lndRequest } from "../../../../lib/lightning"
 
@@ -10,13 +11,9 @@ export const dynamic = 'force-dynamic'
  */
 export async function GET(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const isVercelCron = request.headers.get('x-vercel-id') || request.headers.get('x-vercel-cron')
-
-    if (!isVercelCron && process.env.CRON_SECRET) {
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
+    // Only Vercel Cron (Bearer CRON_SECRET) or an operator with the secret
+    if (!isAuthorizedCronRequest(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Get wallet balance from LND

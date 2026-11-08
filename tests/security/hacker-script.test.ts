@@ -17,6 +17,7 @@
  * Run: npm run test:security
  */
 
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // Configuration
@@ -489,6 +490,76 @@ describe('🎭 Hacker Script - Security Penetration Tests', () => {
 
       // Should be blocked
       expect(error).toBeTruthy()
+    })
+  })
+
+  // ============================================================================
+  // ATTACK 9: Call the payout RPCs directly (service_role only)
+  // ============================================================================
+  // pay_fix_reward / credit_deposit credit balances; only the server may call them
+  // (supabase/migrations/20261108000000_atomic_payouts.sql). Random IDs are used so that,
+  // even if a grant were wrong, nothing real could be paid; the assertion is on the
+  // permission error itself, not on "some error".
+  describe('Attack 9: Payout RPC Exploitation', () => {
+    const randomUuid = () => crypto.randomUUID()
+
+    it('should BLOCK calling pay_fix_reward from a user session', async () => {
+      if (!requireAuth()) return
+
+      const { data, error } = await supabase.rpc('pay_fix_reward', {
+        p_post_id: randomUuid(),
+        p_fixer_id: hackerId,
+        p_memo: 'Free money 😈',
+      })
+
+      expect(data).toBeNull()
+      expect(error?.message ?? '').toMatch(/permission denied/i)
+    })
+
+    it('should BLOCK calling credit_deposit from a user session', async () => {
+      if (!requireAuth()) return
+
+      const { data, error } = await supabase.rpc('credit_deposit', {
+        p_transaction_id: randomUuid(),
+        p_user_id: hackerId,
+        p_amount: 1_000_000,
+      })
+
+      expect(data).toBeNull()
+      expect(error?.message ?? '').toMatch(/permission denied/i)
+    })
+
+    it('should BLOCK resetting payout markers or the claim token hash on own posts', async () => {
+      if (!requireAuth()) return
+
+      const { data: ownPosts } = await supabase
+        .from('posts')
+        .select('id, reward_paid_at, anonymous_claim_token_hash, funding_status')
+        .eq('user_id', hackerId)
+        .limit(1)
+
+      if (!ownPosts || ownPosts.length === 0) {
+        console.log('   ⚠️  Hacker has no posts - skipping')
+        return
+      }
+      const before = ownPosts[0]
+
+      await supabase
+        .from('posts')
+        .update({ reward_paid_at: null, anonymous_claim_token_hash: 'attacker', funding_status: 'paid' })
+        .eq('id', before.id)
+
+      const { data: after } = await supabase
+        .from('posts')
+        .select('reward_paid_at, anonymous_claim_token_hash, funding_status')
+        .eq('id', before.id)
+        .single()
+
+      expect(after).toEqual({
+        reward_paid_at: before.reward_paid_at,
+        anonymous_claim_token_hash: before.anonymous_claim_token_hash,
+        funding_status: before.funding_status,
+      })
     })
   })
 

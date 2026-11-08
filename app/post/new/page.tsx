@@ -14,7 +14,10 @@ import { v4 as uuidv4 } from "@/lib/uuid"
 import { formatSatsValue } from "@/lib/utils"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import type { Group } from "@/lib/types"
-import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
+import { isBase64Image } from "@/lib/storage"
+import { startPendingPost, isPendingPostWatched, consumePendingPost, peekDraftToRestore, clearDraftToRestore } from "@/lib/pending-post-store"
+import type { PostDraft } from "@/lib/pending-post-store"
+import { primeImageUpload, takeImageUpload, discardImageUpload } from "@/lib/early-image-upload"
 import {
   createPostFundingInvoiceAction,
   checkPostFundingStatusAction,
@@ -41,26 +44,29 @@ const DynamicCameraCapture = dynamic(
 )
 
 export default function NewPostPage() {
-  const [description, setDescription] = useState("")
-  const [reward, setReward] = useState(2000)
-  const [image, setImage] = useState<string | null>(null)
+  // Draft of a submission that failed in the background (see lib/pending-post-store);
+  // restore it so nothing the user typed is lost.
+  const [restoredDraft] = useState<PostDraft | null>(() => peekDraftToRestore())
+  const [description, setDescription] = useState(restoredDraft?.description ?? "")
+  const [reward, setReward] = useState(restoredDraft?.reward ?? 2000)
+  const [image, setImage] = useState<string | null>(restoredDraft?.image ?? null)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [step, setStep] = useState<"photo" | "details">("photo")
+  const [step, setStep] = useState<"photo" | "details">(restoredDraft ? "details" : "photo")
   const [currentLocation, setCurrentLocation] = useState<{
     name: string
     lat: number
     lng: number
     displayName?: string // Keep displayName for UI consistency
-  } | null>(null)
+  } | null>(restoredDraft?.location ?? null)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
   // Name of a place picked in the location modal whose coordinates are still loading
   const [pendingPlaceName, setPendingPlaceName] = useState<string | null>(null)
   const [userGroups, setUserGroups] = useState<Group[]>([])
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(restoredDraft?.selectedGroupId ?? null)
   const [loadingGroups, setLoadingGroups] = useState(true)
   // Assignment state - can be public, a group, or a specific person
-  const [assignedTo, setAssignedTo] = useState<string | null>(null) // UUID of assigned user
-  const [assignedToProfile, setAssignedToProfile] = useState<{id: string, name: string, username: string, avatar_url?: string} | null>(null)
+  const [assignedTo, setAssignedTo] = useState<string | null>(restoredDraft?.assignedTo ?? null) // UUID of assigned user
+  const [assignedToProfile, setAssignedToProfile] = useState<{id: string, name: string, username: string, avatar_url?: string} | null>(restoredDraft?.assignedToProfile ?? null)
   const [familyMembers, setFamilyMembers] = useState<{id: string, name: string, username: string, avatar_url?: string}[]>([])
   const [showUsernameSearch, setShowUsernameSearch] = useState(false)
   const [usernameSearchQuery, setUsernameSearchQuery] = useState("")
@@ -85,13 +91,42 @@ export default function NewPostPage() {
   const [showFullInvoice, setShowFullInvoice] = useState(false)
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(null)
   const [isPriceLoading, setIsPriceLoading] = useState(true)
-  const [cameraActive, setCameraActive] = useState(true)
+  const [cameraActive, setCameraActive] = useState(!restoredDraft)
   const [showLocationModal, setShowLocationModal] = useState(false)
   const [groupPickerHighlighted, setGroupPickerHighlighted] = useState(false)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
   const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false)
   const [showShareGroupModal, setShowShareGroupModal] = useState(false)
   const [pendingGroup, setPendingGroup] = useState<Group | null>(null)
+  // The new post's id is generated up front so /post/[id] can be prefetched
+  // while the user is still typing, making the post-submit navigation instant.
+  const [postId] = useState(() => uuidv4())
+  const submittedRef = useRef(false)
+  const posterId = activeUserId || user?.id || null
+
+  // The restored draft has been applied to state; don't restore it again.
+  useEffect(() => {
+    if (restoredDraft) clearDraftToRestore()
+  }, [restoredDraft])
+
+  // Registered users: upload the photo as soon as it's chosen (and prefetch the
+  // post page) so pressing Post doesn't wait on either.
+  useEffect(() => {
+    if (step !== "details" || !posterId) return
+    router.prefetch(`/post/${postId}`)
+    if (image && isBase64Image(image)) {
+      primeImageUpload(image, posterId)
+    } else {
+      discardImageUpload()
+    }
+  }, [step, image, posterId, postId, router])
+
+  // Leaving without posting: drop the early upload.
+  useEffect(() => {
+    return () => {
+      if (!submittedRef.current) discardImageUpload()
+    }
+  }, [])
 
   useEffect(() => {
     if (isAnonymous) {
@@ -558,6 +593,8 @@ export default function NewPostPage() {
     e.preventDefault()
     // A place picked in the location modal is still resolving its coordinates
     if (pendingPlaceName) return
+    // Already submitted (double tap while navigating away)
+    if (submittedRef.current) return
     setIsSubmitting(true)
 
     const isAnonymousSubmit = !user
@@ -632,50 +669,66 @@ export default function NewPostPage() {
       }
     }
 
-    // This code only runs for registered users
-    try {
-      // SAFETY: Check caps before creating post
-      const { checkPostSafetyCapsAction } = await import("@/app/actions/post-actions")
-      const capsCheck = await checkPostSafetyCapsAction({
-        userId: activeUserId || user!.id,
-        reward,
-      })
-      
-      if (!capsCheck.allowed) {
-        toast.error("Post Limit Reached", {
-          description: capsCheck.error || "Unable to create post at this time.",
-        })
-        setIsSubmitting(false)
-        return
+    // This code only runs for registered users.
+    // Navigate to the post page right away and finish the submission in the
+    // background (lib/pending-post-store); /post/[id] shows a skeleton until
+    // it lands, then the success toast, or sends the user back here with the
+    // draft restored if it fails.
+    const userId = activeUserId || user!.id
+    const draft: PostDraft = {
+      description,
+      reward,
+      image,
+      location: currentLocation,
+      selectedGroupId,
+      assignedTo,
+      assignedToProfile,
+    }
+    const createdBy = profile!.name
+    const createdByAvatar = profile!.avatar_url
+
+    // Reuse the upload started when the photo was taken; start it now otherwise.
+    // (Plain storage request, so it can run while we navigate.)
+    const uploadPromise = image && isBase64Image(image) ? takeImageUpload(image, userId) : null
+    uploadPromise?.catch(() => {})
+
+    // Runs once /post/[id] is on screen (see waitForWatcherMs below).
+    const task = async () => {
+      const { checkPostSafetyCapsAction, createPostWithRewardAction } = await import("@/app/actions/post-actions")
+      const { deleteImage } = await import("@/lib/storage")
+
+      // If the post isn't created, delete the photo we uploaded for it (the
+      // restored draft keeps the local copy, so a retry uploads again).
+      const discardUploadedImage = async () => {
+        if (!uploadPromise) return
+        try {
+          const { url } = await uploadPromise
+          if (url) await deleteImage(url)
+        } catch (error) {
+          console.error("Error deleting unused upload:", error)
+        }
       }
 
-      const now = new Date()
-      const postId = uuidv4()
+      // SAFETY: Check caps before creating post
+      const capsCheck = await checkPostSafetyCapsAction({ userId, reward })
+      if (!capsCheck.allowed) {
+        await discardUploadedImage()
+        return { success: false as const, error: capsCheck.error || "Unable to create post at this time." }
+      }
 
-      // Upload image to storage if it's base64
       let finalImageUrl = image
-      if (image && isBase64Image(image)) {
-        console.log("📤 Uploading image to storage...")
-        const imagePath = generateImagePath(activeUserId || user!.id, "posts")
-        const { url, error: uploadError } = await uploadImage(image, imagePath)
-        
+      if (uploadPromise) {
+        const { url, error: uploadError } = await uploadPromise
         if (uploadError || !url) {
           console.error("Failed to upload image:", uploadError)
-          toast.error("Upload Error", {
-            description: "Failed to upload image. Please try again.",
-          })
-          setIsSubmitting(false)
-          return
+          return { success: false as const, error: "Failed to upload image. Please try again." }
         }
-        
         finalImageUrl = url
-        console.log("✅ Image uploaded successfully")
       }
 
-      const { createPostWithRewardAction } = await import("@/app/actions/post-actions")
       const result = await createPostWithRewardAction({
         postId,
-        userId: activeUserId || user!.id,
+        userId,
         title: description.substring(0, 50),
         description,
         imageUrl: finalImageUrl,
@@ -687,29 +740,29 @@ export default function NewPostPage() {
         groupId: assignedTo ? null : selectedGroupId,
         assignedTo,
         city: currentLocation?.displayName || currentLocation?.name || null,
-        createdBy: profile!.name,
-        createdByAvatar: profile!.avatar_url,
+        createdBy,
+        createdByAvatar,
         memo: `Post reward for: ${description.substring(0, 50)}`,
       })
 
       if (!result.success) {
         console.error("Atomic post creation failed:", result.error)
-        toast.error("Error", { description: result.error || "Post was not created." })
-        return
+        await discardUploadedImage()
+        return { success: false as const, error: result.error || "Post was not created." }
       }
 
-      await refreshProfile()
+      // Everything below is fire-and-forget; nothing waits on it.
+      Promise.resolve(refreshProfile()).catch((error) => console.error("Error refreshing profile:", error))
 
       // Send email notification if assigned to a specific person
       if (assignedTo && assignedToProfile) {
-        // Send job assigned email notification (fire and forget)
         fetch('/api/email/job-assigned', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             postId,
             assignedToUserId: assignedTo,
-            assignerUserId: activeUserId || user!.id,
+            assignerUserId: userId,
             jobTitle: description.substring(0, 50),
             jobDescription: description,
             reward,
@@ -727,22 +780,23 @@ export default function NewPostPage() {
           })
       }
 
-      // Publish to Nostr asynchronously (only for public posts, not group posts)
+      // Publish to Nostr and Sphinx (only for public posts, not group/assigned posts)
       if (!selectedGroupId && !assignedTo) {
+        const publishBody = JSON.stringify({
+          title: description.substring(0, 50),
+          description,
+          location: currentLocation?.name,
+          city: currentLocation?.displayName || currentLocation?.name,
+          latitude: currentLocation?.lat,
+          longitude: currentLocation?.lng,
+          reward,
+          postId,
+          imageUrl: finalImageUrl
+        })
         fetch('/api/nostr/publish-post', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: description.substring(0, 50),
-            description,
-            location: currentLocation?.name,
-            city: currentLocation?.displayName || currentLocation?.name,
-            latitude: currentLocation?.lat,
-            longitude: currentLocation?.lng,
-            reward,
-            postId,
-            imageUrl: finalImageUrl
-          })
+          body: publishBody,
         }).then(response => response.json())
           .then(result => {
             if (result.success) {
@@ -753,24 +807,12 @@ export default function NewPostPage() {
           })
           .catch(error => {
             console.error('[NOSTR] Error publishing to Nostr:', error)
-            // Don't fail the post creation if Nostr publishing fails
           })
-        
-        // Publish to Sphinx asynchronously (only for public posts, not group posts)
+
         fetch('/api/sphinx/publish-post', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: description.substring(0, 50),
-            description,
-            location: currentLocation?.name,
-            city: currentLocation?.displayName || currentLocation?.name,
-            latitude: currentLocation?.lat,
-            longitude: currentLocation?.lng,
-            reward,
-            postId,
-            imageUrl: finalImageUrl
-          })
+          body: publishBody,
         }).then(response => response.json())
           .then(result => {
             if (result.success) {
@@ -781,31 +823,39 @@ export default function NewPostPage() {
           })
           .catch(error => {
             console.error('[SPHINX] Error publishing to Sphinx:', error)
-            // Don't fail the post creation if Sphinx publishing fails
           })
-      } else {
-        console.log('[NOSTR] Skipping Nostr publish for private post (group_id:', selectedGroupId, ', assigned_to:', assignedTo, ')')
-        console.log('[SPHINX] Skipping Sphinx publish for private post (group_id:', selectedGroupId, ', assigned_to:', assignedTo, ')')
       }
 
-      toast.success("🎉 Post created!", {
-        description: "Your issue has been posted successfully ✅",
-      })
-
-      // Redirect to the new post's detail page
-      router.push(`/post/${postId}`)
-    } catch (error) {
-      console.error("Error creating post:", error)
-      toast.error("Error", {
-        description: "There was an error creating your post.",
-      })
-    } finally {
-      setIsSubmitting(false)
+      return { success: true as const }
     }
+
+    submittedRef.current = true
+    // Server actions start only once /post/[id] has mounted: a server action in
+    // flight would hold the navigation back until it finished.
+    startPendingPost(postId, draft, task, { waitForWatcherMs: 4000 }).then((result) => {
+      // Normally /post/[id] reports the outcome. If the user already left it,
+      // report here so a failure (or success) isn't silent.
+      if (isPendingPostWatched(postId)) return
+      consumePendingPost(postId)
+      if (result.success) {
+        toast.success("🎉 Post created!", {
+          description: "Your issue has been posted successfully ✅",
+          action: { label: "View", onClick: () => router.push(`/post/${postId}`) },
+        })
+      } else {
+        toast.error("Post not created", {
+          description: result.error,
+          action: { label: "Edit", onClick: () => router.push("/post/new") },
+        })
+      }
+    })
+
+    router.push(`/post/${postId}`)
   }
 
   const handleBack = () => {
     if (step === "details") {
+      discardImageUpload()
       setStep("photo")
       setCameraActive(true)
     } else {
@@ -844,6 +894,7 @@ export default function NewPostPage() {
             onCapture={handleCapture}
             onGalleryClick={() => document.getElementById('photo-upload')?.click()}
             onSkip={() => {
+              discardImageUpload()
               setImage(null)
               setStep("details")
               setCameraActive(false)

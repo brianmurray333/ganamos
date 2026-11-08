@@ -213,27 +213,47 @@ async function countAllBitcoinPrices() {
 }
 
 describe('Integration: /api/cron/update-bitcoin-price', () => {
+  let savedCronSecret: string | undefined
+
   beforeEach(async () => {
+    // Only `Authorization: Bearer ${CRON_SECRET}` authorizes (lib/cron-auth.ts)
+    savedCronSecret = process.env.CRON_SECRET
+    process.env.CRON_SECRET = 'integration-cron-secret'
     // Clean up any test data from previous runs
     await cleanupBitcoinPrices()
   })
 
   afterEach(async () => {
+    if (savedCronSecret === undefined) delete process.env.CRON_SECRET
+    else process.env.CRON_SECRET = savedCronSecret
     // Clean up test data after each test
     await cleanupBitcoinPrices()
   })
 
   describe('Authorization', () => {
-    it('should accept requests with Vercel cron headers', async () => {
+    // SECURITY: Vercel headers used to bypass auth. x-vercel-cron can be sent by anyone and
+    // Vercel adds x-vercel-id to every request; neither proves a cron invocation.
+    it('should reject Vercel cron headers without the Bearer secret, and write nothing', async () => {
       mockDIAApiSuccess(50000)
       const request = createMockRequestWithVercelHeaders()
 
       const response = await GET(request)
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
       const data = await response.json()
-      expect(data.success).toBe(true)
-      expect(data.price).toBe(50000)
+      expect(data.error).toContain('Unauthorized')
+      expect(await getRecentBitcoinPrices()).toHaveLength(0)
+    })
+
+    it('should fail closed when CRON_SECRET is not configured', async () => {
+      mockDIAApiSuccess(50000)
+      delete process.env.CRON_SECRET
+
+      for (const request of [createMockRequestWithAuth() /* "Bearer undefined" */, createMockRequestWithVercelHeaders()]) {
+        const response = await GET(request)
+        expect(response.status).toBe(401)
+      }
+      expect(await getRecentBitcoinPrices()).toHaveLength(0)
     })
 
     it('should accept requests with valid CRON_SECRET', async () => {
@@ -274,7 +294,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should store bitcoin price in database with correct data', async () => {
       const testPrice = 52345.67
       mockDIAApiSuccess(testPrice)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -294,7 +314,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should maintain decimal precision for price values', async () => {
       const testPrice = 48765.123456
       mockDIAApiSuccess(testPrice)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       await GET(request)
 
@@ -305,7 +325,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should generate accurate timestamps on insert', async () => {
       const beforeInsert = new Date()
       mockDIAApiSuccess(50000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       await GET(request)
       const afterInsert = new Date()
@@ -323,7 +343,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should return inserted price data in response', async () => {
       const testPrice = 49500.25
       mockDIAApiSuccess(testPrice)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
       const data = await response.json()
@@ -340,7 +360,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should store price with consistent currency and source', async () => {
       mockDIAApiSuccess(51234.56)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       await GET(request)
 
@@ -354,7 +374,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should not fail if cleanup encounters errors', async () => {
       // This tests graceful degradation of cleanup
       mockDIAApiSuccess(51000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -374,7 +394,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
       const countBefore = await countAllBitcoinPrices()
       
       mockDIAApiSuccess(52000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       await GET(request)
 
@@ -407,7 +427,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle external API errors gracefully', async () => {
       mockDIAApiError(503)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -422,7 +442,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle network failures', async () => {
       mockDIAApiNetworkFailure('Network timeout')
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -436,7 +456,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle invalid API response data', async () => {
       mockDIAApiInvalidData(null)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -450,7 +470,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle API returning non-numeric price', async () => {
       mockDIAApiInvalidData('invalid')
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -462,7 +482,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle API returning negative price', async () => {
       mockDIAApiSuccess(-1000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -476,7 +496,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle API returning zero price', async () => {
       mockDIAApiSuccess(0)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -492,7 +512,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
   describe('Multiple Updates', () => {
     it('should handle sequential price updates', async () => {
       const prices = [50000, 51000, 52000]
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       for (const price of prices) {
         mockDIAApiSuccess(price)
@@ -513,7 +533,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     })
 
     it('should maintain data integrity across updates', async () => {
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       // First update
       mockDIAApiSuccess(48000)
@@ -539,7 +559,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     })
 
     it('should handle rapid successive updates', async () => {
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
       const updatePromises = []
 
       for (let i = 0; i < 5; i++) {
@@ -564,7 +584,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should handle very large price values', async () => {
       const largePrice = 999999999.99
       mockDIAApiSuccess(largePrice)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -576,7 +596,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
     it('should handle very small price values', async () => {
       const smallPrice = 0.000001
       mockDIAApiSuccess(smallPrice)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 
@@ -587,7 +607,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should handle typical bitcoin price range', async () => {
       const typicalPrices = [30000, 45000, 60000, 75000]
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       for (const price of typicalPrices) {
         mockDIAApiSuccess(price)
@@ -603,7 +623,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
   describe('Response Format', () => {
     it('should return consistent response structure', async () => {
       mockDIAApiSuccess(50000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
       const data = await response.json()
@@ -618,7 +638,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should return ISO 8601 formatted timestamp', async () => {
       mockDIAApiSuccess(50000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
       const data = await response.json()
@@ -633,7 +653,7 @@ describe('Integration: /api/cron/update-bitcoin-price', () => {
 
     it('should return appropriate content type header', async () => {
       mockDIAApiSuccess(50000)
-      const request = createMockRequestWithVercelHeaders()
+      const request = createMockRequestWithAuth()
 
       const response = await GET(request)
 

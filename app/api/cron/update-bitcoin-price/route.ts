@@ -1,3 +1,4 @@
+import { isAuthorizedCronRequest } from "@/lib/cron-auth"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 
@@ -9,18 +10,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    // Verify the request is from Vercel Cron
-    const authHeader = request.headers.get("authorization")
-
-    // Check if request is from Vercel Cron (has x-vercel-id or x-vercel-cron header)
-    const isVercelCron = request.headers.get('x-vercel-id') || request.headers.get('x-vercel-cron')
-
-    // Allow Vercel Cron requests, or require CRON_SECRET for manual triggers
-    if (!isVercelCron) {
-      // Not from Vercel Cron, so we need to check Bearer token
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
+    // Only Vercel Cron (Bearer CRON_SECRET) or an operator with the secret
+    if (!isAuthorizedCronRequest(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Fetch current Bitcoin price from DIA Data (free, no API key required)

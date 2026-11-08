@@ -1,5 +1,6 @@
 "use client"
 
+import { getClaimToken } from "@/lib/anonymous-claim"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -71,7 +72,7 @@ export function AnonymousFixSubmissionModal({
 
     try {
       const { submitAnonymousFixLightningAddressAction } = await import("@/app/actions/post-actions")
-      const result = await submitAnonymousFixLightningAddressAction(postId, lightningAddress.trim())
+      const result = await submitAnonymousFixLightningAddressAction(postId, lightningAddress.trim(), getClaimToken(postId))
 
       if (!result.success) {
         setError(result.error || "Failed to save Lightning address")

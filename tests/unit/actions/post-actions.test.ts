@@ -34,8 +34,16 @@ vi.mock('@/lib/sms-alerts', () => ({
   alertLargePostBounty: vi.fn().mockResolvedValue(undefined),
 }))
 
+// Lightning node: createFundedAnonymousPostAction verifies the funding invoice is settled.
+// Default: settled for exactly the reward (each test's reward is set below via mockFundingPaid).
+vi.mock('@/lib/lightning', () => ({
+  checkInvoice: vi.fn(),
+  createInvoice: vi.fn(),
+}))
+
 // @/lib/supabase mock provided by tests/setup.ts
 
+import { checkInvoice } from '@/lib/lightning'
 import { createFundedAnonymousPostAction, createPostWithRewardAction, updatePostExpirationAction } from '@/app/actions/post-actions'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { v4 as uuidv4 } from 'uuid'
@@ -46,6 +54,22 @@ import { mockSupabaseClient } from '@/tests/setup'
 const TEST_POST_ID = 'test-post-123'
 const TEST_ACTIVITY_ID = 'test-activity-456'
 const MOCK_TIMESTAMP = '2024-01-01T00:00:00.000Z'
+
+/** Settle each funding invoice for exactly the reward of the post being created. */
+let requestedReward = 0
+function mockFundingSettledForRequestedReward() {
+  vi.mocked(checkInvoice).mockImplementation(async () => ({
+    success: true,
+    settled: true,
+    amountPaid: String(requestedReward),
+    state: 'SETTLED',
+  }) as any)
+}
+// Capture the reward of each createFundedAnonymousPostAction call before it runs
+const createFundedAnonymousPost = (details: Parameters<typeof createFundedAnonymousPostAction>[0]) => {
+  requestedReward = details.reward
+  return createFundedAnonymousPostAction(details)
+}
 
 describe('createFundedAnonymousPostAction', () => {
   beforeEach(() => {
@@ -58,6 +82,9 @@ describe('createFundedAnonymousPostAction', () => {
     // Mock UUID generation
     vi.mocked(uuidv4).mockReturnValueOnce(TEST_POST_ID as any)
     vi.mocked(uuidv4).mockReturnValueOnce(TEST_ACTIVITY_ID as any)
+
+    // Funding invoice settled, paying exactly the reward requested
+    mockFundingSettledForRequestedReward()
   })
 
   afterEach(() => {
@@ -81,7 +108,10 @@ describe('createFundedAnonymousPostAction', () => {
 
       // Mock successful post insertion
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -109,12 +139,13 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT - Success response
       expect(result.success).toBe(true)
       expect(result.postId).toBe(TEST_POST_ID)
       expect(result.error).toBeUndefined()
+      expect(checkInvoice).toHaveBeenCalledWith(postData.funding_r_hash)
 
       // ASSERT - Post data structure
       expect(capturedPostInsert).toBeDefined()
@@ -169,7 +200,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -192,7 +226,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -208,7 +242,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -231,7 +268,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -247,7 +284,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -270,7 +310,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -294,7 +334,10 @@ describe('createFundedAnonymousPostAction', () => {
 
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn()
@@ -313,8 +356,8 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result1 = await createFundedAnonymousPostAction(postData)
-      const result2 = await createFundedAnonymousPostAction(postData)
+      const result1 = await createFundedAnonymousPost(postData)
+      const result2 = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result1.success).toBe(true)
@@ -331,7 +374,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockResolvedValue({
@@ -343,7 +389,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockReturnValue(postQueryBuilder)
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(false)
@@ -356,7 +402,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockRejectedValue(new Error('Connection timeout'))
@@ -365,7 +414,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockReturnValue(postQueryBuilder)
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(false)
@@ -377,7 +426,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockRejectedValue('String error')
@@ -386,7 +438,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockReturnValue(postQueryBuilder)
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(false)
@@ -400,7 +452,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockResolvedValue({
@@ -423,7 +478,7 @@ describe('createFundedAnonymousPostAction', () => {
       vi.mocked(global.fetch).mockRejectedValueOnce(new Error('Nostr API down'))
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT - Should still succeed despite Nostr failure
       expect(result.success).toBe(true)
@@ -434,7 +489,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockResolvedValue({
@@ -459,7 +517,7 @@ describe('createFundedAnonymousPostAction', () => {
         .mockRejectedValueOnce(new Error('Sphinx API down'))
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT - Should still succeed despite Sphinx failure
       expect(result.success).toBe(true)
@@ -476,7 +534,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -499,7 +560,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -514,7 +575,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -537,7 +601,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -554,7 +618,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -577,7 +644,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -595,7 +662,10 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       let capturedPostInsert: any = null
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn((data) => {
           capturedPostInsert = data
           return postQueryBuilder
@@ -618,7 +688,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result.success).toBe(true)
@@ -632,7 +702,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockResolvedValue({
@@ -652,7 +725,7 @@ describe('createFundedAnonymousPostAction', () => {
       })
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result).toHaveProperty('success')
@@ -666,7 +739,10 @@ describe('createFundedAnonymousPostAction', () => {
       // ARRANGE
       const postData = createMockPostData({ reward: 1000 })
 
-      const postQueryBuilder = {
+      const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         insert: vi.fn(() => postQueryBuilder),
         select: vi.fn(() => postQueryBuilder),
         single: vi.fn().mockResolvedValue({
@@ -678,7 +754,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockReturnValue(postQueryBuilder)
 
       // ACT
-      const result = await createFundedAnonymousPostAction(postData)
+      const result = await createFundedAnonymousPost(postData)
 
       // ASSERT
       expect(result).toHaveProperty('success')
@@ -688,6 +764,136 @@ describe('createFundedAnonymousPostAction', () => {
       expect(typeof result.error).toBe('string')
       expect(result.postId).toBeUndefined()
     })
+  })
+})
+
+// ============================================================================
+// createFundedAnonymousPostAction: funding verification (SECURITY)
+// ============================================================================
+// An anonymous post's reward is backed only by its funding invoice. The server must
+// confirm with the node that the invoice is settled for at least the reward, and that
+// the invoice hasn't already funded another post; otherwise anyone could mint a
+// "funded" post (funding_status: 'paid') that later pays out real sats.
+
+describe('createFundedAnonymousPostAction funding verification', () => {
+  const R_HASH = 'f'.repeat(64)
+
+  function setupPostsTable(existingWithSameHash: Array<{ id: string }> = []) {
+    const inserts: any[] = []
+    const fundingLookups: any[] = []
+    const postQueryBuilder: any = {
+      select: vi.fn(() => postQueryBuilder),
+      eq: vi.fn((col: string, val: any) => {
+        fundingLookups.push([col, val])
+        return postQueryBuilder
+      }),
+      limit: vi.fn().mockResolvedValue({ data: existingWithSameHash, error: null }),
+      insert: vi.fn((row: any) => {
+        inserts.push(row)
+        return postQueryBuilder
+      }),
+      single: vi.fn().mockResolvedValue({ data: { id: TEST_POST_ID }, error: null }),
+    }
+    const activityQueryBuilder = { insert: vi.fn(() => Promise.resolve({ data: null, error: null })) }
+    mockSupabaseClient.from.mockImplementation((table: string) => {
+      if (table === 'posts') return postQueryBuilder
+      if (table === 'activities') return activityQueryBuilder
+      throw new Error(`Unexpected table: ${table}`)
+    })
+    return { inserts, fundingLookups, activityQueryBuilder }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(uuidv4).mockReturnValue(TEST_POST_ID as any)
+  })
+
+  it('creates the post when the invoice is settled for at least the reward', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED' } as any)
+    const { inserts, fundingLookups } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result).toEqual({ success: true, postId: TEST_POST_ID })
+    expect(checkInvoice).toHaveBeenCalledWith(R_HASH)
+    expect(fundingLookups).toContainEqual(['funding_r_hash', R_HASH])
+    expect(inserts).toHaveLength(1)
+    expect(inserts[0]).toMatchObject({ reward: 1000, funding_r_hash: R_HASH, funding_status: 'paid', user_id: null })
+  })
+
+  it('rejects an unsettled funding invoice and creates nothing', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: false, amountPaid: '0', state: 'OPEN' } as any)
+    const { inserts, activityQueryBuilder } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result).toEqual({ success: false, error: 'Funding payment not confirmed.' })
+    expect(inserts).toHaveLength(0)
+    expect(activityQueryBuilder.insert).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invoice that paid less than the reward', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '999', state: 'SETTLED' } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result).toEqual({ success: false, error: 'Funding payment not confirmed.' })
+    expect(inserts).toHaveLength(0)
+  })
+
+  it('rejects when the node cannot confirm the invoice', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: false, error: 'Invoice not found' } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result.success).toBe(false)
+    expect(inserts).toHaveLength(0)
+  })
+
+  it('rejects a settled invoice that already funded another post (no reuse)', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '5000', state: 'SETTLED' } as any)
+    const { inserts } = setupPostsTable([{ id: 'earlier-post' }])
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result).toEqual({ success: false, error: 'This payment has already been used to fund a post.' })
+    expect(inserts).toHaveLength(0)
+  })
+
+  it('allows a zero-reward post (e.g. /api/posts paying only the API fee) once the invoice is settled', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '10', state: 'SETTLED' } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 0, funding_r_hash: R_HASH }))
+
+    expect(result.success).toBe(true)
+    expect(checkInvoice).toHaveBeenCalledWith(R_HASH)
+    expect(inserts).toEqual([expect.objectContaining({ reward: 0 })])
+  })
+
+  it('still rejects a zero-reward post whose invoice is unsettled', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: false, amountPaid: '0', state: 'OPEN' } as any)
+    const { inserts } = setupPostsTable()
+
+    expect((await createFundedAnonymousPostAction(createMockPostData({ reward: 0, funding_r_hash: R_HASH }))).success).toBe(false)
+    expect(inserts).toHaveLength(0)
+  })
+
+  it.each([
+    ['missing funding hash', { funding_r_hash: '' }],
+    ['negative reward', { reward: -100 }],
+    ['non-numeric reward', { reward: Number.NaN }],
+  ])('rejects %s without asking the node or inserting', async (_label, overrides) => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000000', state: 'SETTLED' } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH, ...overrides }))
+
+    expect(result).toEqual({ success: false, error: 'Invalid funding details.' })
+    expect(checkInvoice).not.toHaveBeenCalled()
+    expect(inserts).toHaveLength(0)
   })
 })
 
@@ -898,6 +1104,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     vi.setSystemTime(new Date(MOCK_TIMESTAMP))
     vi.mocked(uuidv4).mockReturnValueOnce(TEST_POST_ID as any)
     vi.mocked(uuidv4).mockReturnValueOnce(TEST_ACTIVITY_ID as any)
+    mockFundingSettledForRequestedReward()
   })
 
   afterEach(() => {
@@ -916,7 +1123,10 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     })
 
     let capturedPostInsert: any = null
-    const postQueryBuilder = {
+    const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
       insert: vi.fn((data) => {
         capturedPostInsert = data
         return postQueryBuilder
@@ -943,7 +1153,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
 
     // ACT
-    const result = await createFundedAnonymousPostAction(postData)
+    const result = await createFundedAnonymousPost(postData)
 
     // ASSERT
     expect(result.success).toBe(true)
@@ -962,7 +1172,10 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     })
 
     let capturedPostInsert: any = null
-    const postQueryBuilder = {
+    const postQueryBuilder: any = {
+      // funding_r_hash reuse lookup: .select('id').eq('funding_r_hash', ...).limit(1)
+        eq: vi.fn(() => postQueryBuilder),
+        limit: vi.fn().mockResolvedValue({ data: [], error: null }),
       insert: vi.fn((data) => {
         capturedPostInsert = data
         return postQueryBuilder
@@ -989,7 +1202,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
 
     // ACT
-    const result = await createFundedAnonymousPostAction(postData)
+    const result = await createFundedAnonymousPost(postData)
 
     // ASSERT
     expect(result.success).toBe(true)

@@ -1,3 +1,4 @@
+import { isAuthorizedCronRequest } from "@/lib/cron-auth"
 import { NextRequest, NextResponse } from "next/server"
 import { sendDailySummaryEmail, sendPRSummaryToSphinx } from "../../../../lib/daily-summary"
 
@@ -9,24 +10,10 @@ import { sendDailySummaryEmail, sendPRSummaryToSphinx } from "../../../../lib/da
 // Shared handler for both GET and POST (Vercel Cron uses GET)
 async function handleDailySummary(request: NextRequest) {
   try {
-    // Verify the request is from Vercel Cron or has valid authorization
-    const authHeader = request.headers.get('authorization')
-    
-    // Check if request is from Vercel Cron (has x-vercel-id or x-vercel-cron header)
-    const isVercelCron = request.headers.get('x-vercel-id') || request.headers.get('x-vercel-cron')
-    
-    // Allow Vercel Cron requests, or require CRON_SECRET for manual triggers
-    if (!isVercelCron && process.env.CRON_SECRET) {
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        console.log('[CRON] Unauthorized request - not from Vercel Cron and missing valid CRON_SECRET')
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        )
-      }
+    // Only Vercel Cron (Bearer CRON_SECRET) or an operator with the secret
+    if (!isAuthorizedCronRequest(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-    
-    console.log('[CRON] Request authorized:', isVercelCron ? 'Vercel Cron' : 'Manual with CRON_SECRET')
 
     // Send the daily summary email
     console.log('Triggering daily summary email...')

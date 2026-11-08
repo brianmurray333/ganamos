@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/posts/route'
 import { getServiceClient } from './helpers/db-client'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -11,6 +12,9 @@ vi.mock('@/lib/l402', () => ({
 
 vi.mock('@/lib/lightning', () => ({
   getInvoiceStatus: vi.fn(),
+  // createFundedAnonymousPostAction asks the node whether the funding (L402) invoice settled
+  checkInvoice: vi.fn(),
+  createInvoice: vi.fn(),
 }))
 
 // Mock transaction emails to avoid importing @/lib/env which requires NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
@@ -38,7 +42,7 @@ vi.mock('next/headers', () => ({
 
 // Import after mocks are set up
 import { verifyL402Token, parseL402Header } from '@/lib/l402'
-import { getInvoiceStatus } from '@/lib/lightning'
+import { getInvoiceStatus, checkInvoice } from '@/lib/lightning'
 
 describe('POST /api/posts - Integration Tests', () => {
   let supabase: SupabaseClient
@@ -76,6 +80,14 @@ describe('POST /api/posts - Integration Tests', () => {
       settled: true,
       amount: 1010,
     })
+
+    // The L402 invoice is settled for the amount in the token's `amount` caveat
+    // (reward + API fee) of the most recent verifyL402Token result.
+    vi.mocked(checkInvoice).mockImplementation(async () => {
+      const last = await vi.mocked(verifyL402Token).mock.results.at(-1)?.value
+      const amount = last?.macaroon?.caveats?.find((c: any) => c.condition === 'amount')?.value ?? '0'
+      return { success: true, settled: true, amountPaid: String(amount), state: 'SETTLED' } as any
+    })
   })
 
   afterEach(async () => {
@@ -109,7 +121,7 @@ describe('POST /api/posts - Integration Tests', () => {
         longitude: -97.7431,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,6 +135,8 @@ describe('POST /api/posts - Integration Tests', () => {
 
       // Verify response
       expect(response.status).toBe(201)
+      // The funding invoice was verified with the node before the post was created
+      expect(checkInvoice).toHaveBeenCalledWith(testPaymentHash)
       expect(data.success).toBe(true)
       expect(data.post_id).toBeDefined()
       expect(data.payment_hash).toBe(testPaymentHash)
@@ -172,7 +186,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -204,6 +218,7 @@ describe('POST /api/posts - Integration Tests', () => {
       expect(dbPost.location).toBeNull()
     })
 
+    // Fixed (was REAL BUG): zero-reward API posts were rejected as "Invalid funding details."
     it('should create post with zero reward', async () => {
       const postData = {
         description: 'Zero reward post',
@@ -225,7 +240,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -252,13 +267,31 @@ describe('POST /api/posts - Integration Tests', () => {
     })
   })
 
+  describe('Funding verification', () => {
+    it('should not create a post when the node reports the payment as unsettled', async () => {
+      vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: false, amountPaid: '0', state: 'OPEN' } as any)
+
+      const request = new NextRequest('http://localhost:3000/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'L402 mock-token:mock-macaroon' },
+        body: JSON.stringify({ description: 'Unpaid post', reward: 1000 }),
+      })
+
+      const response = await POST(request)
+
+      expect(response.status).toBe(500)
+      const { data: posts } = await supabase.from('posts').select('id').eq('funding_r_hash', testPaymentHash)
+      expect(posts).toEqual([])
+    })
+  })
+
   describe('Validation Errors', () => {
     it('should return 400 when description is missing', async () => {
       const postData = {
         reward: 1000,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,7 +313,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: -100,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -309,7 +342,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -347,7 +380,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -375,7 +408,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request1 = new Request('http://localhost:3000/api/posts', {
+      const request1 = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -397,7 +430,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request2 = new Request('http://localhost:3000/api/posts', {
+      const request2 = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -454,7 +487,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -505,7 +538,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -554,7 +587,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
