@@ -1,4 +1,4 @@
-import type { Page, Locator } from '@playwright/test'
+import { expect, type Page, type Locator } from '@playwright/test'
 import { selectors } from '../selectors'
 import { assertVisible, safeClick, waitForPageLoad, waitForElement, elementExists } from '../helpers/common.helper'
 
@@ -62,8 +62,8 @@ export class DepositPage {
   }
 
   /**
-   * Wait for the page to be fully loaded
-   * The deposit page auto-generates an invoice on load
+   * Wait for the page to be fully loaded.
+   * The deposit page asks for an explicit fixed amount on load.
    */
   async waitForLoad() {
     await this.page.waitForURL(/\/wallet\/deposit/)
@@ -72,8 +72,7 @@ export class DepositPage {
   }
 
   /**
-   * Wait for invoice to be generated
-   * The page auto-generates an invoice, so we need to wait for it
+   * Wait for the authenticated deposit API response to render.
    */
   async waitForInvoice(timeout: number = 10000) {
     await waitForElement(this.invoiceTextarea, timeout)
@@ -87,6 +86,18 @@ export class DepositPage {
   async getInvoice(): Promise<string> {
     const invoice = await this.invoiceTextarea.textContent()
     return invoice || ''
+  }
+
+  /**
+   * Enter an integer sat amount in the modal keypad and submit it.
+   */
+  async submitAmount(digits: string) {
+    const dialog = this.page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    for (const digit of digits) {
+      await dialog.getByRole('button', { name: digit, exact: true }).click()
+    }
+    await dialog.getByRole('button', { name: 'Done', exact: true }).click()
   }
 
   /**

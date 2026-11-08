@@ -1,8 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { createDepositInvoice, checkDepositStatus } from "@/app/actions/lightning-actions"
 import QRCode from "@/components/qr-code"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -11,15 +10,15 @@ import { LoadingSpinner } from "@/components/loading-spinner"
 import { ArrowLeft, Copy, Check, X } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 import { formatSatsValue } from "@/lib/utils"
-import { createBrowserSupabaseClient } from "@/lib/supabase"
 import Image from "next/image"
 import { AmountInputModal } from "@/components/amount-input-modal"
+import { clearDurableDepositRequest, withDurableDepositRequest } from "@/lib/deposit-request-id"
 
 export default function DepositPage() {
   const router = useRouter()
   const [amount, setAmount] = useState<string>("")
   const [invoice, setInvoice] = useState<string | null>(null)
-  const [rHash, setRHash] = useState<string | null>(null)
+  const [invoiceId, setInvoiceId] = useState<string | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
   const [checking, setChecking] = useState<boolean>(false)
   const [settled, setSettled] = useState<boolean>(false)
@@ -27,13 +26,18 @@ export default function DepositPage() {
   const [showAmountModal, setShowAmountModal] = useState<boolean>(false)
   const [showFullInvoice, setShowFullInvoice] = useState<boolean>(false)
   const [receivedAmount, setReceivedAmount] = useState<number | null>(null)
-  const supabase = createBrowserSupabaseClient()
+  const [invoiceExpiresAt, setInvoiceExpiresAt] = useState<string | null>(null)
+  const [pollingNotice, setPollingNotice] = useState<string | null>(null)
+  const [invoiceOwner, setInvoiceOwner] = useState<{ id: string; name: string; avatar: string | null; balance: number } | null>(null)
+  const [invoiceRequestId, setInvoiceRequestId] = useState<string | null>(null)
 
-  const { user, profile, loading: authLoading, refreshProfile, activeUserId } = useAuth()
+  const { user, profile, loading: authLoading, refreshProfile, activeUserId, accountContextReady } = useAuth()
 
   // Auto-generate invoice on page load
   const initialInvoiceGenerated = useRef(false)
-  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const checkTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const pollingGenerationRef = useRef(0)
+  const creationInFlightRef = useRef(false)
 
   // Check if user is authenticated
   useEffect(() => {
@@ -45,100 +49,83 @@ export default function DepositPage() {
     }
   }, [user, authLoading, router, toast])
 
-  // Auto-generate invoice when user is ready
+  // Wait for connected-account restoration, then ask for an explicit fixed amount.
   useEffect(() => {
-    if (user && !initialInvoiceGenerated.current && !invoice) {
+    if (user && profile && accountContextReady && !initialInvoiceGenerated.current && !invoice) {
       initialInvoiceGenerated.current = true
-      handleCreateInvoice()
+      setShowAmountModal(true)
     }
-  }, [user])
+  }, [user, profile, accountContextReady, invoice])
 
   // Cleanup interval on unmount
   useEffect(() => {
     return () => {
-      if (checkIntervalRef.current) {
-        clearInterval(checkIntervalRef.current)
-        checkIntervalRef.current = null
-      }
+      pollingGenerationRef.current += 1
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current)
     }
   }, [])
 
-  const handleCreateInvoice = async (overrideAmount?: string) => {
-    if (!user) {
+  const handleCreateInvoice = async (overrideAmount?: string, overrideRequestId?: string) => {
+    if (creationInFlightRef.current) return
+    if (!user || !profile || !accountContextReady) {
       toast.error("Error", {
-        description: "You must be logged in to create an invoice",
+        description: "Your account is still loading. Please try again.",
       })
       return
     }
 
+    creationInFlightRef.current = true
     setLoading(true)
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      const satsAmount = Number(overrideAmount || amount)
+      const requestId = overrideRequestId || invoiceRequestId
 
-      // If amount is provided, use it, otherwise create no-value invoice
-      const satsAmount = overrideAmount ? parseInt(overrideAmount) : (amount && amount !== "" ? parseInt(amount) : 0)
-
-      if (satsAmount > 0 && satsAmount < 100) {
+      if (!requestId || !Number.isSafeInteger(satsAmount) || satsAmount < 100 || satsAmount > 10_000_000) {
         toast.error("Invalid amount", {
-          description: "Minimum deposit is 100 sats",
+          description: "Enter an amount between 100 and 10,000,000 sats.",
         })
-        setLoading(false)
         return
       }
 
-      // Use activeUserId for connected accounts, otherwise use user.id
       const targetUserId = activeUserId || user.id
-      const result = await createDepositInvoice(satsAmount, targetUserId)
-      if (result.success) {
-        setInvoice(result.paymentRequest)
-        setRHash(result.rHash)
-
-        // Start checking for payment automatically
-        setTimeout(() => {
-        startCheckingPayment(result.rHash)
-        }, 1000)
-      } else {
-        if (result.error?.includes("LND") || result.error?.includes("ECONNREFUSED")) {
-          toast("Lightning Network Unavailable", {
-            description: "Using test mode for development",
-          })
-          handleCreateMockInvoice()
-          return
-        }
-
-        toast.error("Error Creating Invoice", {
-          description: result.error || "Failed to create invoice. Check console for details.",
-        })
+      if (profile.id !== targetUserId) {
+        toast.error("Account still loading", { description: "Wait for the selected account to finish loading, then try again." })
+        return
       }
-    } catch (error) {
-      console.error("Error creating invoice:", error)
-      toast.error("Error", {
-        description: "An unexpected error occurred. Check console for details.",
+      const owner = { id: targetUserId, name: profile.name || "Your Account", avatar: profile.avatar_url, balance: profile.balance || 0 }
+      pollingGenerationRef.current += 1
+      if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current)
+      setPollingNotice(null)
+      const response = await fetch("/api/mobile/wallet/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: satsAmount, userId: targetUserId, requestId }),
       })
+      const result = await response.json()
+      if (response.ok && result.success) {
+        setInvoice(result.paymentRequest)
+        setInvoiceId(result.invoiceId)
+        setInvoiceExpiresAt(result.expiresAt)
+        setInvoiceOwner(owner)
+        startCheckingPayment(result.invoiceId, result.expiresAt, targetUserId, satsAmount, requestId)
+      } else {
+        toast.error("Error Creating Invoice", {
+          description: result.error || "Unable to create an invoice. Please try again.",
+        })
+        setShowAmountModal(true)
+      }
+    } catch {
+      toast.error("Unable to Create Invoice", {
+        description: "Check your connection and try again.",
+      })
+      setShowAmountModal(true)
     } finally {
+      creationInFlightRef.current = false
       setLoading(false)
     }
   }
 
-  // Generate a mock invoice for development/testing
-  const handleCreateMockInvoice = () => {
-    setLoading(true)
-
-    const satsAmount = amount && amount !== "" ? parseInt(amount) : 0
-    setTimeout(() => {
-      const mockInvoice = `lnbc${satsAmount}n1pj${Math.random().toString(36).substring(2, 10)}qdqqxqyjw5qcqpjsp5`
-      const mockRHash = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
-
-      setInvoice(mockInvoice)
-      setRHash(mockRHash)
-      setLoading(false)
-
-      setTimeout(() => {
-        startCheckingPayment(mockRHash)
-      }, 1000)
-    }, 500)
-  }
 
   const copyToClipboard = () => {
     if (invoice) {
@@ -151,85 +138,62 @@ export default function DepositPage() {
     }
   }
 
-  const startCheckingPayment = async (hash: string) => {
+  const startCheckingPayment = (id: string, expiresAt: string, ownerId: string, satsAmount: number, requestId: string) => {
     if (!user) return
 
-    // Clear any existing interval
-    if (checkIntervalRef.current) {
-      clearInterval(checkIntervalRef.current)
-      checkIntervalRef.current = null
+    const generation = ++pollingGenerationRef.current
+    if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current)
+    setChecking(true)
+    setPollingNotice(null)
+    let consecutiveFailures = 0
+
+    const check = async () => {
+      if (generation !== pollingGenerationRef.current) return
+      if (Date.now() >= new Date(expiresAt).getTime()) {
+        setChecking(false)
+        setPollingNotice("This invoice expired. Create a new invoice before sending payment.")
+        return
+      }
+
+      try {
+        const response = await fetch(`/api/mobile/wallet/deposit?invoiceId=${encodeURIComponent(id)}`, { cache: "no-store" })
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          consecutiveFailures += 1
+          if (consecutiveFailures >= 3) setPollingNotice("Payment status is delayed. We will keep checking automatically.")
+        } else if (result.status === "expired") {
+          clearDurableDepositRequest(ownerId, satsAmount, requestId)
+          setChecking(false)
+          setPollingNotice("This invoice expired. Create a new invoice before sending payment.")
+          return
+        } else if (result.settled) {
+          clearDurableDepositRequest(ownerId, satsAmount, requestId)
+          setSettled(true)
+          setChecking(false)
+          setPollingNotice(null)
+          setReceivedAmount(Number(result.amount))
+          await refreshProfile()
+          setTimeout(() => router.push("/profile"), 3000)
+          return
+        } else {
+          consecutiveFailures = 0
+          setPollingNotice(null)
+        }
+      } catch {
+        consecutiveFailures += 1
+        if (consecutiveFailures >= 3) setPollingNotice("Payment status is delayed. We will keep checking automatically.")
+      }
+
+      if (generation === pollingGenerationRef.current) {
+        checkTimeoutRef.current = setTimeout(check, consecutiveFailures >= 3 ? 5000 : 2000)
+      }
     }
 
-    setChecking(true)
-    let checkCount = 0
-    const maxChecks = 60
-
-    checkIntervalRef.current = setInterval(async () => {
-      checkCount++
-      console.log(`Checking payment status... (attempt ${checkCount}/${maxChecks})`)
-
-      const result = await checkDepositStatus(hash)
-      // Debug logging to diagnose deposit detection regression
-      if (checkCount <= 3 || checkCount % 10 === 0 || !result.success) {
-        console.log(`[Deposit Debug] Attempt ${checkCount}:`, JSON.stringify(result, null, 2))
-      }
-      if (!result.success) {
-        console.error(`[Deposit Error] Check failed:`, result.error, result.details)
-      }
-
-      if (result.settled) {
-        console.log("Payment settled! Server has updated balance and transaction.")
-        if (checkIntervalRef.current) {
-          clearInterval(checkIntervalRef.current)
-          checkIntervalRef.current = null
-        }
-        setSettled(true)
-        setChecking(false)
-
-        if (!profile) return
-
-        // Server-side checkDepositStatus already handled:
-        // - Transaction amount update
-        // - Balance update
-        // - pet_coins update
-        // - Activity creation
-        // Just refresh profile to get the latest data
-        const satsAmount = parseInt(result.amount) || 1000
-        setReceivedAmount(satsAmount)
-
-        try {
-          // Refresh profile to get updated balance from server
-          await refreshProfile()
-
-          setTimeout(() => {
-            router.push("/profile")
-          }, 3000)
-        } catch (error) {
-          console.error("Error refreshing profile:", error)
-        }
-      }
-
-      if (checkCount >= maxChecks) {
-        console.log("Max check attempts reached")
-        if (checkIntervalRef.current) {
-          clearInterval(checkIntervalRef.current)
-          checkIntervalRef.current = null
-        }
-        setChecking(false)
-      }
-    }, 2000)
-  }
-
-  const handleRegenerateWithAmount = () => {
-    setInvoice(null)
-    setRHash(null)
-    setChecking(false)
-    setSettled(false)
-    handleCreateInvoice()
+    void check()
   }
 
   // Loading state
-  if (authLoading) {
+  if (authLoading || (user && !accountContextReady)) {
     return (
       <div className="container max-w-md mx-auto py-8 px-4">
         <div className="flex items-center justify-center min-h-[400px]">
@@ -283,14 +247,14 @@ export default function DepositPage() {
               <div className="flex flex-col items-center space-y-2">
                 <div className="relative w-16 h-16 rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
                   <Image
-                    src={profile?.avatar_url || "/placeholder.svg?height=64&width=64"}
-                    alt={profile?.name || "Your account"}
+                    src={invoiceOwner?.avatar || "/placeholder.svg?height=64&width=64"}
+                    alt={invoiceOwner?.name || "Your account"}
                     fill
                     className="object-cover"
                   />
                 </div>
                 <div className="text-lg font-semibold">
-                  {profile?.name || "Your Account"}
+                  {invoiceOwner?.name || "Your Account"}
                 </div>
                 <div className="flex items-center space-x-1.5 text-sm text-muted-foreground">
                   <div className="w-3.5 h-3.5 relative">
@@ -301,7 +265,7 @@ export default function DepositPage() {
                       className="object-contain"
                     />
                   </div>
-                  <span>{formatSatsValue(profile?.balance || 0)}</span>
+                  <span>{formatSatsValue(invoiceOwner?.balance || 0)}</span>
                 </div>
               </div>
 
@@ -316,24 +280,20 @@ export default function DepositPage() {
                     cornerColor="#10b981"
                   />
                 </div>
-          </div>
+              </div>
 
-              {/* Amount Input */}
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={() => {
-                    // Stop polling when opening the amount modal
-                    if (checkIntervalRef.current) {
-                      clearInterval(checkIntervalRef.current)
-                      checkIntervalRef.current = null
-                      setChecking(false)
-                    }
-                    setShowAmountModal(true)
-                  }}
-                  className="flex-1 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                >
-                  {amount ? `${formatSatsValue(parseInt(amount))}` : "Add an amount"}
+              <div className="text-center text-sm text-muted-foreground">
+                {checking ? "Waiting for payment" : pollingNotice || "Payment status check paused"}
+              </div>
+              {pollingNotice && invoiceId && invoiceExpiresAt && Date.now() < new Date(invoiceExpiresAt).getTime() && (
+                <Button variant="outline" className="w-full" onClick={() => invoiceOwner && invoiceRequestId && startCheckingPayment(invoiceId, invoiceExpiresAt, invoiceOwner.id, Number(amount), invoiceRequestId)}>
+                  Check payment now
                 </Button>
+              )}
+
+              {/* Fixed invoice amount */}
+              <div className="rounded-md bg-gray-100 px-4 py-2 text-center text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                {formatSatsValue(parseInt(amount))}
               </div>
 
               {/* Invoice String with Copy */}
@@ -378,20 +338,32 @@ export default function DepositPage() {
         open={showAmountModal}
         onOpenChange={setShowAmountModal}
         onAmountSet={(newAmount) => {
-          setAmount(newAmount)
-          // Clear any existing polling interval
-          if (checkIntervalRef.current) {
-            clearInterval(checkIntervalRef.current)
-            checkIntervalRef.current = null
+          if (!user || !profile || !accountContextReady || creationInFlightRef.current) return
+          const satsAmount = Number(newAmount)
+          if (!Number.isSafeInteger(satsAmount) || satsAmount < 100 || satsAmount > 10_000_000) {
+            void handleCreateInvoice(newAmount)
+            return
           }
-          // Clear existing invoice and regenerate (whether amount is set or cleared)
-          setInvoice(null)
-          setRHash(null)
-          setChecking(false)
-          setSettled(false)
-          setShowFullInvoice(false)
-          // Generate new invoice (no-value if amount is empty, or with amount if specified)
-          handleCreateInvoice(newAmount)
+          const targetUserId = activeUserId || user.id
+          if (profile.id !== targetUserId) return
+
+          void withDurableDepositRequest(targetUserId, satsAmount, async (requestId) => {
+            setAmount(newAmount)
+            setInvoiceRequestId(requestId)
+            pollingGenerationRef.current += 1
+            if (checkTimeoutRef.current) clearTimeout(checkTimeoutRef.current)
+            setInvoice(null)
+            setInvoiceId(null)
+            setInvoiceExpiresAt(null)
+            setInvoiceOwner(null)
+            setPollingNotice(null)
+            setChecking(false)
+            setSettled(false)
+            setShowFullInvoice(false)
+            await handleCreateInvoice(newAmount, requestId)
+          }).catch(() => {
+            toast.error("Unable to Create Invoice", { description: "Safe invoice recovery is unavailable in this browser." })
+          })
         }}
         currentAmount={amount}
       />

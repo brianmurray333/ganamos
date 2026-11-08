@@ -274,7 +274,7 @@ describe('lndRequest', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('400')
       expect(result.error).toContain('Bad Request')
-      expect(result.details).toEqual(errorData)
+      expect(result.details).toBe('Status: 400')
     })
 
     it('should handle 401 Unauthorized (invalid macaroon)', async () => {
@@ -407,7 +407,7 @@ describe('lndRequest', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('Failed to communicate with Lightning node')
-      expect(result.details).toContain('Failed to fetch')
+      expect(result).not.toHaveProperty('details')
     })
 
     it('should handle DNS resolution failure', async () => {
@@ -418,7 +418,7 @@ describe('lndRequest', () => {
       const result = await lndRequest('/v1/getinfo', 'GET')
 
       expect(result.success).toBe(false)
-      expect(result.details).toContain('ENOTFOUND')
+      expect(result).not.toHaveProperty('details')
     })
 
     it('should handle connection timeout', async () => {
@@ -427,7 +427,23 @@ describe('lndRequest', () => {
       const result = await lndRequest('/v1/getinfo', 'GET')
 
       expect(result.success).toBe(false)
-      expect(result.details).toContain('timeout')
+      expect(result).not.toHaveProperty('details')
+    })
+
+    it('should abort a stalled LND request after ten seconds', async () => {
+      vi.useFakeTimers()
+      try {
+        mockFetch.mockImplementationOnce((_url, options) => new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+        }))
+        const pending = lndRequest('/v1/getinfo', 'GET')
+        await vi.advanceTimersByTimeAsync(10_000)
+        const result = await pending
+        expect(result.success).toBe(false)
+        expect(mockFetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
+      } finally {
+        vi.useRealTimers()
+      }
     })
 
     it('should handle connection refused', async () => {
@@ -436,7 +452,7 @@ describe('lndRequest', () => {
       const result = await lndRequest('/v1/getinfo', 'GET')
 
       expect(result.success).toBe(false)
-      expect(result.details).toContain('ECONNREFUSED')
+      expect(result).not.toHaveProperty('details')
     })
 
     it('should handle SSL/TLS certificate errors', async () => {
@@ -447,7 +463,7 @@ describe('lndRequest', () => {
       const result = await lndRequest('/v1/getinfo', 'GET')
 
       expect(result.success).toBe(false)
-      expect(result.details).toContain('certificate')
+      expect(result).not.toHaveProperty('details')
     })
 
     it('should handle network unreachable error', async () => {
@@ -456,7 +472,7 @@ describe('lndRequest', () => {
       const result = await lndRequest('/v1/getinfo', 'GET')
 
       expect(result.success).toBe(false)
-      expect(result.details).toContain('unreachable')
+      expect(result).not.toHaveProperty('details')
     })
 
     it('should handle non-Error exceptions', async () => {
@@ -466,7 +482,7 @@ describe('lndRequest', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toContain('Failed to communicate with Lightning node')
-      expect(result.details).toBe('string error')
+      expect(result).not.toHaveProperty('details')
     })
   })
 
