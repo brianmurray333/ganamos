@@ -147,6 +147,9 @@ function MapViewComponent({
   const markersRef = useRef<{ [key: string]: any }>({})
   const PostMarkerClassRef = useRef<any>(null)
   const userLocationMarkerRef = useRef<google.maps.Marker | null>(null)
+  // The pulsing overlay drawn under the user marker (must be detached too,
+  // since the Google Map instance persists across visits)
+  const userPulseOverlayRef = useRef<google.maps.OverlayView | null>(null)
   const isUnmountedRef = useRef(false) // Track if component is unmounting to abort operations
   const bitcoinLogoLoadedRef = useRef(false) // Track if Bitcoin logo image is preloaded
 
@@ -354,7 +357,7 @@ function MapViewComponent({
   // Re-add markers when posts arrive AFTER map is already loaded
   // This fixes the race condition where tilesloaded fires before fetchPosts completes
   useEffect(() => {
-    if (mapInstance && mapLoaded && postsWithLocation.length > 0) {
+    if (mapInstance && mapLoaded) {
       addPostMarkers(mapInstance)
     }
   }, [mapInstance, mapLoaded, postsWithLocation])
@@ -874,9 +877,13 @@ function MapViewComponent({
       return
     }
 
-    // Remove existing user location marker
+    // Remove existing user location marker and its pulsing overlay
     if (userLocationMarkerRef.current) {
       userLocationMarkerRef.current.setMap(null)
+    }
+    if (userPulseOverlayRef.current) {
+      userPulseOverlayRef.current.setMap(null)
+      userPulseOverlayRef.current = null
     }
 
     // Create custom pulsing dot icon
@@ -978,6 +985,7 @@ function MapViewComponent({
       new window.google.maps.LatLng(effectiveUserLocation.latitude, effectiveUserLocation.longitude)
     )
     pulsingDot.setMap(map)
+    userPulseOverlayRef.current = pulsingDot
 
     userLocationMarkerRef.current = userMarker
 
@@ -1002,17 +1010,19 @@ function MapViewComponent({
       }
     }
 
-    if (postsWithLocation.length === 0) {
-      return
-    }
-
-    // Clear existing markers
+    // Clear existing markers first, so a refresh that returns no posts (e.g.
+    // every cached issue was fixed) doesn't leave stale markers on the
+    // persistent map.
     Object.values(markersRef.current).forEach((marker) => {
       if (marker && typeof marker.setMap === "function") {
         marker.setMap(null)
       }
     })
     markersRef.current = {}
+
+    if (postsWithLocation.length === 0) {
+      return
+    }
 
     // Determine if markers should be clickable (explicitly disabled for donation flow)
     const markersClickable = !disableMarkerClicks
@@ -1194,10 +1204,14 @@ function MapViewComponent({
       })
       markersRef.current = {}
       
-      // Clean up user location marker
+      // Clean up user location marker and its pulsing overlay
       if (userLocationMarkerRef.current) {
         userLocationMarkerRef.current.setMap(null)
         userLocationMarkerRef.current = null
+      }
+      if (userPulseOverlayRef.current) {
+        userPulseOverlayRef.current.setMap(null)
+        userPulseOverlayRef.current = null
       }
       
       // Drop this mount's map listeners (the persistent map outlives us)

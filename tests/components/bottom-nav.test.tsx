@@ -131,6 +131,16 @@ describe('BottomNav', () => {
       expect(screen.getByTestId('nav-map-button')).not.toHaveAttribute('aria-current')
     })
 
+    it('a second tap back to the current tab clears the pending highlight', () => {
+      render(<BottomNav />)
+      // Tap Map, then Home before the Map navigation commits (pathname still "/")
+      fireEvent.click(screen.getByTestId('nav-map-button'))
+      fireEvent.click(screen.getByTestId('nav-dashboard-link'))
+
+      expect(screen.getByTestId('nav-dashboard-link')).toHaveAttribute('aria-current', 'page')
+      expect(screen.getByTestId('nav-map-button')).not.toHaveAttribute('aria-current')
+    })
+
     it('works for protected tabs too', () => {
       signedIn()
       nav.pathname = '/map'

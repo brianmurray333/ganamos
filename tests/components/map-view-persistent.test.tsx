@@ -53,7 +53,12 @@ function installFakeGoogleMaps() {
     }
   }
   class OverlayView {
-    setMap() {}
+    map: any = null
+    setMap(m: any) {
+      this.map = m
+      if (m) overlays.add(this)
+      else overlays.delete(this)
+    }
   }
   ;(window as any).google = {
     maps: {
@@ -64,7 +69,20 @@ function installFakeGoogleMaps() {
       LatLngBounds: class {},
       OverlayView,
       Marker: class {
+        icon: any
+        constructor(opts: any = {}) {
+          this.icon = opts.icon
+        }
         setMap() {}
+        getIcon() {
+          return this.icon
+        }
+        setIcon(i: any) {
+          this.icon = i
+        }
+        addListener() {
+          return { remove() {} }
+        }
       },
       ControlPosition: {},
       MapTypeId: { ROADMAP: 'roadmap' },
@@ -94,6 +112,8 @@ class InstantImage {
     setTimeout(() => this.onload?.(), 0)
   }
 }
+
+const overlays = new Set<any>()
 
 describe('MapView (full-screen /map)', () => {
   let created: any[]
@@ -162,6 +182,20 @@ describe('MapView (full-screen /map)', () => {
     // Re-registered its own click listener on the shared map
     expect(map.listeners.filter((l: Listener) => l.ev === 'click')).toHaveLength(1)
     await act(async () => {}) // let the posts query settle
+  })
+
+  it('does not pile up pulsing location overlays across Map-tab visits', async () => {
+    overlays.clear()
+    const loc = { latitude: 37.77, longitude: -122.42 }
+    for (let visit = 0; visit < 3; visit++) {
+      const view = render(<MapView posts={[]} userLocation={loc as any} />)
+      await waitFor(() => expect(created).toHaveLength(1))
+      if (visit === 0) act(() => created[0].fire('tilesloaded'))
+      await waitFor(() => expect(overlays.size).toBe(1)) // exactly one dot while visible
+      view.unmount()
+      // Unmounting detaches this visit's overlay from the persistent map
+      expect(overlays.size).toBe(0)
+    }
   })
 
   it('does not share the map with embedded (modal) maps', async () => {

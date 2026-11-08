@@ -95,7 +95,9 @@ export function BottomNav() {
   const isActive = (path: string) => isTabActive(path, activePath)
 
   const onTabClick = (href: string) => (e: MouseEvent) => {
-    if (isPlainLeftClick(e) && href !== pathname) setPendingHref(href)
+    // A tap on the current tab clears any pending highlight (e.g. Map tapped,
+    // then Home before the Map navigation committed).
+    if (isPlainLeftClick(e)) setPendingHref(href !== pathname ? href : null)
   }
 
   // Start fetching the Google Maps script as soon as a finger lands on the
