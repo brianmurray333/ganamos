@@ -192,7 +192,17 @@ BEGIN
   NEW.funding_payment_request := OLD.funding_payment_request;
   NEW.submitted_fix_payment_hash := OLD.submitted_fix_payment_hash;
   NEW.deleted_at := OLD.deleted_at;
-  NEW.expires_at := OLD.expires_at;
+  -- Expiration is owner-editable (the iOS app PATCHes it directly), but not
+  -- by other sessions using the fix-submission policy.
+  IF NEW.expires_at IS DISTINCT FROM OLD.expires_at AND NOT (
+       auth.uid() = OLD.user_id
+       OR EXISTS (
+         SELECT 1 FROM connected_accounts ca
+         WHERE ca.primary_user_id = auth.uid() AND ca.connected_user_id = OLD.user_id
+       )
+     ) THEN
+    NEW.expires_at := OLD.expires_at;
+  END IF;
 
   -- Payout markers may only be written by pay_fix_reward (or service_role).
   IF current_setting('ganamos.payout_update', true) = 'on' THEN
@@ -399,6 +409,10 @@ BEGIN
 END;
 $$;
 
+-- The post guard (replaced above) pins funding_transaction_id for sessions
+-- without a service_role JWT, which includes this migration; allow it here.
+SELECT set_config('ganamos.payout_update', 'on', false);
+
 -- Backfill funding links for existing posts from the post-creation activity
 -- (written by create_post_atomic), only where the ledger entry is a completed
 -- internal deduction by the post owner, and each entry funds one post.
@@ -423,3 +437,5 @@ UPDATE posts p
 SET funding_transaction_id = c.tx_id
 FROM candidates c
 WHERE p.id = c.post_id;
+
+SELECT set_config('ganamos.payout_update', 'off', false);

@@ -695,10 +695,24 @@ export default function NewPostPage() {
     // Runs once /post/[id] is on screen (see waitForWatcherMs below).
     const task = async () => {
       const { checkPostSafetyCapsAction, createPostWithRewardAction } = await import("@/app/actions/post-actions")
+      const { deleteImage } = await import("@/lib/storage")
+
+      // If the post isn't created, delete the photo we uploaded for it (the
+      // restored draft keeps the local copy, so a retry uploads again).
+      const discardUploadedImage = async () => {
+        if (!uploadPromise) return
+        try {
+          const { url } = await uploadPromise
+          if (url) await deleteImage(url)
+        } catch (error) {
+          console.error("Error deleting unused upload:", error)
+        }
+      }
 
       // SAFETY: Check caps before creating post
       const capsCheck = await checkPostSafetyCapsAction({ userId, reward })
       if (!capsCheck.allowed) {
+        await discardUploadedImage()
         return { success: false as const, error: capsCheck.error || "Unable to create post at this time." }
       }
 
@@ -733,6 +747,7 @@ export default function NewPostPage() {
 
       if (!result.success) {
         console.error("Atomic post creation failed:", result.error)
+        await discardUploadedImage()
         return { success: false as const, error: result.error || "Post was not created." }
       }
 

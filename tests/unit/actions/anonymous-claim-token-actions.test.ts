@@ -281,9 +281,11 @@ describe('payAnonymousRewardAction', () => {
     expect(post().anonymous_reward_payment_lock).toBeNull()
   })
 
-  it('releases the lock when the payment fails, so the fixer can retry', async () => {
+  it('releases the lock when LND definitively fails the payment, so the fixer can retry', async () => {
     setup(fixedAnonymously())
-    vi.mocked(payInvoice).mockResolvedValueOnce({ success: false, error: 'no route' } as any)
+    vi.mocked(payInvoice).mockResolvedValueOnce({
+      success: false, error: 'Payment failed: no route', details: { payment_error: 'no route' },
+    } as any)
 
     expect((await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)).success).toBe(false)
     expect(post().anonymous_reward_payment_lock).toBeNull()
@@ -291,6 +293,20 @@ describe('payAnonymousRewardAction', () => {
 
     expect((await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)).success).toBe(true)
     expect(payInvoice).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the lock when the payment outcome is uncertain, so a retry cannot pay twice', async () => {
+    setup(fixedAnonymously())
+    // e.g. HTTP timeout / lost response: LND may have sent the payment
+    vi.mocked(payInvoice).mockResolvedValueOnce({ success: false, error: 'Request timed out' } as any)
+
+    const first = await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)
+    expect(first.success).toBe(false)
+    expect(first.error).toMatch(/on hold/)
+    expect(post().anonymous_reward_payment_lock).not.toBeNull()
+
+    expect((await payAnonymousRewardAction(POST_ID, 'lnbc_fresh_invoice', TOKEN)).success).toBe(false)
+    expect(payInvoice).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -532,15 +548,30 @@ describe('payAnonymousFixLightningAddressAction (owner approves an anonymous fix
     expect(post().anonymous_reward_payment_lock).toBeNull()
   })
 
-  it('releases the lock when the payment fails, so approval can be retried', async () => {
+  it('releases the lock when LND definitively fails the payment, so approval can be retried', async () => {
     setup(withAddress(), OWNER_ID)
-    vi.mocked(payInvoice).mockResolvedValueOnce({ success: false, error: 'no route' } as any)
+    vi.mocked(payInvoice).mockResolvedValueOnce({
+      success: false, error: 'Payment failed: no route', details: { payment_error: 'no route' },
+    } as any)
 
     expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
     expect(post().anonymous_reward_payment_lock).toBeNull()
     expect(post().fixed).toBe(false)
 
     expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(true)
+  })
+
+  it('keeps the lock when the payment outcome is uncertain, so approval cannot pay twice', async () => {
+    setup(withAddress(), OWNER_ID)
+    vi.mocked(payInvoice).mockResolvedValueOnce({ success: false, error: 'Request timed out' } as any)
+
+    const first = await payAnonymousFixLightningAddressAction(POST_ID)
+    expect(first.success).toBe(false)
+    expect(first.error).toMatch(/on hold/)
+    expect(post().anonymous_reward_payment_lock).not.toBeNull()
+
+    expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
+    expect(payInvoice).toHaveBeenCalledTimes(1)
   })
 
   it('pays once when the owner double-clicks approve', async () => {

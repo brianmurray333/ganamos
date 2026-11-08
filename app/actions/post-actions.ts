@@ -263,10 +263,20 @@ export async function payAnonymousFixLightningAddressAction(
 
     if (!paymentResult.success) {
       console.error("Failed to pay Lightning invoice:", paymentResult.error)
-      await releaseLock()
+      // Only a definitive LND payment_error means nothing was sent. Anything
+      // else (HTTP error, timeout) may have paid: keep the lock so a retry
+      // can't pay twice; reconcile manually.
+      if ((paymentResult as any)?.details?.payment_error) {
+        await releaseLock()
+        return {
+          success: false,
+          error: "Failed to process Lightning payment. Please check your address and try again.",
+        }
+      }
+      console.error("SECURITY: anonymous Lightning-address payout outcome uncertain; keeping lock", { postId, lockId })
       return {
         success: false,
-        error: "Failed to process Lightning payment. Please check your address and try again.",
+        error: "The payment could not be confirmed. The reward is on hold; please contact support.",
       }
     }
 
@@ -464,11 +474,22 @@ export async function payAnonymousRewardAction(
 
     if (!paymentResult.success) {
       console.error("Failed to pay Lightning invoice:", paymentResult.error, paymentResult.details)
-      await releaseLock()
+      // Only a definitive LND payment_error means nothing was sent. Anything
+      // else (HTTP error, timeout) may have paid: keep the lock so a retry
+      // with a fresh invoice can't pay twice; reconcile manually.
+      if ((paymentResult as any)?.details?.payment_error) {
+        await releaseLock()
+        return {
+          success: false,
+          error: "Failed to process Lightning payment. Please check your invoice and try again.",
+          details: paymentResult.error,
+        }
+      }
+      console.error("SECURITY: anonymous reward payout outcome uncertain; keeping lock", { postId, lockId })
       return {
         success: false,
-        error: "Failed to process Lightning payment. Please check your invoice and try again.",
-        details: paymentResult.error,
+        error: "The payment could not be confirmed. The reward is on hold; please contact support.",
+        details: (paymentResult as any).error,
       }
     }
 
