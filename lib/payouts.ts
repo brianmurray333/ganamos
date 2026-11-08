@@ -30,6 +30,8 @@ const FUNDING_LINK_CUTOFF = "2026-11-08T00:00:00Z"
  *   must point to the owner's completed internal deduction.
  * - Older posts without that link: an unlinked deduction of exactly the
  *   reward by the owner within 2 minutes of the post's creation.
+ * - Older posts an admin vouched for: a post_funding_overrides row covering
+ *   the reward (server-only table).
  * - Anonymous web/API posts: funding_status 'paid' with a funding invoice,
  *   verified as settled when the post was created.
  * Browser sessions can't set any of these fields (DB triggers).
@@ -61,6 +63,15 @@ export async function isPostRewardFunded(
 
   // Legacy posts (no funding link)
   if (!post.created_at || new Date(post.created_at) >= new Date(FUNDING_LINK_CUTOFF)) return false
+
+  // Admin-approved funding (post_funding_overrides), up to the amount vouched for
+  const { data: override } = await admin
+    .from("post_funding_overrides")
+    .select("amount")
+    .eq("post_id", post.id)
+    .maybeSingle()
+  if (override && override.amount >= post.reward) return true
+
   const created = new Date(post.created_at).getTime()
   const amounts = Array.from(new Set([post.reward, post.original_reward].filter((a): a is number => !!a && a > 0)))
   const { data: candidates } = await admin
