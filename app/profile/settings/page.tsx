@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/components/auth-provider";
 import { useTheme } from "next-themes";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { LoadingSpinner } from "@/components/loading-spinner";
 
 export default function SettingsPage() {

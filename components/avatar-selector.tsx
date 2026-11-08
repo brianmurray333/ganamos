@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth-provider"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { useRouter } from "next/navigation"
 

@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { getAdminOrders, updateOrderStatus } from "@/app/actions/admin-actions"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 type OrderStatus = "pending" | "processing" | "shipped" | "delivered" | "refunded" | "cancelled"
 

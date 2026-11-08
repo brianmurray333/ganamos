@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { getSystemSettings, toggleWithdrawals, toggleSignups } from "@/app/actions/admin-actions"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
 const navItems = [

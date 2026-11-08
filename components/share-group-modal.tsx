@@ -5,7 +5,7 @@ import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { Copy, Check, Users, Link as LinkIcon } from "lucide-react"
 import type { Group } from "@/lib/types"
 

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { ArrowLeft, Mail, CheckCircle2 } from "lucide-react"
 
 export default function ForgotPasswordPage() {

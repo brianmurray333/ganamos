@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useAuth } from "@/components/auth-provider";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/toast";
 import { AvatarSelector } from "@/components/avatar-selector";
 import { FamilySection } from "@/components/family-section";
 import { UserQRModal } from "@/components/user-qr-modal";

@@ -17,7 +17,7 @@ import {
   Cloud
 } from "lucide-react"
 import { checkServiceStatus } from "@/app/actions/admin-actions"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 interface ServiceStatus {
   name: string

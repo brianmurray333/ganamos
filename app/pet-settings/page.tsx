@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { X, Cat, Dog, Rabbit, Squirrel, Turtle, Trash2, Check, ArrowLeft } from "lucide-react"
 import { OwlIcon } from "@/components/icons/owl-icon"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import {
   Dialog,

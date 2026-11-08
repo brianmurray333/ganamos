@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { useAuth } from "@/components/auth-provider"
 import { v4 as uuidv4 } from "@/lib/uuid"
 import { formatSatsValue } from "@/lib/utils"
@@ -816,8 +816,8 @@ export default function NewPostPage() {
     <div className={step === "photo" && cameraActive ? "" : "container px-4 py-6 mx-auto max-w-md"}>
       {step === "photo" && cameraActive && (
         <>
-          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '40px' }}>
-            <div className="bg-black/50 text-white/70 px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
+          <div className="absolute left-1/2 transform -translate-x-1/2 z-50 flex items-center" style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)`, height: '56px' }}>
+            <div className="bg-black/40 text-white/90 px-5 py-3 rounded-full text-base font-medium whitespace-nowrap backdrop-blur-sm">
               Take photo of the issue
             </div>
           </div>
@@ -1407,14 +1407,7 @@ export default function NewPostPage() {
               </div>
             </div>
             <div className="flex justify-center my-4">
-              {(() => {
-                console.log("QRCode component rendering with:", {
-                  fundingPaymentRequest,
-                  length: fundingPaymentRequest?.length,
-                  size: 200,
-                })
-                return <QRCode value={fundingPaymentRequest} size={200} />
-              })()}
+              <QRCode data={fundingPaymentRequest} size={200} />
             </div>
 
             {isAwaitingPayment && (

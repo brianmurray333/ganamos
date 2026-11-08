@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { ArrowLeft, Wifi, Bluetooth, Zap, Heart, Cat, Dog, Rabbit, Squirrel, Turtle, Package } from "lucide-react"
 import { OwlIcon } from "@/components/icons/owl-icon"
 import Image from "next/image"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 export default function ConnectPetPage() {
   const router = useRouter()

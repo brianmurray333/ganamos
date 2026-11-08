@@ -6,7 +6,7 @@ import { Home, User, Map, Wallet, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import { AuthPromptModal } from "@/components/auth-prompt-modal"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 export function BottomNav() {
   const pathname = usePathname()
@@ -16,6 +16,27 @@ export function BottomNav() {
   const { user, loading, session, sessionLoaded } = useAuth()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authFeature, setAuthFeature] = useState<'wallet' | 'profile'>('wallet')
+
+  // Warm up the new-post flow so tapping "+" responds immediately instead of
+  // waiting on the route payload, page JS and camera JS to download.
+  // /post/new isn't auth-gated (anonymous posting is allowed), so unlike the
+  // other nav links it's safe to prefetch before the session is known.
+  useEffect(() => {
+    router.prefetch("/post/new")
+    const warmCamera = () => {
+      import("@/components/camera-capture").catch(() => {})
+    }
+    const w = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+      cancelIdleCallback?: (id: number) => void
+    }
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(warmCamera, { timeout: 4000 })
+      return () => w.cancelIdleCallback?.(id)
+    }
+    const t = setTimeout(warmCamera, 2000)
+    return () => clearTimeout(t)
+  }, [router])
 
   // Only enable prefetch after session is confirmed to prevent caching stale auth redirects
   // Before session is established, prefetch could cache a "redirect to login" response
@@ -89,7 +110,7 @@ export function BottomNav() {
           onClick={() => router.push("/post/new")}
           data-testid="nav-new-post-button"
                 className={cn(
-                  "flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 shadow-lg",
+                  "flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 active:scale-95 active:bg-primary/80 shadow-lg touch-manipulation",
                   pathname === "/post/new" && "bg-primary/90 scale-105",
                 )}
           aria-label="New Post"

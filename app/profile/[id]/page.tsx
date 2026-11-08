@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator"
 import { PostCard } from "@/components/post-card"
 import { useAuth } from "@/components/auth-provider"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import type { Post } from "@/lib/types"
 import { ArrowLeft } from "lucide-react"
 

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import type { User, Session } from "@supabase/supabase-js"
 import type { Profile } from "@/lib/database.types"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 type AuthContextType = {
   user: User | null

@@ -12,7 +12,7 @@ import {
   Smartphone, Settings, Link2, Github, Code, Wrench, Cpu,
   Download, ExternalLink, ShoppingCart, Printer, GitPullRequest
 } from "lucide-react"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 import { 
   createPetOrder, 
   calculateShippingCost,

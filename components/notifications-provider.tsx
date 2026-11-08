@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { useAuth } from "@/components/auth-provider"
-import { toast } from "sonner"
+import { toast } from "@/components/ui/toast"
 
 type NotificationsContextType = {
   pendingGroupRequests: number

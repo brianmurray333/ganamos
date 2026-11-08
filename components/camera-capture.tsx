@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useRef, useState, useEffect } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useMobile } from "@/hooks/use-mobile"
@@ -19,6 +19,12 @@ export function CameraCapture({
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // Bumped to force the camera effect to re-run (e.g. after the PWA resumes)
+  const [restartKey, setRestartKey] = useState(0)
+  // Keep the video hidden until it has been sized to fill the screen, so the
+  // user never sees the intrinsic-size "small rectangle" flash.
+  const [videoReady, setVideoReady] = useState(false)
   const [stream, setStream] = useState<MediaStream | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
@@ -123,6 +129,10 @@ export function CameraCapture({
       ;(window as any)._cameraNavObserver = observer
     }
 
+    // Set by cleanup so a start that is still in flight (camera switch,
+    // resume restart, React strict-mode remount) can't clobber a newer one.
+    let cancelled = false
+
     const startCamera = async () => {
       try {
         const constraints = {
@@ -166,6 +176,10 @@ export function CameraCapture({
           }
           
           const mediaStream = await navigator.mediaDevices.getUserMedia(constraints)
+          if (cancelled) {
+            mediaStream.getTracks().forEach((track) => track.stop())
+            return
+          }
           console.log("📷 Got media stream:", mediaStream.id)
           
           // Successfully got camera - save permission state for this session
@@ -197,6 +211,8 @@ export function CameraCapture({
               }
             })
             
+            if (cancelled) return
+
             // Explicitly call play() for iOS Safari compatibility
             try {
               await video.play()
@@ -206,11 +222,17 @@ export function CameraCapture({
             }
           }
 
+          if (cancelled) return
+
+          // Size the video to fill the screen before revealing it
+          if (layoutVideo()) setVideoReady(true)
+
           // Update state AFTER video is playing
           setStream(mediaStream)
           setError(null)
           console.log("📷 Camera setup complete")
         } catch (err) {
+          if (cancelled) return
           console.error("Error accessing camera:", err)
           // Clear stored permission on error (might have been revoked)
           saveCameraPermissionToStorage(false)
@@ -225,6 +247,7 @@ export function CameraCapture({
     startCamera()
 
     return () => {
+      cancelled = true
       // Stop the camera stream using ref for reliable cleanup
       if (streamRef.current) {
         console.log("🔴 Camera cleanup: stopping stream tracks")
@@ -255,7 +278,80 @@ export function CameraCapture({
         }
       }
     }
-  }, [facingMode])
+  }, [facingMode, restartKey])
+
+  // Size the video to "cover" the container ourselves. iOS WebKit sometimes
+  // ignores object-fit: cover on MediaStream videos (initially, and after the
+  // app returns from the background) and renders them letterboxed at their
+  // intrinsic aspect ratio. Explicit sizing avoids relying on object-fit.
+  const layoutVideo = useCallback(() => {
+    const video = videoRef.current
+    const container = containerRef.current
+    if (!video || !container) return false
+    const vw = video.videoWidth
+    const vh = video.videoHeight
+    const cw = container.clientWidth
+    const ch = container.clientHeight
+    if (!vw || !vh || !cw || !ch) return false
+    const scale = Math.max(cw / vw, ch / vh)
+    const w = Math.ceil(vw * scale)
+    const h = Math.ceil(vh * scale)
+    video.style.width = `${w}px`
+    video.style.height = `${h}px`
+    video.style.left = `${Math.round((cw - w) / 2)}px`
+    video.style.top = `${Math.round((ch - h) / 2)}px`
+    return true
+  }, [])
+
+  // Re-layout on viewport changes and whenever the stream's dimensions change
+  useEffect(() => {
+    const video = videoRef.current
+    const onLayout = () => {
+      if (layoutVideo()) setVideoReady(true)
+    }
+    window.addEventListener("resize", onLayout)
+    window.visualViewport?.addEventListener("resize", onLayout)
+    video?.addEventListener("resize", onLayout)
+    video?.addEventListener("loadedmetadata", onLayout)
+    video?.addEventListener("playing", onLayout)
+    return () => {
+      window.removeEventListener("resize", onLayout)
+      window.visualViewport?.removeEventListener("resize", onLayout)
+      video?.removeEventListener("resize", onLayout)
+      video?.removeEventListener("loadedmetadata", onLayout)
+      video?.removeEventListener("playing", onLayout)
+    }
+  }, [layoutVideo, error])
+
+  // When the PWA comes back to the foreground, iOS has usually suspended or
+  // ended the camera track. Restart the camera (or at least resume playback
+  // and re-layout) so the preview doesn't get stuck small or frozen.
+  useEffect(() => {
+    const onResume = () => {
+      if (document.visibilityState !== "visible") return
+      const tracks = streamRef.current?.getVideoTracks() ?? []
+      const dead =
+        tracks.length === 0 ||
+        tracks.some((t) => t.readyState === "ended" || t.muted)
+      if (dead) {
+        console.log("📷 App resumed with inactive camera, restarting")
+        setVideoReady(false)
+        setRestartKey((k) => k + 1)
+        return
+      }
+      const video = videoRef.current
+      if (video?.paused) video.play().catch(() => {})
+      requestAnimationFrame(() => {
+        if (layoutVideo()) setVideoReady(true)
+      })
+    }
+    document.addEventListener("visibilitychange", onResume)
+    window.addEventListener("pageshow", onResume)
+    return () => {
+      document.removeEventListener("visibilitychange", onResume)
+      window.removeEventListener("pageshow", onResume)
+    }
+  }, [layoutVideo])
 
   const takePhoto = () => {
     if (videoRef.current && canvasRef.current) {
@@ -309,6 +405,7 @@ export function CameraCapture({
       streamRef.current = null
     }
     setStream(null)
+    setVideoReady(false)
 
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"))
   }
@@ -335,15 +432,16 @@ export function CameraCapture({
           contain: layout size style;
         }
         .camera-preview-video {
-          /* Absolute positioning from all edges - no height calculation needed */
+          /* Explicit width/height/left/top are set in JS (layoutVideo) to
+             cover the screen; these are fallbacks until then. */
           position: absolute;
           top: 0;
           left: 0;
-          right: 0;
-          bottom: 0;
           width: 100%;
           height: 100%;
+          max-width: none;
           object-fit: cover;
+          transition: opacity 120ms ease-out;
           background: #000;
           /* GPU acceleration for smoother transitions */
           transform: translateZ(0);
@@ -388,7 +486,7 @@ export function CameraCapture({
           </Card>
         </div>
       ) : (
-        <div className="camera-preview-container">
+        <div ref={containerRef} className="camera-preview-container">
           <video
             ref={videoRef}
             autoPlay
@@ -397,6 +495,7 @@ export function CameraCapture({
             webkit-playsinline=""
             muted
             className="camera-preview-video"
+            style={{ opacity: videoReady ? 1 : 0 }}
           />
           {/* Overlay controls on the camera view */}
           <div className="camera-capture-btn">
@@ -404,9 +503,9 @@ export function CameraCapture({
               type="button"
               size="lg"
               onClick={takePhoto}
-              className="relative rounded-full w-20 h-20 p-0 bg-white hover:bg-gray-100 shadow-lg border-4 border-white"
+              className="relative rounded-full w-24 h-24 p-0 bg-white hover:bg-gray-100 shadow-lg border-4 border-white"
             >
-              <div className="w-16 h-16 bg-white rounded-full border-2 border-gray-300"></div>
+              <div className="w-[76px] h-[76px] bg-white rounded-full border-2 border-gray-300"></div>
               <span className="sr-only">Take Photo</span>
             </Button>
           </div>
@@ -416,13 +515,13 @@ export function CameraCapture({
             variant="outline"
             size="icon"
             onClick={() => window.history.back()}
-            className="absolute top-6 left-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
+            className="absolute left-4 h-14 w-14 [&_svg]:size-7 rounded-full bg-black/40 backdrop-blur-sm border-0 hover:bg-black/50 text-white/90"
             style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)` }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="20"
-              height="20"
+              width="28"
+              height="28"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -440,13 +539,13 @@ export function CameraCapture({
               variant="outline"
               size="icon"
               onClick={switchCamera}
-              className="absolute right-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
+              className="absolute right-4 h-14 w-14 [&_svg]:size-7 rounded-full bg-black/40 backdrop-blur-sm border-0 hover:bg-black/50 text-white/90"
               style={{ top: `calc(env(safe-area-inset-top, 0px) + 16px)` }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -467,13 +566,13 @@ export function CameraCapture({
               variant="outline"
               size="icon"
               onClick={onGalleryClick}
-              className="absolute left-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
-              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 32px)` }}
+              className="absolute left-4 h-14 w-14 [&_svg]:size-7 rounded-full bg-black/40 backdrop-blur-sm border-0 hover:bg-black/50 text-white/90"
+              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 40px)` }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -495,13 +594,13 @@ export function CameraCapture({
               variant="outline"
               size="icon"
               onClick={onSkip}
-              className="absolute right-4 rounded-full bg-black/30 border-0 hover:bg-black/40 text-white/70"
-              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 32px)` }}
+              className="absolute right-4 h-14 w-14 [&_svg]:size-7 rounded-full bg-black/40 backdrop-blur-sm border-0 hover:bg-black/50 text-white/90"
+              style={{ bottom: `calc(env(safe-area-inset-bottom, 0px) + 40px)` }}
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
+                width="28"
+                height="28"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
