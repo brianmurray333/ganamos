@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { GET } from '@/app/api/cron/expire-posts/route'
 import { NextRequest } from 'next/server'
 import { getServiceClient } from './helpers/db-client'
@@ -23,6 +23,8 @@ describe('POST Expiration Cron - Integration Tests', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    // Only `Authorization: Bearer ${CRON_SECRET}` authorizes (lib/cron-auth.ts)
+    process.env.CRON_SECRET = 'integration-cron-secret'
 
     // Initialize Supabase client using the helper
     testSupabase = getServiceClient()
@@ -45,6 +47,10 @@ describe('POST Expiration Cron - Integration Tests', () => {
     })
     testFixerId = fixer.id
     testFixerEmail = fixer.email
+  })
+
+  afterEach(() => {
+    delete process.env.CRON_SECRET
   })
 
   // Cleanup is handled automatically by setup-db.ts afterEach
@@ -95,7 +101,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -184,7 +190,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -238,7 +244,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       await GET(request)
@@ -282,7 +288,7 @@ describe('POST Expiration Cron - Integration Tests', () => {
       // Execute cron job
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: `Bearer ${process.env.CRON_SECRET}` },
       })
 
       const response = await GET(request)
@@ -303,14 +309,29 @@ describe('POST Expiration Cron - Integration Tests', () => {
   })
 
   describe('Authentication', () => {
-    it('should authenticate with Vercel cron headers', async () => {
+    // SECURITY: Vercel headers used to bypass auth; anyone can send x-vercel-cron and Vercel
+    // adds x-vercel-id to every request. Expiring posts refunds balances, so this must be locked.
+    it('should reject Vercel cron headers without the Bearer secret', async () => {
+      for (const headers of [{ 'x-vercel-cron': '1' }, { 'x-vercel-id': 'iad1::abc' }]) {
+        const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
+          method: 'GET',
+          headers,
+        })
+
+        const response = await GET(request)
+        expect(response.status).toBe(401)
+      }
+    })
+
+    it('should fail closed when CRON_SECRET is not configured', async () => {
+      delete process.env.CRON_SECRET
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer undefined' },
       })
 
       const response = await GET(request)
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
     })
 
     it('should authenticate with valid Bearer token', async () => {

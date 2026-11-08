@@ -11,13 +11,41 @@ import { lndRequest } from '@/lib/lightning'
 import { queryOne, seedUser } from '../../helpers/test-isolation'
 import { 
   mockLndFullBalanceSuccess, 
-  setupLightningEnvironment 
+  setupLightningEnvironment,
+  TEST_CRON_SECRET,
 } from '../../../unit/helpers/node-balance-mocks'
+
+/** Authorized request: only `Authorization: Bearer ${CRON_SECRET}` is accepted (lib/cron-auth.ts) */
+const authorizedRequest = () =>
+  new NextRequest('http://test/api/admin/node-balance', { headers: { authorization: `Bearer ${TEST_CRON_SECRET}` } })
 
 describe('GET /api/admin/node-balance (Integration)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    setupLightningEnvironment()
+    setupLightningEnvironment() // also sets CRON_SECRET = TEST_CRON_SECRET
+  })
+
+  afterEach(() => {
+    delete process.env.CRON_SECRET
+  })
+
+  describe('Authorization', () => {
+    it('should reject requests without the Bearer secret and not query LND', async () => {
+      for (const headers of [{}, { 'x-vercel-cron': '1' }, { 'x-vercel-id': 'iad1::abc' }, { authorization: 'Bearer wrong' }]) {
+        const response = await GET(new NextRequest('http://test/api/admin/node-balance', { headers }))
+        expect(response.status).toBe(401)
+      }
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
+
+    it('should fail closed when CRON_SECRET is not configured', async () => {
+      delete process.env.CRON_SECRET
+
+      const response = await GET(new NextRequest('http://test/api/admin/node-balance', { headers: { authorization: 'Bearer undefined' } }))
+
+      expect(response.status).toBe(401)
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
   })
 
   describe('Success Cases', () => {
@@ -26,7 +54,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
       mockLndFullBalanceSuccess(lndRequest as any, '100000', '25000', '50000')
 
       // Call endpoint
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       // Assert response
@@ -42,7 +70,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
     it('should handle zero balances correctly', async () => {
       mockLndFullBalanceSuccess(lndRequest as any, '0', '0', '0')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(200)
@@ -55,7 +83,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
       const largeAmount = 21000000 * 100000000 // 21M BTC in satoshis
       mockLndFullBalanceSuccess(lndRequest as any, String(largeAmount), '0', '0')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(200)
@@ -74,7 +102,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
         details: 'LND connection failed'
       })
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(500)
@@ -97,7 +125,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
           details: 'Connection timeout'
         })
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(200)
@@ -114,7 +142,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
         new Error('Network connection failed')
       )
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(500)
@@ -131,7 +159,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
         })
         .mockRejectedValueOnce(new Error('Blockchain API unavailable'))
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       // When onChainResult is undefined (rejected promise), trying to access .success throws
@@ -145,7 +173,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
     it('should call correct LND endpoints in sequence', async () => {
       mockLndFullBalanceSuccess(lndRequest as any, '50000', '10000', '25000')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       await GET(request)
 
       expect(lndRequest).toHaveBeenCalledTimes(2)
@@ -172,7 +200,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
       // Mock LND to return matching balance
       mockLndFullBalanceSuccess(lndRequest as any, '175000', '0', '0')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       // Verify node balance equals sum of user balances
@@ -195,7 +223,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
       // Mock LND to return different balance (discrepancy scenario)
       mockLndFullBalanceSuccess(lndRequest as any, '120000', '0', '0')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       const data = await response.json()
@@ -220,7 +248,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
       // Mock LND to return some balance
       mockLndFullBalanceSuccess(lndRequest as any, '50000', '0', '0')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       expect(response.status).toBe(200)
@@ -234,7 +262,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
     it('should return consistent JSON structure', async () => {
       mockLndFullBalanceSuccess(lndRequest as any, '50000', '10000', '25000')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       const data = await response.json()
@@ -258,7 +286,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
     it('should return correct content type header', async () => {
       mockLndFullBalanceSuccess(lndRequest as any, '50000', '10000', '25000')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       const contentType = response.headers.get('Content-Type')
@@ -279,7 +307,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
         String(onchainBalance)
       )
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       const data = await response.json()
@@ -292,7 +320,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
     it('should handle mixed zero and non-zero balances', async () => {
       mockLndFullBalanceSuccess(lndRequest as any, '100000', '0', '50000')
 
-      const request = new NextRequest('http://test/api/admin/node-balance')
+      const request = authorizedRequest()
       const response = await GET(request)
 
       const data = await response.json()

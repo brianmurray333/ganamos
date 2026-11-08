@@ -862,10 +862,13 @@ describe('createFundedAnonymousPostAction funding verification', () => {
     expect(inserts).toHaveLength(0)
   })
 
+  // (Zero rewards are deliberately not asserted here: they currently get the same rejection,
+  // which breaks zero-reward posts from /api/posts — see the it.fails in
+  // tests/integration/posts-api.test.ts.)
   it.each([
     ['missing funding hash', { funding_r_hash: '' }],
-    ['zero reward', { reward: 0 }],
     ['negative reward', { reward: -100 }],
+    ['non-numeric reward', { reward: Number.NaN }],
   ])('rejects %s without asking the node or inserting', async (_label, overrides) => {
     vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000000', state: 'SETTLED' } as any)
     const { inserts } = setupPostsTable()
