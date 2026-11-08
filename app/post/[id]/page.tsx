@@ -26,6 +26,7 @@ import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
 import { User } from "lucide-react"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
+import { saveClaimToken } from "@/lib/anonymous-claim"
 import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submission-modal"
 import { v4 as uuidv4 } from "uuid"
 import dynamic from "next/dynamic"
@@ -638,6 +639,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         )
 
         if (actionResult.success) {
+
+          saveClaimToken(post.id, actionResult.claimToken)
           const nowIso = new Date().toISOString()
           setPost((prevPost) =>
             prevPost
@@ -764,6 +767,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )
 
           if (actionResult.success) {
+
+            saveClaimToken(post.id, actionResult.claimToken)
             setPost((prevPost) =>
               prevPost
                 ? {
@@ -827,6 +832,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )
 
           if (actionResult.success) {
+
+            saveClaimToken(post.id, actionResult.claimToken)
             setPost((prevPost) =>
               prevPost
                 ? {
@@ -866,6 +873,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           )
 
           if (actionResult.success) {
+
+            saveClaimToken(post.id, actionResult.claimToken)
             const nowIso = new Date().toISOString()
             setPost((prevPost) =>
               prevPost
@@ -1062,10 +1071,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           }
           
           // Now attempt payment
-          const paymentResult = await payAnonymousFixLightningAddressAction(
-            post.id,
-            post.submitted_fix_lightning_address
-          )
+          // Server pays the address the fixer submitted (stored on the post)
+          const paymentResult = await payAnonymousFixLightningAddressAction(post.id)
 
           if (!paymentResult.success) {
             console.error("Error paying Lightning address:", paymentResult.error)

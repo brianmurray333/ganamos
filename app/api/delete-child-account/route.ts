@@ -62,8 +62,10 @@ export async function POST(request: Request) {
     // Create admin client for auth operations
     const adminSupabase = createServerSupabaseClient()
 
-    // SOFT DELETE: Mark the profile as deleted instead of hard deleting
-    const { error: softDeleteError } = await supabase
+    // SOFT DELETE: Mark the profile as deleted instead of hard deleting.
+    // Must use the admin client: the parent's session can't update the child's
+    // profile under RLS (the update would silently match zero rows).
+    const { data: softDeleted, error: softDeleteError } = await adminSupabase
       .from("profiles")
       .update({
         status: 'deleted',
@@ -72,9 +74,10 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString()
       })
       .eq("id", childAccountId)
+      .select("id")
 
-    if (softDeleteError) {
-      console.error("Error soft deleting profile:", softDeleteError)
+    if (softDeleteError || !softDeleted?.length) {
+      console.error("Error soft deleting profile:", softDeleteError ?? "no rows updated")
       return NextResponse.json({ error: "Failed to delete profile" }, { status: 500 })
     }
 

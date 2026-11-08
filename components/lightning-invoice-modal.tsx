@@ -1,5 +1,6 @@
 "use client"
 
+import { getClaimToken } from "@/lib/anonymous-claim"
 import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -79,7 +80,7 @@ export function LightningInvoiceModal({
       const { payAnonymousRewardAction } = await import("@/app/actions/post-actions")
 
       // Call the server action to process the payment
-      const result = await payAnonymousRewardAction(postId, invoice.trim())
+      const result = await payAnonymousRewardAction(postId, invoice.trim(), getClaimToken(postId))
 
       if (!result.success) {
         setError(result.error || "Failed to process payment")

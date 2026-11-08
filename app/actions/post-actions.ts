@@ -7,6 +7,7 @@ import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
 import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
+import { AUTO_APPROVE_CONFIDENCE, createAdminClient, generateClaimToken, isPostRewardFunded, payFixReward, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
 
 async function getCookieStore() {
   const { cookies } = await import("next/headers")
@@ -82,13 +83,33 @@ async function sendFixSubmittedEmailsToGroupAdmins(params: {
  */
 export async function payAnonymousFixLightningAddressAction(
   postId: string,
-  lightningAddress: string,
+  /** IGNORED: the payout always goes to the address the fixer submitted (stored on the post). */
+  _lightningAddress?: string,
 ): Promise<{ success: boolean; paymentHash?: string; error?: string }> {
-  if (!postId || !lightningAddress) {
-    return { success: false, error: "Post ID and Lightning address are required." }
+  if (!postId) {
+    return { success: false, error: "Post ID is required." }
   }
 
-  const supabase = createServerSupabaseClient(await getCookieStore())
+  // SECURITY: only the post owner (or a group admin) approves and pays out.
+  const cookieStore = await getCookieStore()
+  const authClient = createServerSupabaseClient({ cookieStore })
+  const {
+    data: { user },
+  } = await authClient.auth.getUser()
+  if (!user) {
+    return { success: false, error: "Not authenticated" }
+  }
+
+  const supabase = createAdminClient()
+  let lockId: string | null = null
+  const releaseLock = async () => {
+    if (!lockId) return
+    await supabase
+      .from("posts")
+      .update({ anonymous_reward_payment_lock: null })
+      .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId)
+  }
 
   try {
     // Fetch the post
@@ -102,19 +123,65 @@ export async function payAnonymousFixLightningAddressAction(
       return { success: false, error: "Post not found." }
     }
 
-    if (!post.fixed) {
-      return { success: false, error: "This post has not been marked as fixed yet." }
+    let isAuthorized = post.user_id === user.id
+    if (!isAuthorized && post.group_id) {
+      const { data: membership } = await supabase
+        .from("group_members")
+        .select("role")
+        .eq("group_id", post.group_id)
+        .eq("user_id", user.id)
+        .eq("status", "approved")
+        .maybeSingle()
+      isAuthorized = membership?.role === "admin"
+    }
+    if (!isAuthorized) {
+      console.error("SECURITY ALERT: unauthorized anonymous Lightning payout attempt", { postId, userId: user.id })
+      return { success: false, error: "Only the post owner can approve this fix." }
+    }
+
+    if (post.deleted_at) {
+      return { success: false, error: "Post has been deleted." }
     }
 
     if (post.submitted_fix_by_id !== null) {
       return { success: false, error: "This fix is not anonymous." }
     }
 
+    const lightningAddress: string | null = post.submitted_fix_lightning_address
+    if (!lightningAddress) {
+      return { success: false, error: "The fixer has not provided a Lightning address." }
+    }
+
+    if (!post.reward || post.reward <= 0) {
+      return { success: false, error: "This post has no reward to pay." }
+    }
+
+    if (!(await isPostRewardFunded(supabase, post))) {
+      console.error("SECURITY: Attempted anonymous payout for unfunded post", { postId, approverId: user.id })
+      return { success: false, error: "This post's reward was never funded. Cannot issue reward." }
+    }
+
+    // ATOMIC LOCK: one payout per post
+    const newLockId = uuidv4()
+    const { data: locked } = await supabase
+      .from("posts")
+      .update({ anonymous_reward_payment_lock: newLockId })
+      .eq("id", postId)
+      .is("anonymous_reward_paid_at", null)
+      .is("reward_paid_at", null)
+      .is("anonymous_reward_payment_lock", null)
+      .select("id")
+    if (!locked?.length) {
+      return { success: false, error: "This reward has already been paid or is being processed." }
+    }
+    lockId = newLockId
+
     // Check Lightning configuration
     const LND_REST_URL = process.env.LND_REST_URL
     const LND_ADMIN_MACAROON = process.env.LND_ADMIN_MACAROON
 
     if (!LND_REST_URL || !LND_ADMIN_MACAROON) {
+      await releaseLock()
       return {
         success: false,
         error: "Lightning payment system is currently unavailable.",
@@ -133,12 +200,14 @@ export async function payAnonymousFixLightningAddressAction(
         
         const lookupResponse = await fetch(lookupUrl)
         if (!lookupResponse.ok) {
-          return { success: false, error: "Failed to lookup Lightning address" }
+          await releaseLock()
+        return { success: false, error: "Failed to lookup Lightning address" }
         }
 
         const lookupData = await lookupResponse.json()
         if (!lookupData.callback) {
-          return { success: false, error: "Invalid Lightning address response" }
+          await releaseLock()
+        return { success: false, error: "Invalid Lightning address response" }
         }
 
         // Request invoice from callback
@@ -147,12 +216,14 @@ export async function payAnonymousFixLightningAddressAction(
 
         const invoiceResponse = await fetch(callbackUrl.toString())
         if (!invoiceResponse.ok) {
-          return { success: false, error: "Failed to generate invoice from Lightning address" }
+          await releaseLock()
+        return { success: false, error: "Failed to generate invoice from Lightning address" }
         }
 
         const invoiceData = await invoiceResponse.json()
         if (!invoiceData.pr) {
-          return { success: false, error: "Invalid invoice response from Lightning address" }
+          await releaseLock()
+        return { success: false, error: "Invalid invoice response from Lightning address" }
         }
 
         invoiceToPay = invoiceData.pr
@@ -167,13 +238,15 @@ export async function payAnonymousFixLightningAddressAction(
 
     // Validate it's now a Lightning invoice
     if (!validateLightningInvoice(invoiceToPay)) {
-      return { success: false, error: "Invalid Lightning invoice format." }
+      await releaseLock()
+        return { success: false, error: "Invalid Lightning invoice format." }
     }
 
     // Guard: reject invoices that exceed the post reward to prevent draining
     const { extractInvoiceAmount } = await import("@/lib/lightning-validation")
     const invoiceAmount = extractInvoiceAmount(invoiceToPay)
-    if (invoiceAmount !== null && invoiceAmount > post.reward) {
+    if (invoiceAmount === null || invoiceAmount > post.reward) {
+      await releaseLock()
       return {
         success: false,
         error: `Payout invoice amount (${invoiceAmount} sats) exceeds post reward (${post.reward} sats). Refusing to pay.`,
@@ -186,6 +259,7 @@ export async function payAnonymousFixLightningAddressAction(
 
     if (!paymentResult.success) {
       console.error("Failed to pay Lightning invoice:", paymentResult.error)
+      await releaseLock()
       return {
         success: false,
         error: "Failed to process Lightning payment. Please check your address and try again.",
@@ -199,8 +273,18 @@ export async function payAnonymousFixLightningAddressAction(
       .update({
         anonymous_reward_paid_at: now,
         anonymous_reward_payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
+        // Approval: browser sessions can't set fixed/fixed_by, so do it here
+        fixed: true,
+        fixed_at: post.fixed_at || now,
+        fixed_by: null,
+        fixed_by_is_anonymous: true,
+        fixed_image_url: post.fixed_image_url || post.submitted_fix_image_url,
+        fixer_note: post.fixer_note || post.submitted_fix_note,
+        fix_proof_text: post.fix_proof_text || post.submitted_fix_proof_text || null,
+        under_review: false,
       })
       .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId)
 
     if (updateError) {
       console.error("Error marking anonymous fix reward as paid:", updateError)
@@ -269,6 +353,7 @@ export async function payAnonymousFixLightningAddressAction(
 export async function payAnonymousRewardAction(
   postId: string,
   lightningInvoice: string,
+  claimToken?: string | null,
 ): Promise<{
   success: boolean
   paymentHash?: string
@@ -279,9 +364,21 @@ export async function payAnonymousRewardAction(
     return { success: false, error: "Post ID and Lightning invoice are required." }
   }
 
-  const supabase = createServerSupabaseClient(await getCookieStore())
+  const supabase = createAdminClient()
 
   try {
+    // 0. SECURITY: only the anonymous fixer (holder of the claim token issued
+    // when the fix was recorded) may choose where the reward is paid.
+    const { data: tokenCheck } = await supabase
+      .from("posts")
+      .select("anonymous_claim_token_hash")
+      .eq("id", postId)
+      .single()
+    if (!verifyClaimToken(tokenCheck?.anonymous_claim_token_hash, claimToken)) {
+      console.error("SECURITY ALERT: anonymous reward payout attempted without a valid claim token", { postId })
+      return { success: false, error: "This reward can only be claimed from the device that submitted the fix." }
+    }
+
     // 1. ATOMIC LOCK: Attempt to acquire lock before any validation
     // This prevents race conditions where multiple requests pass validation simultaneously
     const lockId = uuidv4()
@@ -292,6 +389,7 @@ export async function payAnonymousRewardAction(
       .eq("fixed_by_is_anonymous", true)
       .eq("fixed", true)
       .is("anonymous_reward_paid_at", null)
+      .is("reward_paid_at", null)
       .is("anonymous_reward_payment_lock", null) // Only if not already locked
       .select(`
         *,
@@ -614,6 +712,30 @@ export async function createFundedAnonymousPostAction(postDetails: {
       return { success: false, error: rewardCapCheck.message || 'Post reward exceeds maximum allowed amount.' }
     }
 
+    // SECURITY: the funding invoice must actually be paid, for at least the
+    // reward, and may fund only one post.
+    if (!postDetails.funding_r_hash || !Number.isFinite(postDetails.reward) || postDetails.reward <= 0) {
+      return { success: false, error: "Invalid funding details." }
+    }
+    const fundingCheck = await checkInvoice(postDetails.funding_r_hash)
+    const amountPaid = Number((fundingCheck as any)?.amountPaid ?? 0)
+    if (!fundingCheck.success || !(fundingCheck as any).settled || amountPaid < postDetails.reward) {
+      console.error("SECURITY: Anonymous post creation without a settled funding invoice", {
+        rHash: postDetails.funding_r_hash.substring(0, 16),
+        reward: postDetails.reward,
+        amountPaid,
+      })
+      return { success: false, error: "Funding payment not confirmed." }
+    }
+    const { data: existingFunded } = await supabase
+      .from("posts")
+      .select("id")
+      .eq("funding_r_hash", postDetails.funding_r_hash)
+      .limit(1)
+    if (existingFunded && existingFunded.length > 0) {
+      return { success: false, error: "This payment has already been used to fund a post." }
+    }
+
     const { data, error } = await supabase
       .from("posts")
       .insert({
@@ -727,19 +849,54 @@ export async function markPostFixedAnonymouslyAction(
   postId: string,
   fixImageUrl: string | null,
   fixerNote: string | null,
-  aiConfidence: number,
-  aiAnalysis: string | null,
-  fixProofText: string | null = null,
-): Promise<{ success: boolean; error?: string }> {
-  if (!postId || (!fixImageUrl && !fixProofText)) {
-    return { success: false, error: "Post ID and either a fix image or proof text are required." }
+  /** IGNORED: the server verifies the fix itself. */
+  _aiConfidence?: number,
+  _aiAnalysis?: string | null,
+  _fixProofText: string | null = null,
+): Promise<{ success: boolean; error?: string; claimToken?: string }> {
+  // Auto-approval needs a photo the server can verify; text proofs go to review.
+  if (!postId || !fixImageUrl) {
+    return { success: false, error: "Post ID and a fix photo are required." }
   }
 
-  const supabase = createServerSupabaseClient(await getCookieStore())
+  const supabase = createAdminClient()
   const now = new Date().toISOString()
 
   try {
-    const { error } = await supabase
+    const { data: post, error: postError } = await supabase
+      .from("posts")
+      .select("id, user_id, title, description, reward, image_url, fixed, deleted_at, reward_paid_at, funding_status, funding_r_hash")
+      .eq("id", postId)
+      .single()
+
+    if (postError || !post) {
+      return { success: false, error: "Post not found." }
+    }
+    if (post.deleted_at) {
+      return { success: false, error: "Post has been deleted." }
+    }
+    if (post.fixed || post.reward_paid_at) {
+      return { success: false, error: "This issue has already been fixed." }
+    }
+    if (!(await isPostRewardFunded(supabase, post))) {
+      console.error("SECURITY: Anonymous auto-approval attempted on unfunded post", { postId })
+      return { success: false, error: "This post's reward was never funded." }
+    }
+
+    // SECURITY: verify on the server against the stored "before" image;
+    // never trust a client-supplied confidence.
+    const verification = await verifyFixForPost(post, fixImageUrl)
+    if (!verification) {
+      return { success: false, error: "Could not verify the fix automatically. Please submit it for review." }
+    }
+    if (verification.confidence < AUTO_APPROVE_CONFIDENCE) {
+      return { success: false, error: "AI confidence too low for auto-approval." }
+    }
+
+    // Secret for the anonymous fixer to later claim / route the reward
+    const { token: claimToken, hash: claimTokenHash } = generateClaimToken()
+
+    const { data: claimed, error } = await supabase
       .from("posts")
       .update({
         fixed: true,
@@ -749,29 +906,36 @@ export async function markPostFixedAnonymouslyAction(
         fixed_image_url: fixImageUrl,
         fixer_note: fixerNote,
         under_review: false, // No longer under review if auto-approved
-        // Optionally store AI verification details for the successful fix
-        ai_confidence_score: aiConfidence,
-        ai_analysis: aiAnalysis,
+        ai_confidence_score: verification.confidence,
+        ai_analysis: verification.reasoning,
+        anonymous_claim_token_hash: claimTokenHash,
         // Clear any previous submission for review fields if they existed
         submitted_fix_by_id: null,
         submitted_fix_by_name: null,
         submitted_fix_by_avatar: null,
         submitted_fix_at: null,
-        // submitted_fix_image_url: null, // Keep this if we want to see what was submitted vs what was approved
-        // submitted_fix_note: null, // Keep this
       })
       .eq("id", postId)
+      .eq("fixed", false)
+      .is("deleted_at", null)
+      .select("id")
 
     if (error) {
       console.error("Error in markPostFixedAnonymouslyAction:", error)
       return { success: false, error: error.message }
     }
+    if (!claimed?.length) {
+      return { success: false, error: "This issue has already been fixed." }
+    }
+
+    const aiConfidence = verification.confidence
+    const aiAnalysis = verification.reasoning
 
     console.log(`Post ${postId} marked as fixed anonymously.`)
     // TODO: In a later step, we'll need to handle the reward payout mechanism for anonymous users.
     // This might involve generating a claim code or a pre-image for a LNURL-withdraw.
 
-    if (!error) {
+    {
       // Fetch the post to get title and reward for metadata
       const { data: postData } = await supabase
         .from("posts")
@@ -798,7 +962,7 @@ export async function markPostFixedAnonymouslyAction(
       });
     }
 
-    return { success: true }
+    return { success: true, claimToken }
   } catch (error) {
     console.error("Unexpected error in markPostFixedAnonymouslyAction:", error)
     return {
@@ -815,23 +979,30 @@ export async function markPostFixedAnonymouslyAction(
 export async function submitAnonymousFixLightningAddressAction(
   postId: string,
   lightningAddress: string,
+  claimToken?: string | null,
 ): Promise<{ success: boolean; error?: string }> {
   if (!postId || !lightningAddress) {
     return { success: false, error: "Post ID and Lightning address are required." }
   }
 
-  const supabase = createServerSupabaseClient(await getCookieStore())
+  const supabase = createAdminClient()
 
   try {
     // Validate the post exists and is under review with anonymous submission
     const { data: post, error: fetchError } = await supabase
       .from("posts")
-      .select("id, under_review, submitted_fix_by_id")
+      .select("id, under_review, submitted_fix_by_id, anonymous_claim_token_hash")
       .eq("id", postId)
       .single()
 
     if (fetchError || !post) {
       return { success: false, error: "Post not found." }
+    }
+
+    // SECURITY: only the anonymous fixer may set where the reward is paid
+    if (!verifyClaimToken(post.anonymous_claim_token_hash, claimToken)) {
+      console.error("SECURITY ALERT: payout address change without a valid claim token", { postId })
+      return { success: false, error: "Only the person who submitted this fix can set the payout address." }
     }
 
     if (!post.under_review) {
@@ -866,6 +1037,8 @@ export async function submitAnonymousFixLightningAddressAction(
         submitted_fix_lightning_address: lightningAddress.trim(),
       })
       .eq("id", postId)
+      .is("submitted_fix_by_id", null)
+      .eq("under_review", true)
 
     if (error) {
       console.error("Error saving Lightning address:", error)
@@ -894,7 +1067,7 @@ export async function submitAnonymousFixForReviewAction(
   fixProofText: string | null = null,
   l402PaymentHash: string | null = null,
   payoutInvoice: string | null = null,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; claimToken?: string }> {
   if (!postId || (!fixImageUrl && !fixProofText)) {
     return { success: false, error: "Post ID and either a fix image or proof text are required." }
   }
@@ -957,6 +1130,19 @@ export async function submitAnonymousFixForReviewAction(
       
       // Job was already claimed/fixed/under_review
       return { success: false, error: "This job has already been claimed by someone else." }
+    }
+
+    // Secret proving this browser/agent is the anonymous fixer (needed to add a
+    // payout address, link an account or claim the reward later).
+    const { token: claimToken, hash: claimTokenHash } = generateClaimToken()
+    {
+      const { error: tokenError } = await createAdminClient()
+        .from("posts")
+        .update({ anonymous_claim_token_hash: claimTokenHash })
+        .eq("id", postId)
+      if (tokenError) {
+        console.error("Error storing anonymous claim token:", tokenError)
+      }
     }
 
     // Store L402 payment hash and payout invoice for agent status polling
@@ -1069,7 +1255,7 @@ export async function submitAnonymousFixForReviewAction(
     }
 
     console.log(`Anonymous fix for post ${postId} submitted for review.`)
-    return { success: true }
+    return { success: true, claimToken }
   } catch (error) {
     console.error("Unexpected error in submitAnonymousFixForReviewAction:", error)
     return {
@@ -1330,16 +1516,24 @@ export async function submitLoggedInFixForReviewAction(params: {
 export async function associateAnonymousFixWithAccountAction(
   postId: string,
   userId: string,
+  claimToken?: string | null,
 ): Promise<{ success: boolean; error?: string }> {
   'use server'
   
   try {
-    const supabase = createServerSupabaseClient()
+    // SECURITY: caller must be signed in as the account being linked
+    const authClient = createServerSupabaseClient({ cookieStore: await getCookieStore() })
+    const { data: { user } } = await authClient.auth.getUser()
+    if (!user || user.id !== userId) {
+      return { success: false, error: 'Not authenticated' }
+    }
+
+    const supabase = createAdminClient()
     
     // Get the post and verify it's an anonymous fix submission under review
     const { data: post, error: postError } = await supabase
       .from('posts')
-      .select('*')
+      .select('id, anonymous_claim_token_hash')
       .eq('id', postId)
       .eq('under_review', true)
       .is('submitted_fix_by_id', null)
@@ -1348,16 +1542,24 @@ export async function associateAnonymousFixWithAccountAction(
     if (postError || !post) {
       return { success: false, error: 'Anonymous fix submission not found or already associated' }
     }
+
+    // SECURITY: only the anonymous fixer (claim token holder) can link it
+    if (!verifyClaimToken(post.anonymous_claim_token_hash, claimToken)) {
+      console.error('SECURITY ALERT: anonymous fix association without a valid claim token', { postId, userId })
+      return { success: false, error: 'This fix can only be linked from the device that submitted it' }
+    }
     
     // Update the post to associate with the user
-    const { error: updateError } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('posts')
       .update({
         submitted_fix_by_id: userId,
       })
       .eq('id', postId)
+      .is('submitted_fix_by_id', null)
+      .select('id')
     
-    if (updateError) {
+    if (updateError || !updated?.length) {
       console.error('Error associating anonymous fix with account:', updateError)
       return { success: false, error: 'Failed to associate fix with account' }
     }
@@ -1379,55 +1581,94 @@ export async function associateAnonymousFixWithAccountAction(
  */
 export async function claimAnonymousRewardAction(
   postId: string,
-  userId: string
+  userId: string,
+  claimToken?: string | null,
 ): Promise<{ success: boolean; error?: string; amount?: number }> {
   'use server'
   
   try {
-    const supabase = createServerSupabaseClient()
+    // SECURITY: caller must be signed in as the account being credited
+    const authClient = createServerSupabaseClient({ cookieStore: await getCookieStore() })
+    const { data: { user } } = await authClient.auth.getUser()
+    if (!user || user.id !== userId) {
+      return { success: false, error: 'Not authenticated' }
+    }
+
+    const supabase = createAdminClient()
     
     // Get the post and verify it was fixed anonymously and reward not yet paid
     const { data: post, error: postError } = await supabase
       .from('posts')
-      .select('*')
+      .select('id, title, reward, anonymous_claim_token_hash')
       .eq('id', postId)
       .eq('fixed_by_is_anonymous', true)
       .is('anonymous_reward_paid_at', null)
+      .is('reward_paid_at', null)
       .single()
     
     if (postError || !post) {
       return { success: false, error: 'Anonymous reward not found or already claimed' }
     }
+
+    // SECURITY: only the anonymous fixer (claim token holder) can claim
+    if (!verifyClaimToken(post.anonymous_claim_token_hash, claimToken)) {
+      console.error('SECURITY ALERT: anonymous reward claim without a valid claim token', { postId, userId })
+      return { success: false, error: 'This reward can only be claimed from the device that submitted the fix' }
+    }
     
-    // Update the post to associate with the user
-    const { error: updatePostError } = await supabase
+    // Associate the fix with the user (only while still anonymous and unpaid)
+    const { data: associated, error: updatePostError } = await supabase
       .from('posts')
       .update({
         fixed_by: userId,
         fixed_by_is_anonymous: false, // Now associated with a user
       })
       .eq('id', postId)
+      .eq('fixed_by_is_anonymous', true)
+      .is('anonymous_reward_paid_at', null)
+      .is('anonymous_reward_payment_lock', null)
+      .select('id')
     
-    if (updatePostError) {
+    if (updatePostError || !associated?.length) {
       console.error('Error updating post:', updatePostError)
-      return { success: false, error: 'Failed to update post' }
+      return { success: false, error: 'Reward unavailable or already being processed' }
+    }
+
+    if (!post.reward || post.reward <= 0) {
+      return { success: true, amount: 0 }
     }
     
-    // Use the createFixRewardAction to properly create transaction and update balance
-    const rewardResult = await createFixRewardAction({
+    // Pay the stored reward exactly once (atomic in the database)
+    const payout = await payFixReward(supabase, {
       postId,
-      userId,
-      reward: post.reward,
-      postTitle: post.title
+      fixerId: userId,
+      memo: `Fix reward earned: ${post.title || 'Issue fixed'}`,
     })
     
-    if (!rewardResult.success) {
-      console.error('Error creating fix reward transaction for claimed anonymous reward:', rewardResult.error)
+    if (!payout.success) {
+      console.error('Error crediting claimed anonymous reward:', payout.error)
+      if (payout.code !== 'reward_already_paid') {
+        await supabase
+          .from('posts')
+          .update({ fixed_by: null, fixed_by_is_anonymous: true })
+          .eq('id', postId)
+          .eq('fixed_by', userId)
+          .is('reward_paid_at', null)
+      }
       return { success: false, error: 'Failed to credit reward' }
     }
+
+    await notifyFixRewardPaid({
+      postId,
+      fixerId: userId,
+      reward: payout.amount,
+      postTitle: post.title,
+      transactionId: payout.transactionId,
+      isPostOwnerClosing: false,
+    })
     
-    console.log(`Claimed anonymous reward: ${post.reward} sats for user ${userId}, transaction: ${rewardResult.transactionId}`)
-    return { success: true, amount: post.reward }
+    console.log(`Claimed anonymous reward: ${payout.amount} sats for user ${userId}, transaction: ${payout.transactionId}`)
+    return { success: true, amount: payout.amount }
   } catch (error) {
     console.error('Error in claimAnonymousRewardAction:', error)
     return {
@@ -1558,179 +1799,25 @@ export async function createPostWithRewardAction(params: {
  * updates the posts table to mark it as fixed. This is needed because
  * the fixer may not be the post owner, so client-side RLS would block the update.
  */
-export async function createFixRewardAction(params: {
+/**
+ * Activity records and emails after a fix reward has been paid.
+ * Not exported: server-internal only.
+ */
+async function notifyFixRewardPaid(params: {
   postId: string
-  userId: string
+  fixerId: string
   reward: number
-  postTitle?: string
-  isPostOwnerClosing?: boolean // When true, allows poster to designate any user as fixer
-  // For high-confidence AI fixes, also update the posts table
-  fixDetails?: {
-    fixImageUrl: string
-    fixerNote: string | null
-    aiConfidence: number
-    aiAnalysis: string | null
-  }
-}): Promise<{ success: boolean; error?: string; transactionId?: string; newBalance?: number }> {
-  'use server'
-  
+  postTitle?: string | null
+  transactionId: string
+  isPostOwnerClosing: boolean
+}): Promise<void> {
+  const { postId, reward, isPostOwnerClosing } = params
+  const userId = params.fixerId
+  const postTitle = params.postTitle || undefined
+  const adminSupabase = createAdminClient()
+  const dbClient = adminSupabase
+  const transaction = { id: params.transactionId }
   try {
-    const cookieStore = await getCookieStore()
-    const supabase = createServerSupabaseClient({ cookieStore })
-    const { postId, userId, reward, postTitle, isPostOwnerClosing, fixDetails } = params
-
-    // SECURITY: Require verified user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return { success: false, error: 'Not authenticated' }
-    }
-
-    // SECURITY: Verify authorization for this reward transfer
-    // Two valid scenarios:
-    // 1. Fixer crediting themselves or their connected account (normal fix flow)
-    // 2. Post owner closing their own issue and designating any user as fixer
-    
-    let isAuthorized = false
-    
-    if (isPostOwnerClosing) {
-      // Verify the caller is the post owner OR a group admin
-      const { data: post, error: postError } = await supabase
-        .from('posts')
-        .select('user_id, group_id')
-        .eq('id', postId)
-        .single()
-      
-      if (postError || !post) {
-        return { success: false, error: 'Post not found' }
-      }
-      
-      // Check if user is the post owner
-      const isPostOwner = post.user_id === user.id
-      
-      // Check if user is a group admin for this post's group
-      let isGroupAdmin = false
-      if (post.group_id) {
-        const { data: membership } = await supabase
-          .from('group_members')
-          .select('role')
-          .eq('group_id', post.group_id)
-          .eq('user_id', user.id)
-          .eq('status', 'approved')
-          .single()
-        
-        isGroupAdmin = membership?.role === 'admin'
-      }
-      
-      if (isPostOwner || isGroupAdmin) {
-        isAuthorized = true
-        console.log('Post owner or group admin closing issue - authorized to transfer reward to any user')
-      }
-    } else {
-      // Normal fix flow: fixer must be crediting themselves or their connected account
-      const isOwnAccount = user.id === userId
-      const isConnectedAccount = await supabase
-        .from('connected_accounts')
-        .select('id')
-        .eq('primary_user_id', user.id)
-        .eq('connected_user_id', userId)
-        .maybeSingle()
-      
-      if (isOwnAccount || isConnectedAccount.data) {
-        isAuthorized = true
-      }
-    }
-    
-    if (!isAuthorized) {
-      console.error('SECURITY ALERT: Unauthorized reward transfer attempt', {
-        authenticatedUserId: user.id,
-        requestedUserId: userId,
-        postId,
-        isPostOwnerClosing
-      })
-      return { success: false, error: 'Unauthorized: Cannot modify another user\'s balance' }
-    }
-
-    // Validate parameters early (before any DB operations)
-    if (fixDetails && fixDetails.aiConfidence < 7) {
-      return { success: false, error: 'AI confidence too low for auto-approval' }
-    }
-
-    if (!postId || !userId || reward <= 0) {
-      return { success: false, error: 'Invalid parameters' }
-    }
-
-    // IMPORTANT: Always use admin supabase for transaction creation
-    // The INSERT policy on transactions was intentionally removed for security
-    // (prevents users from creating fake deposit transactions)
-    // All transaction creation must go through service_role
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
-
-    // Use admin client for all operations to ensure consistency
-    // This is safe because we've already verified authorization above
-    const dbClient = adminSupabase
-
-    // Get current balance, pet_coins, and fixed count
-    const { data: profile, error: profileError } = await dbClient
-      .from('profiles')
-      .select('balance, pet_coins, fixed_issues_count')
-      .eq('id', userId)
-      .single()
-
-    if (profileError || !profile) {
-      return { success: false, error: 'User profile not found' }
-    }
-
-    // Create transaction record for the fix reward earning
-    const { data: transaction, error: txError } = await dbClient
-      .from('transactions')
-      .insert({
-        user_id: userId,
-        type: 'internal', // Fix reward is an internal transaction
-        amount: reward, // Positive because it's an earning
-        status: 'completed',
-        memo: `Fix reward earned: ${postTitle || 'Issue fixed'}`,
-      })
-      .select('id')
-      .single()
-
-    if (txError || !transaction) {
-      console.error('Error creating fix reward transaction:', txError)
-      return { success: false, error: 'Failed to create transaction' }
-    }
-
-    // Update balance, pet_coins, and fixed count atomically
-    const newBalance = (profile.balance || 0) + reward
-    const newCoins = (profile.pet_coins || 0) + reward  // Also add to pet coins
-    const newFixedCount = (profile.fixed_issues_count || 0) + 1
-    
-    // SAFETY: Check balance cap for earnings (never blocks, only logs/notifies)
-    const balanceCapCheck = await checkBalanceCap(userId, newBalance, true) // isEarning=true
-    if (balanceCapCheck.capLevel !== 'none') {
-      console.log(`[Safety Caps] Earning balance cap ${balanceCapCheck.capLevel} triggered for user ${userId} (earnings never blocked)`)
-    }
-    
-    const { error: balanceError } = await dbClient
-      .from('profiles')
-      .update({
-        balance: newBalance,
-        pet_coins: newCoins,  // Update pet coins when earning rewards
-        fixed_issues_count: newFixedCount,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId)
-
-    if (balanceError) {
-      console.error('Error updating balance after fix reward transaction:', balanceError)
-      // Transaction was created but balance update failed - this is inconsistent
-      return { success: false, error: 'Transaction created but balance update failed' }
-    }
-
     // Create activity for the fix
     const activityId = uuidv4();
     console.log('[FIX REWARD] Creating fix activity for user:', userId, 'postId:', postId, 'activityId:', activityId);
@@ -1752,38 +1839,6 @@ export async function createFixRewardAction(params: {
       console.error('[FIX REWARD] ERROR creating fix activity:', activityError);
     } else {
       console.log('[FIX REWARD] Successfully created fix activity:', activityId);
-    }
-
-    // If fixDetails provided, NOW update the posts table to mark as fixed
-    // This happens AFTER transaction is created to ensure atomicity
-    // If transaction creation failed above, we wouldn't reach here and post wouldn't be marked fixed
-    if (fixDetails) {
-      const now = new Date().toISOString()
-      
-      const { error: postUpdateError } = await adminSupabase
-        .from('posts')
-        .update({
-          fixed: true,
-          fixed_at: now,
-          fixed_by: userId,
-          fixed_image_url: fixDetails.fixImageUrl,
-          fixer_note: fixDetails.fixerNote,
-          under_review: false,
-          ai_confidence_score: fixDetails.aiConfidence,
-          ai_analysis: fixDetails.aiAnalysis,
-          fixed_by_is_anonymous: false,
-        })
-        .eq('id', postId)
-        .eq('fixed', false) // Safety: only update if not already fixed
-      
-      if (postUpdateError) {
-        console.error('Error updating post in createFixRewardAction:', postUpdateError)
-        // Transaction was already created, so we have an inconsistent state
-        // Log this for manual review but don't fail the whole operation
-        console.error('[FIX REWARD] WARNING: Transaction created but post update failed. Manual intervention needed for post:', postId)
-      } else {
-        console.log(`[FIX REWARD] Post ${postId} marked as fixed by ${userId} (AI confidence: ${fixDetails.aiConfidence})`)
-      }
     }
 
     // Send email notification to post owner (if different from fixer)
@@ -1911,7 +1966,214 @@ export async function createFixRewardAction(params: {
       }
     }
 
-    console.log(`Fix reward transaction created: ${transaction.id} for post ${postId}, ${reward} sats earned`)
+  } catch (error) {
+    console.error('[notifyFixRewardPaid] Error sending notifications:', error)
+  }
+}
+
+export async function createFixRewardAction(params: {
+  postId: string
+  userId: string
+  /** IGNORED: the post's stored reward is always what gets paid. Kept for call-site compatibility. */
+  reward?: number
+  postTitle?: string
+  isPostOwnerClosing?: boolean // Post owner / group admin approving the submitted fix
+  // Fixer auto-approval: the server re-verifies this image itself
+  fixDetails?: {
+    fixImageUrl: string
+    fixerNote: string | null
+    /** IGNORED: the server computes its own confidence. */
+    aiConfidence?: number
+    aiAnalysis?: string | null
+  }
+}): Promise<{ success: boolean; error?: string; transactionId?: string; newBalance?: number }> {
+  'use server'
+
+  try {
+    const cookieStore = await getCookieStore()
+    const supabase = createServerSupabaseClient({ cookieStore })
+    const { postId, userId, isPostOwnerClosing, fixDetails } = params
+
+    // SECURITY: Require verified user
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return { success: false, error: 'Not authenticated' }
+    }
+
+    if (!postId || !userId) {
+      return { success: false, error: 'Invalid parameters' }
+    }
+
+    const admin = createAdminClient()
+    const { data: post, error: postError } = await admin
+      .from('posts')
+      .select('id, user_id, group_id, title, description, reward, image_url, fixed, fixed_by, deleted_at, reward_paid_at, funding_status, funding_r_hash, submitted_fix_by_id, submitted_fix_image_url, submitted_fix_note, submitted_fix_proof_text')
+      .eq('id', postId)
+      .single()
+
+    if (postError || !post) {
+      return { success: false, error: 'Post not found' }
+    }
+    if (post.deleted_at) {
+      return { success: false, error: 'Post has been deleted' }
+    }
+    if (post.reward_paid_at) {
+      return { success: false, error: 'This reward has already been paid' }
+    }
+
+    const nowIso = new Date().toISOString()
+    let markedFixedHere = false
+
+    if (isPostOwnerClosing) {
+      // SECURITY: caller must be the post owner or an approved group admin
+      let isAuthorized = post.user_id === user.id
+      if (!isAuthorized && post.group_id) {
+        const { data: membership } = await admin
+          .from('group_members')
+          .select('role')
+          .eq('group_id', post.group_id)
+          .eq('user_id', user.id)
+          .eq('status', 'approved')
+          .maybeSingle()
+        isAuthorized = membership?.role === 'admin'
+      }
+      if (!isAuthorized) {
+        console.error('SECURITY ALERT: Unauthorized fix approval attempt', { authenticatedUserId: user.id, postId })
+        return { success: false, error: 'Unauthorized: only the post owner or a group admin can approve this fix' }
+      }
+
+      // SECURITY: the reward goes to whoever actually submitted the fix (or the
+      // fixer the owner designated when closing), never to an arbitrary user.
+      const designatedFixer = post.submitted_fix_by_id ?? post.fixed_by
+      if (!designatedFixer || designatedFixer !== userId) {
+        console.error('SECURITY ALERT: Approval payout to a user who did not submit the fix', { postId, userId, designatedFixer })
+        return { success: false, error: 'This user did not submit the fix for this post' }
+      }
+
+      if (!(await isPostRewardFunded(admin, post))) {
+        console.error('SECURITY: Attempted payout for unfunded post', { postId, approverId: user.id })
+        return { success: false, error: "This post's reward was never funded. Cannot issue reward." }
+      }
+
+      // Mark fixed server-side (browser sessions can't set fixed/fixed_by).
+      if (!post.fixed) {
+        const { data: updated } = await admin
+          .from('posts')
+          .update({
+            fixed: true,
+            fixed_at: nowIso,
+            fixed_by: userId,
+            fixed_by_is_anonymous: false,
+            fixed_image_url: post.submitted_fix_image_url,
+            fixer_note: post.submitted_fix_note,
+            fix_proof_text: post.submitted_fix_proof_text || null,
+            under_review: false,
+          })
+          .eq('id', postId)
+          .eq('fixed', false)
+          .select('id')
+        markedFixedHere = !!updated?.length
+      }
+    } else {
+      // Fixer auto-approval: fixer must be crediting themselves or a connected account
+      const isOwnAccount = user.id === userId
+      const { data: connected } = await admin
+        .from('connected_accounts')
+        .select('id')
+        .eq('primary_user_id', user.id)
+        .eq('connected_user_id', userId)
+        .maybeSingle()
+      if (!isOwnAccount && !connected) {
+        console.error('SECURITY ALERT: Unauthorized reward transfer attempt', { authenticatedUserId: user.id, requestedUserId: userId, postId })
+        return { success: false, error: "Unauthorized: Cannot modify another user's balance" }
+      }
+
+      if (!fixDetails?.fixImageUrl) {
+        return { success: false, error: 'A photo of the fix is required for automatic approval' }
+      }
+      if (post.fixed) {
+        return { success: false, error: 'This issue has already been fixed' }
+      }
+      if (!(await isPostRewardFunded(admin, post))) {
+        console.error('SECURITY: Attempted auto-approval payout for unfunded post', { postId, fixerId: userId })
+        return { success: false, error: "This post's reward was never funded. Cannot issue reward." }
+      }
+
+      // SECURITY: never trust a client-supplied AI score; verify on the server
+      // against the post's stored "before" image.
+      const verification = await verifyFixForPost(post, fixDetails.fixImageUrl)
+      if (!verification) {
+        return { success: false, error: 'Could not verify the fix automatically. Please submit it for review.' }
+      }
+      if (verification.confidence < AUTO_APPROVE_CONFIDENCE) {
+        return { success: false, error: 'AI confidence too low for auto-approval' }
+      }
+
+      // Claim the post atomically: only one fixer can mark it fixed.
+      const { data: claimed } = await admin
+        .from('posts')
+        .update({
+          fixed: true,
+          fixed_at: nowIso,
+          fixed_by: userId,
+          fixed_by_is_anonymous: false,
+          fixed_image_url: fixDetails.fixImageUrl,
+          fixer_note: fixDetails.fixerNote,
+          under_review: false,
+          ai_confidence_score: verification.confidence,
+          ai_analysis: verification.reasoning,
+        })
+        .eq('id', postId)
+        .eq('fixed', false)
+        .is('deleted_at', null)
+        .select('id')
+      if (!claimed?.length) {
+        return { success: false, error: 'This issue has already been fixed' }
+      }
+      markedFixedHere = true
+    }
+
+    // Posts without a reward: nothing to pay.
+    if (!post.reward || post.reward <= 0) {
+      return { success: true }
+    }
+
+    const payout = await payFixReward(admin, {
+      postId,
+      fixerId: userId,
+      memo: `Fix reward earned: ${post.title || 'Issue fixed'}`,
+    })
+
+    if (!payout.success) {
+      // Don't leave a post marked fixed by this request without its reward.
+      if (markedFixedHere && payout.code !== 'reward_already_paid') {
+        await admin
+          .from('posts')
+          .update({ fixed: false, fixed_at: null, fixed_by: null })
+          .eq('id', postId)
+          .eq('fixed_by', userId)
+          .is('reward_paid_at', null)
+      }
+      return { success: false, error: payout.error }
+    }
+
+    await notifyFixRewardPaid({
+      postId,
+      fixerId: userId,
+      reward: payout.amount,
+      postTitle: post.title || params.postTitle,
+      transactionId: payout.transactionId,
+      isPostOwnerClosing: !!isPostOwnerClosing,
+    })
+    const transaction = { id: payout.transactionId }
+    const reward = payout.amount
+    const newBalance = payout.newBalance
+
+    console.log(`Fix reward paid: ${transaction.id} for post ${postId}, ${reward} sats to ${userId}`)
     return { success: true, transactionId: transaction.id, newBalance }
   } catch (error) {
     console.error('Error in createFixRewardAction:', error)
@@ -2025,45 +2287,17 @@ export async function closeIssueAction(
 
     // SECURITY: Verify the post reward was actually funded (has a matching deduction transaction).
     // Without this, an attacker can create a post with any reward amount, skip the balance
-    // deduction (e.g. via a preview deployment or race condition), then approve the fix
-    // to mint sats from nothing.
-    if (post.reward && post.reward > 0) {
-      const adminSupabase = createServerSupabaseClient({
-        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    // deduction, then approve the fix to mint sats from nothing.
+    const admin = createAdminClient()
+    if (!(await isPostRewardFunded(admin, { id: postId, user_id: post.user_id, reward: post.reward }))) {
+      console.error('SECURITY: Attempted to close unfunded reward post', {
+        postId,
+        postOwnerId: post.user_id,
+        reward: post.reward,
+        closedBy: user.id,
+        timestamp: new Date().toISOString(),
       })
-
-      const { data: fundingTx } = await adminSupabase
-        .from('transactions')
-        .select('id')
-        .eq('user_id', post.user_id)
-        .eq('type', 'internal')
-        .eq('status', 'completed')
-        .lt('amount', 0)
-        .ilike('memo', `%${postId.substring(0, 8)}%`)
-        .limit(1)
-
-      // Also check for anonymous L402 posts which are funded via Lightning payment
-      const { data: l402Tx } = await adminSupabase
-        .from('transactions')
-        .select('id')
-        .eq('type', 'deposit')
-        .eq('status', 'completed')
-        .gte('amount', post.reward)
-        .ilike('memo', `%${postId.substring(0, 8)}%`)
-        .limit(1)
-
-      const isFunded = (fundingTx && fundingTx.length > 0) || (l402Tx && l402Tx.length > 0)
-
-      if (!isFunded) {
-        console.error('SECURITY: Attempted to close unfunded reward post', {
-          postId,
-          postOwnerId: post.user_id,
-          reward: post.reward,
-          closedBy: user.id,
-          timestamp: new Date().toISOString(),
-        })
-        return { success: false, error: 'This post\'s reward was never funded. Cannot issue reward.' }
-      }
+      return { success: false, error: 'This post\'s reward was never funded. Cannot issue reward.' }
     }
 
     // Look up the fixer by username
@@ -2077,36 +2311,59 @@ export async function closeIssueAction(
       return { success: false, error: `User "${fixerUsername}" not found` }
     }
 
-    // Update the post to mark it as fixed
+    // Mark fixed atomically (service role: browser sessions can't set fixed/fixed_by)
     const nowIso = new Date().toISOString()
-    const { error: updateError } = await supabase
+    const { data: closed, error: updateError } = await admin
       .from('posts')
       .update({
         fixed: true,
         fixed_at: nowIso,
         fixed_by: fixerProfile.id,
+        fixed_by_is_anonymous: false,
+        under_review: false,
       })
       .eq('id', postId)
+      .eq('fixed', false)
+      .is('deleted_at', null)
+      .select('id')
 
     if (updateError) {
       console.error('Error updating post:', updateError)
       return { success: false, error: 'Failed to update post' }
     }
+    if (!closed?.length) {
+      return { success: false, error: 'Post is already marked as fixed' }
+    }
 
-    // Use createFixRewardAction to handle reward transfer, activities, and emails
-    // Pass isPostOwnerClosing=true to allow transfer to any user (not just connected accounts)
-    const rewardResult = await createFixRewardAction({
-      postId,
-      userId: fixerProfile.id,
-      reward: post.reward || 0,
-      postTitle: post.title,
-      isPostOwnerClosing: true // Allow poster to designate any user as fixer
-    })
+    // Pay the stored reward exactly once (atomic in the database)
+    if (post.reward && post.reward > 0) {
+      const payout = await payFixReward(admin, {
+        postId,
+        fixerId: fixerProfile.id,
+        memo: `Fix reward earned: ${post.title || 'Issue fixed'}`,
+      })
 
-    if (!rewardResult.success) {
-      console.error('Error creating fix reward:', rewardResult.error)
-      // Post is already marked as fixed, return failure so user knows reward wasn't transferred
-      return { success: false, error: rewardResult.error || 'Failed to transfer reward' }
+      if (!payout.success) {
+        console.error('Error paying fix reward:', payout.error)
+        if (payout.code !== 'reward_already_paid') {
+          await admin
+            .from('posts')
+            .update({ fixed: false, fixed_at: null, fixed_by: null })
+            .eq('id', postId)
+            .eq('fixed_by', fixerProfile.id)
+            .is('reward_paid_at', null)
+        }
+        return { success: false, error: payout.error || 'Failed to transfer reward' }
+      }
+
+      await notifyFixRewardPaid({
+        postId,
+        fixerId: fixerProfile.id,
+        reward: payout.amount,
+        postTitle: post.title,
+        transactionId: payout.transactionId,
+        isPostOwnerClosing: true,
+      })
     }
 
     // NOTIFICATION: Send email to post owner when a group admin closes their issue
@@ -2238,26 +2495,32 @@ export async function deletePostAction(
       return { success: false, error: 'Post has already been deleted' }
     }
 
-    // Soft delete the post
+    // IMPORTANT: Use admin supabase for the soft delete, transaction creation and balance updates
+    // (deleted_at, balances and transactions are service_role-only)
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
+    // Soft delete the post atomically: only the request that actually deletes
+    // it continues to the refund, so repeated calls can't refund twice.
     const nowIso = new Date().toISOString()
-    const { error: updateError } = await supabase
+    const { data: deletedRows, error: updateError } = await adminSupabase
       .from('posts')
       .update({
         deleted_at: nowIso,
       })
       .eq('id', postId)
+      .is('deleted_at', null)
+      .eq('fixed', false)
+      .select('id')
 
     if (updateError) {
       console.error('Error deleting post:', updateError)
       return { success: false, error: 'Failed to delete post' }
     }
-
-    // IMPORTANT: Use admin supabase for transaction creation and balance updates
-    // The RLS policy for transaction inserts was removed for security
-    // The prevent_direct_balance_update trigger only allows service_role to modify balances
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
+    if (!deletedRows?.length) {
+      return { success: false, error: 'Post has already been deleted or fixed' }
+    }
 
     // Create activity for the deletion
     await adminSupabase.from('activities').insert({

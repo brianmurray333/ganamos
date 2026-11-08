@@ -1,5 +1,6 @@
 "use client"
 
+import { getClaimToken } from "@/lib/anonymous-claim"
 import { useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
@@ -71,7 +72,7 @@ export default function AuthCallbackPage() {
               try {
                 // Import and call the claim action
                 const { claimAnonymousRewardAction } = await import('@/app/actions/post-actions')
-                const result = await claimAnonymousRewardAction(pendingRewardPost, data.session.user.id)
+                const result = await claimAnonymousRewardAction(pendingRewardPost, data.session.user.id, getClaimToken(pendingRewardPost))
                 
                 if (result.success) {
                   console.log("Successfully claimed anonymous reward!")

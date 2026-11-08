@@ -1,3 +1,4 @@
+import { isAuthorizedCronRequest } from "@/lib/cron-auth"
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
@@ -11,13 +12,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
-    // Authentication: Allow Vercel cron headers OR valid Bearer token
-    const isVercelCron = request.headers.get('x-vercel-id') || request.headers.get('x-vercel-cron')
-    if (!isVercelCron) {
-      const authHeader = request.headers.get('authorization')
-      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    // Only Vercel Cron (Bearer CRON_SECRET) or an operator with the secret
+    if (!isAuthorizedCronRequest(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     // Initialize admin Supabase client (service role)
