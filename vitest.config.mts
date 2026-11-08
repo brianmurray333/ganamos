@@ -5,6 +5,12 @@ import { fileURLToPath } from 'url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
+  // App components rely on the React 17+ automatic JSX runtime (no `import React`),
+  // matching Next.js. Without this, esbuild's classic transform throws
+  // "React is not defined" when rendering app pages in component tests.
+  esbuild: {
+    jsx: 'automatic',
+  },
   test: {
     globals: true,
     environment: 'node',

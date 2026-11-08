@@ -1,1316 +1,373 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createMockCookieStore } from '@/tests/mocks'
 
-// Create mock cookie store
+/**
+ * checkDepositStatus (app/actions/lightning-actions.ts) against a small stateful
+ * in-memory database.
+ *
+ * Call-by-call behavior (session, ownership, amount mismatch, notifications,
+ * cache revalidation, error branches) is covered with chain mocks in
+ * tests/unit/actions/deposit-invoice.test.ts. This file covers what chain mocks
+ * cannot: the resulting *state* (balances, transaction status, activities) and
+ * what happens when two checks for the same invoice run concurrently.
+ *
+ * History: this file used to hold a describe.skip'd suite written against an
+ * API that never existed in this codebase (an `increment_user_balance` RPC, an
+ * `r_hash` column, a single Supabase client, a preimage in the response). It was
+ * replaced by this suite, which keeps that suite's intents (auth, ownership,
+ * idempotency, no double credit, failure atomicity, zero-amount, concurrency).
+ */
+
 const mockCookieStore = createMockCookieStore()
 
-// Mock Next.js cookies (MUST be at top level before imports)
 vi.mock('next/headers', () => ({
   cookies: vi.fn(() => Promise.resolve(mockCookieStore)),
 }))
 
-// Mock dependencies
 vi.mock('@/lib/lightning', () => ({
   checkInvoice: vi.fn(),
+  createInvoice: vi.fn(),
+  payInvoice: vi.fn(),
 }))
 
-// @/lib/supabase mock provided by tests/setup.ts
-
 vi.mock('@/lib/transaction-emails', () => ({
-  sendBitcoinReceivedEmail: vi.fn(),
+  sendBitcoinReceivedEmail: vi.fn(() => Promise.resolve({ success: true })),
+}))
+
+vi.mock('@/lib/sms-alerts', () => ({
+  alertLargeDeposit: vi.fn(() => Promise.resolve()),
+}))
+
+vi.mock('@/lib/safety-caps', () => ({
+  checkBalanceCap: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({
   revalidatePath: vi.fn(),
 }))
 
-vi.mock('uuid', () => ({
-  v4: vi.fn(() => 'mock-uuid-activity-123'),
-}))
-
-// Import after mocks
 import { checkDepositStatus } from '@/app/actions/lightning-actions'
 import { checkInvoice } from '@/lib/lightning'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { sendBitcoinReceivedEmail } from '@/lib/transaction-emails'
-import { revalidatePath } from 'next/cache'
+import { checkBalanceCap } from '@/lib/safety-caps'
 import {
   createMockSettledInvoiceResponse,
   createMockUnsettledInvoiceResponse,
-  createMockInvoiceErrorResponse,
 } from '@/tests/unit/helpers/invoice-status-helpers'
-import {
-  createTestTransaction,
-  validateBalanceMatchesTransactions,
-} from '@/tests/unit/helpers/transaction-test-utils'
+
+const USER_ID = 'user-depositor'
+const OTHER_USER_ID = 'user-other'
+const R_HASH = 'a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456'
+const TX_ID = 'tx-deposit-1'
+const START_BALANCE = 5000
+const DEPOSIT = 1000
+
+type Row = Record<string, any>
+type Tables = Record<string, Row[]>
 
 /**
- * NOTE: These tests are currently disabled due to implementation mismatch.
- * 
- * Issues found that need to be addressed in a separate PR:
- * 1. Implementation uses `r_hash_str` but tests expect `r_hash`
- * 2. Implementation doesn't use RPC for balance updates, uses direct UPDATE
- * 3. Implementation creates TWO Supabase clients (user client + admin client with service role)
- * 4. Implementation updates both `balance` and `pet_coins` fields
- * 5. Implementation doesn't return `preimage` in response
- * 6. Implementation checks invoice BEFORE verifying transaction ownership
- * 7. Activity records use `metadata` field with nested object
- * 
- * These tests need to be rewritten to match actual implementation behavior,
- * or the implementation needs to be refactored to match expected behavior.
+ * Minimal stateful stand-in for the Supabase query builder: supports the
+ * select/eq/single, update/eq and insert chains checkDepositStatus uses.
+ * Every operation yields to the event loop (optionally with extra latency) so
+ * concurrent calls genuinely interleave, like real network round trips.
  */
+function createFakeDb(initial: Tables) {
+  const tables: Tables = JSON.parse(JSON.stringify(initial))
+  const opts = {
+    session: { user: { id: USER_ID } } as any,
+    /** Extra latency (ms) per operation, decided per call */
+    latency: (_table: string, _op: string, _columns: string) => 0,
+    /** Inject an error for an update */
+    failUpdate: (_table: string, _payload: Row): any => null,
+  }
 
-describe.skip('checkDepositStatus', () => {
-  const TEST_USER_ID = 'test-user-123'
-  const TEST_R_HASH = 'a1b2c3d4e5f6'
-  const TEST_TRANSACTION_ID = 'txn-123'
-  const TEST_DEPOSIT_AMOUNT = 1000
+  const matches = (row: Row, filters: [string, any][]) => filters.every(([c, v]) => row[c] === v)
+  const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
 
-  let mockSupabaseClient: any
-  let mockAuth: any
-  let mockFrom: any
+  function builder(table: string) {
+    const filters: [string, any][] = []
+    let op: 'select' | 'update' | 'insert' = 'select'
+    let payload: any
+    let columns = '*'
+
+    const run = async () => {
+      await wait(opts.latency(table, op, columns))
+      const rows = (tables[table] ||= [])
+      if (op === 'update') {
+        const error = opts.failUpdate(table, payload)
+        if (error) return { data: null, error }
+        rows.filter(r => matches(r, filters)).forEach(r => Object.assign(r, payload))
+        return { data: null, error: null }
+      }
+      if (op === 'insert') {
+        rows.push(...(Array.isArray(payload) ? payload : [payload]))
+        return { data: null, error: null }
+      }
+      return { data: rows.filter(r => matches(r, filters)).map(r => ({ ...r })), error: null }
+    }
+
+    const q: any = {
+      select: (cols: string = '*') => {
+        columns = cols
+        return q
+      },
+      eq: (col: string, val: any) => {
+        filters.push([col, val])
+        return q
+      },
+      update: (p: Row) => {
+        op = 'update'
+        payload = p
+        return q
+      },
+      insert: (p: Row) => {
+        op = 'insert'
+        payload = p
+        return q
+      },
+      single: async () => {
+        const { data, error } = await run()
+        if (error) return { data: null, error }
+        return data.length === 1
+          ? { data: data[0], error: null }
+          : { data: null, error: { code: 'PGRST116', message: 'not exactly one row' } }
+      },
+      then: (resolve: any, reject: any) => run().then(resolve, reject),
+    }
+    return q
+  }
+
+  const client = {
+    auth: {
+      getSession: vi.fn(async () => ({ data: { session: opts.session }, error: null })),
+    },
+    from: vi.fn((table: string) => builder(table)),
+  }
+
+  return { tables, opts, client }
+}
+
+function seed(overrides: { tx?: Partial<Row>; profile?: Partial<Row> } = {}): Tables {
+  return {
+    transactions: [
+      {
+        id: TX_ID,
+        user_id: USER_ID,
+        type: 'deposit',
+        amount: DEPOSIT,
+        status: 'pending',
+        r_hash_str: R_HASH,
+        ...overrides.tx,
+      },
+    ],
+    profiles: [
+      {
+        id: USER_ID,
+        balance: START_BALANCE,
+        pet_coins: START_BALANCE,
+        email: 'depositor@example.com',
+        name: 'Depositor',
+        ...overrides.profile,
+      },
+    ],
+    activities: [],
+  }
+}
+
+describe('checkDepositStatus - resulting state (stateful fake DB)', () => {
+  let db: ReturnType<typeof createFakeDb>
+
+  const profile = () => db.tables.profiles.find(p => p.id === USER_ID)!
+  const tx = () => db.tables.transactions.find(t => t.id === TX_ID)!
+  const depositActivities = () => db.tables.activities.filter(a => a.type === 'deposit')
+
+  function useDb(initial: Tables) {
+    db = createFakeDb(initial)
+    vi.mocked(createServerSupabaseClient).mockReturnValue(db.client as any)
+    return db
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
-
-    // Setup mock Supabase client with fluent API
-    mockFrom = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn(),
-      update: vi.fn().mockReturnThis(),
-      insert: vi.fn().mockReturnThis(),
-    }
-
-    mockAuth = {
-      getSession: vi.fn(),
-    }
-
-    mockSupabaseClient = {
-      from: vi.fn().mockReturnValue(mockFrom),
-      auth: mockAuth,
-      rpc: vi.fn(),
-    }
-
-    vi.mocked(createServerSupabaseClient).mockResolvedValue(mockSupabaseClient)
-    vi.mocked(sendBitcoinReceivedEmail).mockResolvedValue(undefined)
-    vi.mocked(revalidatePath).mockReturnValue(undefined)
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.SUPABASE_SECRET_API_KEY = 'mock-secret-api-key'
+    vi.mocked(checkBalanceCap).mockResolvedValue({ allowed: true, capLevel: 'none' })
+    vi.mocked(checkInvoice).mockResolvedValue(
+      createMockSettledInvoiceResponse({ amountPaid: String(DEPOSIT) }) as any
+    )
+    useDb(seed())
   })
 
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
+  describe('single check', () => {
+    it('credits balance and pet_coins exactly once and completes the transaction', async () => {
+      const result = await checkDepositStatus(R_HASH)
 
-  describe('Authentication & Authorization', () => {
-    it('should reject when no session exists', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: { session: null },
-        error: null,
-      })
+      expect(result).toMatchObject({ success: true, settled: true, amount: DEPOSIT, newBalance: START_BALANCE + DEPOSIT })
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(profile().pet_coins).toBe(START_BALANCE + DEPOSIT)
+      expect(tx().status).toBe('completed')
+      expect(tx().amount).toBe(DEPOSIT)
+      expect(depositActivities()).toHaveLength(1)
+      expect(depositActivities()[0]).toMatchObject({ user_id: USER_ID, related_id: TX_ID, metadata: { amount: DEPOSIT, status: 'completed' } })
+    })
 
-      const result = await checkDepositStatus(TEST_R_HASH)
+    it('is idempotent: a second sequential check does not credit again', async () => {
+      await checkDepositStatus(R_HASH)
+      const second = await checkDepositStatus(R_HASH)
 
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/not authenticated|no session/i)
+      expect(second).toMatchObject({ success: true, settled: true, newBalance: null })
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(profile().pet_coins).toBe(START_BALANCE + DEPOSIT)
+      expect(depositActivities()).toHaveLength(1)
+    })
+
+    it('credits the amount actually paid, not the amount the invoice was created for', async () => {
+      vi.mocked(checkInvoice).mockResolvedValue(createMockSettledInvoiceResponse({ amountPaid: '1500' }) as any)
+
+      await checkDepositStatus(R_HASH)
+
+      expect(profile().balance).toBe(START_BALANCE + 1500)
+      expect(tx().amount).toBe(1500)
+    })
+
+    it('does not change anything while the invoice is unsettled', async () => {
+      vi.mocked(checkInvoice).mockResolvedValue(createMockUnsettledInvoiceResponse() as any)
+
+      const result = await checkDepositStatus(R_HASH)
+
+      expect(result).toEqual({ success: true, settled: false })
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(tx().status).toBe('pending')
+      expect(depositActivities()).toHaveLength(0)
+    })
+
+    it('rejects without a session and changes nothing', async () => {
+      db.opts.session = null
+
+      const result = await checkDepositStatus(R_HASH)
+
+      expect(result).toMatchObject({ success: false, error: 'Not authenticated' })
       expect(checkInvoice).not.toHaveBeenCalled()
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(tx().status).toBe('pending')
     })
 
-    it('should reject when userId does not match session user', async () => {
-      // Setup session with different user
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: 'different-user-456' },
-          },
-        },
-        error: null,
-      })
+    it("does not credit another user's pending deposit to the caller, nor to its owner", async () => {
+      useDb(seed({ tx: { user_id: OTHER_USER_ID } }))
+      db.tables.profiles.push({ id: OTHER_USER_ID, balance: 0, pet_coins: 0 })
 
-      // Setup transaction owned by TEST_USER_ID
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'pending',
-          type: 'deposit',
-        },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
+      const result = await checkDepositStatus(R_HASH)
 
       expect(result.success).toBe(false)
-      expect(result.error).toMatch(/not authorized|unauthorized/i)
-      expect(checkInvoice).not.toHaveBeenCalled()
+      expect(result.error).toMatch(/Unauthorized/)
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(db.tables.profiles.find(p => p.id === OTHER_USER_ID)!.balance).toBe(0)
+      expect(tx().status).toBe('pending')
     })
 
-    it('should allow authorized user to check their own deposit', async () => {
-      // Setup session with matching user
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
+    it("does not report another user's completed deposit as the caller's", async () => {
+      useDb(seed({ tx: { user_id: OTHER_USER_ID, status: 'completed' } }))
 
-      // Setup transaction owned by same user
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
+      const result = await checkDepositStatus(R_HASH)
 
-      // Mock settled invoice
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage-123',
-        })
-      )
+      expect(result).toEqual({ success: false, error: 'Unauthorized' })
+      expect(profile().balance).toBe(START_BALANCE)
+    })
 
-      // Mock successful balance update
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
+    it('blocks the credit (and leaves the transaction pending) when the hard balance cap would be exceeded', async () => {
+      vi.mocked(checkBalanceCap).mockResolvedValue({ allowed: false, capLevel: 'hard', message: 'cap' })
 
-      // Mock successful transaction update
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
+      const result = await checkDepositStatus(R_HASH)
 
-      // Mock successful activity insert
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
+      expect(result).toMatchObject({ success: false, settled: true })
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(tx().status).toBe('pending')
+      expect(depositActivities()).toHaveLength(0)
+    })
 
-      const result = await checkDepositStatus(TEST_R_HASH)
+    it('handles a zero-amount settled invoice without changing the balance or logging an activity', async () => {
+      useDb(seed({ tx: { amount: 0 } }))
+      // createMockSettledInvoiceResponse treats '0' as falsy and defaults to 1000; force 0
+      vi.mocked(checkInvoice).mockResolvedValue({ ...(createMockSettledInvoiceResponse() as any), amountPaid: '0' })
 
-      expect(result.success).toBe(true)
-      expect(checkInvoice).toHaveBeenCalledWith(TEST_R_HASH)
+      const result = await checkDepositStatus(R_HASH)
+
+      expect(result).toMatchObject({ success: true, settled: true, amount: 0 })
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(depositActivities()).toHaveLength(0)
+    })
+
+    // REAL BUG? lightning-actions.ts marks the transaction "completed" (L315-322) BEFORE
+    // crediting the balance (L332-339), in two separate non-transactional writes. If the
+    // balance write fails, the transaction stays "completed" with no credit, and every
+    // later poll takes the "already completed" branch (L221-246) and returns success with
+    // newBalance: null, so the user's paid deposit is never credited. Intended behavior
+    // (from the original suite's "balance update failure and rollback" case): a failed
+    // credit must leave the deposit retryable. Remove `.fails` once that holds.
+    it.fails('leaves the deposit retryable when the balance update fails', async () => {
+      db.opts.failUpdate = (table, payload) =>
+        table === 'profiles' && 'balance' in payload ? { message: 'balance update failed' } : null
+
+      const first = await checkDepositStatus(R_HASH)
+      expect(first).toMatchObject({ success: false, error: 'Failed to update balance' })
+      expect(profile().balance).toBe(START_BALANCE)
+
+      // Database recovers; the next poll must credit the deposit
+      db.opts.failUpdate = () => null
+      await checkDepositStatus(R_HASH)
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
     })
   })
 
-  describe('Idempotency', () => {
-    it('should not credit balance twice for already completed transactions', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
+  describe('concurrent checks of the same invoice', () => {
+    it('does not credit anything when concurrent checks see an unsettled invoice', async () => {
+      vi.mocked(checkInvoice).mockResolvedValue(createMockUnsettledInvoiceResponse() as any)
 
-      // Transaction already completed
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'completed',
-          type: 'deposit',
-          preimage: 'existing-preimage-123',
-        },
-        error: null,
-      })
+      const results = await Promise.all([checkDepositStatus(R_HASH), checkDepositStatus(R_HASH)])
 
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(result.message).toMatch(/already.*completed/i)
-      expect(checkInvoice).not.toHaveBeenCalled()
-      expect(mockSupabaseClient.rpc).not.toHaveBeenCalled()
+      results.forEach(r => expect(r).toEqual({ success: true, settled: false }))
+      expect(profile().balance).toBe(START_BALANCE)
+      expect(tx().status).toBe('pending')
     })
 
-    it('should return existing result without double-processing', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
+    // REAL BUG? Double credit race. checkDepositStatus reads the pending transaction
+    // (L210-215), then marks it completed with `.update(...).eq("id", transaction.id)`
+    // (L315-322) WITHOUT a `status = 'pending'` guard (no compare-and-set / row lock / RPC),
+    // and credits with a read-modify-write of profiles.balance (L279-292, L332-339).
+    // Two overlapping calls (the deposit page polls on setInterval; a client can also call
+    // the server action directly) can both pass the pending check and both credit.
+    // Here call B reads the pending transaction before A completes it, but its profile read
+    // is slower (lands after A's credit), so B adds the deposit a second time.
+    it.fails('credits a settled deposit exactly once when two checks overlap', async () => {
+      let profileReads = 0
+      db.opts.latency = (table, op, columns) => {
+        if (table === 'profiles' && op === 'select' && columns.includes('balance')) {
+          profileReads++
+          // 2nd profile read (call B's) is slow: it lands after A has credited
+          return profileReads === 2 ? 30 : 0
+        }
+        return 0
+      }
 
-      const existingPreimage = 'completed-preimage-abc'
+      const results = await Promise.all([checkDepositStatus(R_HASH), checkDepositStatus(R_HASH)])
 
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'completed',
-          type: 'deposit',
-          preimage: existingPreimage,
-        },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(result.preimage).toBe(existingPreimage)
-      expect(sendBitcoinReceivedEmail).not.toHaveBeenCalled()
-      expect(mockFrom.insert).not.toHaveBeenCalled() // No new activity record
-    })
-  })
-
-  describe('Lightning Network Integration', () => {
-    it('should successfully process settled invoice', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      const settledPreimage = 'settled-preimage-xyz'
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: settledPreimage,
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(result.preimage).toBe(settledPreimage)
-      expect(checkInvoice).toHaveBeenCalledWith(TEST_R_HASH)
-      expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
-        'increment_user_balance',
-        expect.objectContaining({
-          user_id: TEST_USER_ID,
-          amount: TEST_DEPOSIT_AMOUNT,
-        })
-      )
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(profile().pet_coins).toBe(START_BALANCE + DEPOSIT)
+      expect(depositActivities()).toHaveLength(1)
+      expect(results.filter(r => r.success && r.newBalance != null)).toHaveLength(1)
     })
 
-    it('should return pending status for unsettled invoice', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'pending',
-          type: 'deposit',
-        },
-        error: null,
-      })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockUnsettledInvoiceResponse()
-      )
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(false)
-      expect(result.preimage).toBeNull()
-      expect(mockSupabaseClient.rpc).not.toHaveBeenCalled()
-      expect(sendBitcoinReceivedEmail).not.toHaveBeenCalled()
-    })
-
-    it('should handle Lightning network errors gracefully', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'pending',
-          type: 'deposit',
-        },
-        error: null,
-      })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockInvoiceErrorResponse('Failed to check invoice', {
-          details: 'LND connection refused',
-        })
-      )
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/failed to check invoice/i)
-      expect(mockSupabaseClient.rpc).not.toHaveBeenCalled()
-    })
-
-    it('should handle network timeout errors', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValueOnce({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'pending',
-          type: 'deposit',
-        },
-        error: null,
-      })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockInvoiceErrorResponse('Request timeout', {
-          details: 'ETIMEDOUT',
-        })
-      )
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBeTruthy()
-    })
-  })
-
-  describe('Database Operations', () => {
-    it('should handle transaction not found', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'Transaction not found', code: 'PGRST116' },
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/transaction.*not found/i)
-      expect(checkInvoice).not.toHaveBeenCalled()
-    })
-
-    it('should handle profile not found', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: null,
-          error: { message: 'Profile not found', code: 'PGRST116' },
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/profile.*not found/i)
-    })
-
-    it('should handle balance update failure and rollback', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: null,
-        error: { message: 'Failed to update balance', code: 'P0001' },
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/failed to update balance/i)
-      expect(mockFrom.update).not.toHaveBeenCalled()
-      expect(sendBitcoinReceivedEmail).not.toHaveBeenCalled()
-    })
-
-    it('should handle transaction update failure', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: null,
-        error: { message: 'Failed to update transaction', code: 'P0001' },
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/failed to update transaction/i)
-    })
-  })
-
-  describe('Amount Mismatch Handling', () => {
-    it('should handle when actual amount paid differs from expected', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      const expectedAmount = 1000
-      const actualAmountPaid = 1500 // Different amount
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: expectedAmount,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: actualAmountPaid.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6500 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      // Spy on console.warn to verify security alert
-      const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      // Should still succeed but log warning
-      expect(result.success).toBe(true)
-      expect(consoleWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('SECURITY ALERT'),
-        expect.objectContaining({
-          transactionId: TEST_TRANSACTION_ID,
-          preSpecifiedAmount: expectedAmount,
-          actualAmountPaid,
-        })
-      )
-
-      // Should credit the actual amount paid
-      expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
-        'increment_user_balance',
-        expect.objectContaining({
-          amount: actualAmountPaid,
-        })
-      )
-
-      consoleWarnSpy.mockRestore()
-    })
-
-    it('should credit actual amount when no pre-specified amount exists', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      const actualAmountPaid = 2000
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: null, // No pre-specified amount
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: actualAmountPaid.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 7000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
-        'increment_user_balance',
-        expect.objectContaining({
-          amount: actualAmountPaid,
-        })
-      )
-    })
-  })
-
-  describe('Email Notifications', () => {
-    it('should send email notification on successful deposit', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      const userEmail = 'user@example.com'
-      const userName = 'Test User'
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: userEmail,
-            name: userName,
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(sendBitcoinReceivedEmail).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toEmail: userEmail,
-          userName: userName,
-          amountSats: TEST_DEPOSIT_AMOUNT,
-          transactionType: 'deposit',
-        })
-      )
-    })
-
-    it('should not fail transaction if email notification fails', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      vi.mocked(sendBitcoinReceivedEmail).mockRejectedValue(
-        new Error('SMTP connection failed')
-      )
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      // Transaction should still succeed even if email fails
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('email'),
-        expect.any(Error)
-      )
-
-      consoleErrorSpy.mockRestore()
-    })
-  })
-
-  describe('Activity Records', () => {
-    it('should create activity record on successful deposit', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(mockFrom.insert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: TEST_USER_ID,
-          type: 'deposit',
-          amount: TEST_DEPOSIT_AMOUNT,
-        })
-      )
-    })
-
-    it('should not fail transaction if activity record creation fails', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: null,
-        error: { message: 'Failed to create activity', code: 'P0001' },
-      })
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      // Transaction should still succeed even if activity creation fails
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('activity'),
-        expect.any(Object)
-      )
-
-      consoleErrorSpy.mockRestore()
-    })
-  })
-
-  describe('Cache Revalidation', () => {
-    it('should revalidate wallet path on successful deposit', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(revalidatePath).toHaveBeenCalledWith('/wallet')
-    })
-
-    it('should not block transaction if cache revalidation fails', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: TEST_DEPOSIT_AMOUNT,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: TEST_DEPOSIT_AMOUNT.toString(),
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 6000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      vi.mocked(revalidatePath).mockImplementation(() => {
-        throw new Error('Cache revalidation failed')
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      // Transaction should still succeed even if revalidation fails
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-    })
-  })
-
-  describe('Edge Cases', () => {
-    it('should handle missing r_hash parameter', async () => {
-      const result = await checkDepositStatus('')
-
-      expect(result.success).toBe(false)
-      expect(result.error).toMatch(/r_hash.*required/i)
-    })
-
-    it('should handle malformed r_hash', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'Invalid r_hash format', code: '22P02' },
-      })
-
-      const result = await checkDepositStatus('invalid-hash-!@#$')
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBeTruthy()
-    })
-
-    it('should handle concurrent checks of same deposit', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single.mockResolvedValue({
-        data: {
-          id: TEST_TRANSACTION_ID,
-          user_id: TEST_USER_ID,
-          r_hash: TEST_R_HASH,
-          amount: TEST_DEPOSIT_AMOUNT,
-          status: 'pending',
-          type: 'deposit',
-        },
-        error: null,
-      })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockUnsettledInvoiceResponse()
-      )
-
-      // Simulate concurrent checks
-      const [result1, result2] = await Promise.all([
-        checkDepositStatus(TEST_R_HASH),
-        checkDepositStatus(TEST_R_HASH),
-      ])
-
-      expect(result1.success).toBe(true)
-      expect(result2.success).toBe(true)
-      expect(result1.settled).toBe(false)
-      expect(result2.settled).toBe(false)
-    })
-
-    it('should handle deposit with zero amount', async () => {
-      mockAuth.getSession.mockResolvedValue({
-        data: {
-          session: {
-            user: { id: TEST_USER_ID },
-          },
-        },
-        error: null,
-      })
-
-      mockFrom.single
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_TRANSACTION_ID,
-            user_id: TEST_USER_ID,
-            r_hash: TEST_R_HASH,
-            amount: 0,
-            status: 'pending',
-            type: 'deposit',
-          },
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: {
-            id: TEST_USER_ID,
-            balance: 5000,
-            email: 'user@example.com',
-          },
-          error: null,
-        })
-
-      vi.mocked(checkInvoice).mockResolvedValue(
-        createMockSettledInvoiceResponse({
-          amountPaid: '0',
-          preimage: 'test-preimage',
-        })
-      )
-
-      mockSupabaseClient.rpc.mockResolvedValue({
-        data: { new_balance: 5000 },
-        error: null,
-      })
-
-      mockFrom.update.mockResolvedValue({
-        data: { id: TEST_TRANSACTION_ID },
-        error: null,
-      })
-
-      mockFrom.insert.mockResolvedValue({
-        data: { id: 'activity-123' },
-        error: null,
-      })
-
-      const result = await checkDepositStatus(TEST_R_HASH)
-
-      expect(result.success).toBe(true)
-      expect(result.settled).toBe(true)
-      expect(mockSupabaseClient.rpc).toHaveBeenCalledWith(
-        'increment_user_balance',
-        expect.objectContaining({
-          amount: 0,
-        })
-      )
+    // REAL BUG? Same race, fully interleaved: both calls credit from the same starting
+    // balance (so the lost update happens to hide the double credit in `balance`), but both
+    // report a fresh credit and both write a deposit activity for one payment.
+    it.fails('records a single deposit activity when two checks run in lockstep', async () => {
+      const results = await Promise.all([checkDepositStatus(R_HASH), checkDepositStatus(R_HASH)])
+
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(depositActivities()).toHaveLength(1)
+      expect(results.filter(r => r.success && r.newBalance != null)).toHaveLength(1)
     })
   })
 })

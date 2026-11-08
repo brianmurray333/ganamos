@@ -665,16 +665,16 @@ describe('convertSatsToUSD - Async Email Utility', () => {
       expect(typeof result).toBe('string')
     })
 
-    // BUG: Application code treats zero price as falsy and returns 'USD price unavailable'
-    // The check `if (!btcPrice)` on line 41 of lib/transaction-emails.ts incorrectly treats 0 as falsy
-    // Expected behavior: Zero price should be formatted as '$0.00'
-    // This should be fixed in a separate PR to handle zero price correctly
-    it.skip('should handle zero price string', async () => {
+    // A zero BTC price is not a real price: the price cron rejects it as invalid data
+    // ("Invalid price data received: 0", see bitcoin-price-cron tests), and like NaN/null
+    // it is reported as unavailable rather than rendering a misleading "$0.00" in emails.
+    // (This case was previously skipped expecting '$0.00'.)
+    it('should treat a zero price string as unavailable', async () => {
       mockBitcoinPrice('0')
-      
+
       const result = await transactionEmails.convertSatsToUSD(100000000)
-      
-      expect(result).toBe('$0.00')
+
+      expect(result).toBe('USD price unavailable')
     })
 
     it('should handle Infinity price string', async () => {

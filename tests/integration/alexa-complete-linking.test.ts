@@ -142,8 +142,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(data.error).toMatch(/not authenticated/i)
     })
 
-    it.skip('should accept request with valid authentication - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should accept request with valid authentication', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -215,8 +214,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(data.error).toMatch(/missing required parameters/i)
     })
 
-    it.skip('should accept request without state (optional parameter) - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should accept request without state (optional parameter)', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -235,10 +233,17 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(data.success).toBe(true)
     })
 
-    it.skip('should reject request with invalid client ID when configured - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
-      process.env.ALEXA_CLIENT_IDS = 'valid-client-id-1,valid-client-id-2'
-      
+    // lib/alexa-auth.ts reads ALEXA_CLIENT_IDS once at module load, so the route is
+    // re-imported after configuring the allow-list.
+    async function importRouteWithClientIds(ids: string) {
+      process.env.ALEXA_CLIENT_IDS = ids
+      vi.resetModules()
+      return (await import('@/app/api/alexa/complete-linking/route')).POST
+    }
+
+    it('should reject request with invalid client ID when configured', async () => {
+      const POSTWithAllowList = await importRouteWithClientIds('valid-client-id-1,valid-client-id-2')
+
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -250,12 +255,35 @@ describe('POST /api/alexa/complete-linking', () => {
         redirectUri: testRedirectUri,
       })
 
-      const response = await POST(request)
+      const response = await POSTWithAllowList(request)
       expect(response.status).toBe(400)
 
       const data = await response.json()
       expect(data.success).toBe(false)
       expect(data.error).toMatch(/invalid client id/i)
+
+      // No authorization code may be issued for the rejected client
+      const codes = await queryDB(
+        'SELECT code FROM alexa_auth_codes WHERE user_id = $1',
+        [user.id]
+      )
+      expect(codes).toHaveLength(0)
+    })
+
+    it('should accept a client ID that is on the configured allow-list', async () => {
+      const POSTWithAllowList = await importRouteWithClientIds('valid-client-id-1,valid-client-id-2')
+
+      const user = await seedUser()
+      const groupId = await seedGroup(user.id)
+      await addGroupMember(user.id, groupId)
+      authState.userId = user.id
+
+      const response = await POSTWithAllowList(
+        createCompleteLinkingRequest({ groupId, clientId: 'valid-client-id-2', redirectUri: testRedirectUri })
+      )
+
+      expect(response.status).toBe(200)
+      expect((await response.json()).success).toBe(true)
     })
   })
 
@@ -303,10 +331,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(data.error).toMatch(/not a member/i)
     })
 
-    it.skip('should accept if user is approved member of the group - BLOCKED BY RLS BUG', async () => {
-      // BUG: RLS infinite recursion in group_members SELECT policy
-      // The policy queries group_members within group_members causing infinite recursion
-      // This needs to be fixed in the database migration/RLS policy
+    it('should accept if user is approved member of the group', async () => {
       const owner = await seedUser()
       const member = await seedUser()
       const groupId = await seedGroup(owner.id)
@@ -330,8 +355,7 @@ describe('POST /api/alexa/complete-linking', () => {
   })
 
   describe('Authorization Code Generation', () => {
-    it.skip('should generate authorization code and store in database - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should generate authorization code and store in database', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -359,8 +383,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(authCodes[0].state).toBe(testState)
     })
 
-    it.skip('should return redirect URL with authorization code - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should return redirect URL with authorization code', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -387,8 +410,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(redirectUrl.searchParams.get('state')).toBe(testState)
     })
 
-    it.skip('should include state in redirect URL if provided - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should include state in redirect URL if provided', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -408,8 +430,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(redirectUrl.searchParams.get('state')).toBe(testState)
     })
 
-    it.skip('should not include state in redirect URL if not provided - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should not include state in redirect URL if not provided', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -430,8 +451,7 @@ describe('POST /api/alexa/complete-linking', () => {
   })
 
   describe('Alexa Linked Account Handling', () => {
-    it.skip('should update existing linked account with new group selection - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should update existing linked account with new group selection', async () => {
       const serviceClient = getServiceClient()
       const user = await seedUser()
       const oldGroupId = await seedGroup(user.id)
@@ -472,8 +492,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(linkedAccount?.selected_group_id).toBe(newGroupId)
     })
 
-    it.skip('should not create alexa_linked_account record yet (created during token exchange) - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should not create alexa_linked_account record yet (created during token exchange)', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -558,8 +577,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(error).toBeNull()
     })
 
-    it.skip('should handle extremely long state parameter - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should handle extremely long state parameter', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -581,8 +599,7 @@ describe('POST /api/alexa/complete-linking', () => {
   })
 
   describe('Concurrent Requests', () => {
-    it.skip('should handle multiple concurrent linking requests for same user - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should handle multiple concurrent linking requests for same user', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -612,8 +629,7 @@ describe('POST /api/alexa/complete-linking', () => {
   })
 
   describe('Response Format', () => {
-    it.skip('should return JSON with correct content-type header - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should return JSON with correct content-type header', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -629,8 +645,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(response.headers.get('content-type')).toMatch(/application\/json/)
     })
 
-    it.skip('should include success and redirectUrl in successful response - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should include success and redirectUrl in successful response', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -673,8 +688,7 @@ describe('POST /api/alexa/complete-linking', () => {
   })
 
   describe('Authorization Code Properties', () => {
-    it.skip('should generate unique codes for each request - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should generate unique codes for each request', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)
@@ -704,8 +718,7 @@ describe('POST /api/alexa/complete-linking', () => {
       expect(code1).not.toBe(code2)
     })
 
-    it.skip('should store client_id and redirect_uri with auth code - BLOCKED BY RLS BUG', async () => {
-      // Same RLS recursion issue when checking group membership
+    it('should store client_id and redirect_uri with auth code', async () => {
       const user = await seedUser()
       const groupId = await seedGroup(user.id)
       await addGroupMember(user.id, groupId)

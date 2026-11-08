@@ -480,13 +480,23 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
       expect(data.details).toContain('Invalid price data received: 0')
     })
 
-    // TODO: Production code does not currently validate negative prices
-    // The validation at route.ts line 37 checks `!btcPrice || typeof btcPrice !== 'number'`
-    // which allows negative numbers through. This should be fixed in a separate PR
-    // to add explicit validation: `if (!btcPrice || typeof btcPrice !== 'number' || btcPrice <= 0)`
-    it.skip('should reject negative price values', async () => {
+    // REAL BUG? (low severity) app/api/cron/update-bitcoin-price/route.ts only checks
+    // `!btcPrice || typeof btcPrice !== 'number'`, so a negative price from the upstream API
+    // is stored in bitcoin_prices (used for USD display in emails, /api/bitcoin-price,
+    // device config and pet order records). The DB insert is mocked to succeed so this
+    // fails on the missing validation, not on the mock. Remove `.fails` once prices <= 0
+    // are rejected.
+    it.fails('should reject negative price values', async () => {
       const mockRequest = createMockRequestWithAuth('test-cron-secret-12345')
       mockDIAApiInvalidData(-1000)
+      mockDatabaseInsertSuccess(mockSupabaseClient, {
+        id: 'test-id',
+        price: -1000,
+        currency: 'USD',
+        source: 'diadata.org',
+        created_at: new Date().toISOString(),
+      })
+      mockCleanupSuccess(mockSupabaseClient)
 
       const response = await GET(mockRequest)
       const data = await response.json()

@@ -29,6 +29,22 @@ vi.mock('uuid', () => ({
   v4: vi.fn(() => 'test-activity-id-123'),
 }))
 
+// Notifications and safety caps are side effects of a payout, not what these
+// tests check. Mock them so a slow/unavailable email provider can't turn a
+// payout assertion into a timeout (which `it.fails` would count as a pass).
+vi.mock('@/lib/transaction-emails', () => ({
+  sendIssueFixedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendRewardEarnedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendFixSubmittedForReviewEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendGroupAdminClosedIssueEmail: vi.fn().mockResolvedValue({ success: true }),
+}))
+
+vi.mock('@/lib/safety-caps', () => ({
+  checkBalanceCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkPostRewardCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkLivePostsCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+}))
+
 // ============================================================================
 // 2️⃣ Import modules AFTER mocks
 // ============================================================================
@@ -1123,6 +1139,125 @@ describe('createFixRewardAction', () => {
       expect(result).toHaveProperty('error')
       expect(typeof result.error).toBe('string')
       expect(result.error).not.toBe('')
+    })
+  })
+  // --------------------------------------------------------------------------
+  // Payout integrity (server-side checks of client-supplied payout parameters)
+  // --------------------------------------------------------------------------
+
+  describe('Payout integrity', () => {
+    const POST_REWARD = 100
+
+    /**
+     * A post owned by someone else, with a stored reward of POST_REWARD, not fixed,
+     * and with no fix submitted by the caller. Records every transactions insert
+     * and every profiles update so we can assert that no sats were credited.
+     */
+    function createPostAwareClient(post: Record<string, any> = {}) {
+      const txInserts: any[] = []
+      const balanceUpdates: any[] = []
+      const storedPost = {
+        id: TEST_POST_ID,
+        user_id: 'post-owner-id',
+        group_id: null,
+        title: TEST_POST_TITLE,
+        reward: POST_REWARD,
+        fixed: false,
+        under_review: false,
+        submitted_fix_by_id: null,
+        ...post,
+      }
+      const client = createCompleteMockClient()
+      const baseFrom = client.from
+      client.from = vi.fn((table: string) => {
+        if (table === 'posts') {
+          const q: any = {
+            select: vi.fn(() => q),
+            eq: vi.fn(() => q),
+            single: vi.fn().mockResolvedValue({ data: storedPost, error: null }),
+            maybeSingle: vi.fn().mockResolvedValue({ data: storedPost, error: null }),
+            update: vi.fn(() => q),
+          }
+          return q
+        }
+        const t = baseFrom(table)
+        if (table === 'transactions') {
+          const insert = t.insert
+          t.insert = vi.fn((row: any) => {
+            txInserts.push(row)
+            return insert(row)
+          })
+        }
+        if (table === 'profiles') {
+          const update = t.update
+          t.update = vi.fn((row: any) => {
+            balanceUpdates.push(row)
+            return update(row)
+          })
+        }
+        return t
+      })
+      return { client, txInserts, balanceUpdates }
+    }
+
+    // REAL BUG? createFixRewardAction is exported from a "use server" module and is called
+    // directly from the browser (app/post/[id]/page.tsx ~L912 and ~L1149) with a
+    // client-supplied `reward`. In the normal flow (app/actions/post-actions.ts ~L1631-1642)
+    // the only authorization is "the caller credits themselves or a connected account";
+    // nothing checks the amount against posts.reward, that the post is unfixed, or that the
+    // caller actually submitted/was approved for a fix. Any signed-in user can therefore
+    // credit themselves an arbitrary number of sats. Remove `.fails` once the server
+    // derives/validates the payout from the post.
+    it.fails('does not credit a reward larger than the post\'s stored reward', async () => {
+      const { client, txInserts, balanceUpdates } = createPostAwareClient()
+      setupSupabaseMock(client)
+
+      const result = await createFixRewardAction({
+        postId: TEST_POST_ID,
+        userId: TEST_USER_ID, // caller credits themselves
+        reward: 1_000_000, // post reward is only 100
+        postTitle: TEST_POST_TITLE,
+      })
+
+      expect(result.success).toBe(false)
+      expect(txInserts).toHaveLength(0)
+      expect(balanceUpdates).toHaveLength(0)
+    })
+
+    // REAL BUG? Same root cause: no check that the post is still unpaid, so the same post's
+    // reward can be claimed again for an already-fixed post (replay / double payout).
+    it.fails('does not pay a reward for a post that is already fixed', async () => {
+      const { client, txInserts } = createPostAwareClient({ fixed: true, fixed_by: 'someone-else' })
+      setupSupabaseMock(client)
+
+      const result = await createFixRewardAction({
+        postId: TEST_POST_ID,
+        userId: TEST_USER_ID,
+        reward: POST_REWARD,
+        postTitle: TEST_POST_TITLE,
+      })
+
+      expect(result.success).toBe(false)
+      expect(txInserts).toHaveLength(0)
+    })
+
+    // REAL BUG? closeIssueAction refuses to pay out unfunded posts (post-actions.ts ~L2026-2066),
+    // but a post owner can skip it and call createFixRewardAction({ isPostOwnerClosing: true })
+    // directly with any `reward`; that branch only checks ownership (~L1599-1629).
+    it.fails('does not let a post owner pay out more than the post\'s stored reward via isPostOwnerClosing', async () => {
+      const { client, txInserts } = createPostAwareClient({ user_id: TEST_USER_ID })
+      setupSupabaseMock(client)
+
+      const result = await createFixRewardAction({
+        postId: TEST_POST_ID,
+        userId: 'accomplice-id',
+        reward: 1_000_000,
+        postTitle: TEST_POST_TITLE,
+        isPostOwnerClosing: true,
+      })
+
+      expect(result.success).toBe(false)
+      expect(txInserts).toHaveLength(0)
     })
   })
 })

@@ -13,8 +13,9 @@
  * FIX REQUIRED: Replace `supabase.from('profiles').update()` with `adminSupabase.from('profiles').update()`
  * at line 66 to bypass RLS and allow parent to soft-delete child profile.
  *
- * Tests that verify the soft delete functionality are currently commented out with .skip()
- * and should be enabled once the production code is fixed.
+ * Tests that verify the soft delete functionality are marked it.fails (they fail on the
+ * child profile still being 'active'); remove `.fails` once the production code is fixed.
+ * Note the route still answers 200 success, so the parent is told the child was deleted.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { seedUser, seedConnectedAccount, queryDB } from './helpers/test-isolation'
@@ -381,9 +382,11 @@ describe('POST /api/delete-child-account', () => {
   })
 
   describe('Successful Deletion', () => {
-    // SKIPPED: Production bug - endpoint uses authenticated client instead of admin client for soft delete
-    // This causes RLS to block the update. Un-skip once production code is fixed.
-    it.skip('should successfully soft delete a child account', async () => {
+    // REAL BUG? see file header. Re-verified against current code (local Supabase): the route
+    // returns 200 "Child account deleted successfully", but RLS silently filters the profile
+    // update (0 rows, no error), so the child stays status='active' while its connection is
+    // removed. Marked it.fails; drop `.fails` once the route uses the admin client.
+    it.fails('should successfully soft delete a child account', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: childId } = await seedChildAccount(parentId, { name: 'Child' })
       await seedConnectedAccount(parentId, childId)
@@ -479,8 +482,8 @@ describe('POST /api/delete-child-account', () => {
       expect(authUsers[0].id).toBe(childId)
     })
 
-    // SKIPPED: Production bug - see note at top of file
-    it.skip('should only delete the specified child account', async () => {
+    // REAL BUG? see note at top of file (it.fails until the route is fixed)
+    it.fails('should only delete the specified child account', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: child1Id } = await seedChildAccount(parentId, { name: 'Child 1' })
       const { id: child2Id } = await seedChildAccount(parentId, { name: 'Child 2' })
@@ -552,8 +555,8 @@ describe('POST /api/delete-child-account', () => {
       expect(transactions[1].id).toBe(txn2Id)
     })
 
-    // SKIPPED: Production bug - see note at top of file
-    it.skip('should handle deletion when child has activities', async () => {
+    // REAL BUG? see note at top of file (it.fails until the route is fixed)
+    it.fails('should handle deletion when child has activities', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: childId } = await seedChildAccount(parentId)
       await seedConnectedAccount(parentId, childId)
@@ -589,8 +592,8 @@ describe('POST /api/delete-child-account', () => {
       expect(activities.length).toBe(2)
     })
 
-    // SKIPPED: Production bug - see note at top of file
-    it.skip('should handle deletion when child has devices', async () => {
+    // REAL BUG? see note at top of file (it.fails until the route is fixed)
+    it.fails('should handle deletion when child has devices', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: childId } = await seedChildAccount(parentId)
       await seedConnectedAccount(parentId, childId)
@@ -639,8 +642,8 @@ describe('POST /api/delete-child-account', () => {
       expect(devices[0].id).toBe(deviceId)
     })
 
-    // SKIPPED: Production bug - see note at top of file
-    it.skip('should update profile timestamps correctly', async () => {
+    // REAL BUG? see note at top of file (it.fails until the route is fixed)
+    it.fails('should update profile timestamps correctly', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: childId } = await seedChildAccount(parentId)
       await seedConnectedAccount(parentId, childId)
@@ -691,8 +694,8 @@ describe('POST /api/delete-child-account', () => {
   })
 
   describe('Edge Cases', () => {
-    // SKIPPED: Production bug - see note at top of file
-    it.skip('should handle deletion of already deleted child account', async () => {
+    // REAL BUG? see note at top of file (it.fails until the route is fixed)
+    it.fails('should handle deletion of already deleted child account', async () => {
       const { id: parentId } = await seedUser({ name: 'Parent' })
       const { id: childId } = await seedChildAccount(parentId)
       await seedConnectedAccount(parentId, childId)
