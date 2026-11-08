@@ -29,6 +29,22 @@ vi.mock('uuid', () => ({
   v4: vi.fn(() => 'test-activity-id-123'),
 }))
 
+// Notifications and safety caps are side effects of a payout, not what these
+// tests check. Mock them so a slow/unavailable email provider can't turn a
+// payout assertion into a timeout (which `it.fails` would count as a pass).
+vi.mock('@/lib/transaction-emails', () => ({
+  sendIssueFixedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendRewardEarnedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendFixSubmittedForReviewEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendGroupAdminClosedIssueEmail: vi.fn().mockResolvedValue({ success: true }),
+}))
+
+vi.mock('@/lib/safety-caps', () => ({
+  checkBalanceCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkPostRewardCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkLivePostsCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+}))
+
 // ============================================================================
 // 2️⃣ Import modules AFTER mocks
 // ============================================================================
