@@ -31,6 +31,7 @@ import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submissi
 import { v4 as uuidv4 } from "uuid"
 import dynamic from "next/dynamic"
 import PostDetailSkeleton from "@/components/post-detail-skeleton"
+import { usePendingPost, consumePendingPost, watchPendingPost, claimFailedPendingPost } from "@/lib/pending-post-store"
 import { StaticMapWidget } from "@/components/static-map-widget"
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 
@@ -443,7 +444,29 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     }
   }, [searchParams, user, sessionLoaded, post, loading, activeUserId, isGroupAdmin, groupAdminCheckComplete, params.id, router])
 
+  // A post submitted from /post/new may still be being created in the
+  // background: keep the skeleton up until it lands (never "not found").
+  const pendingSubmission = usePendingPost(params.id)
+  const pendingStatus = pendingSubmission?.status
+  // A failed entry stays in the store (status "error"), so the page never
+  // fetches, and never shows "not found", for a post that won't exist.
+  const awaitingSubmission = pendingStatus === "pending" || pendingStatus === "error"
+
+  useEffect(() => watchPendingPost(params.id), [params.id])
+
+  // Submission failed: say why and go back to the editor with the draft restored.
   useEffect(() => {
+    if (pendingStatus !== "error") return
+    const entry = claimFailedPendingPost(params.id)
+    if (!entry) return
+    toast.error("Post not created", {
+      description: entry.error || "There was an error creating your post.",
+    })
+    router.replace("/post/new")
+  }, [pendingStatus, params.id, router])
+
+  useEffect(() => {
+    if (awaitingSubmission) return
     const fetchPost = async () => {
       try {
         if (supabase) {
@@ -463,11 +486,19 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             `)
             .eq("id", params.id)
             .single()
+          // Set when this post was just created from /post/new (consumed once).
+          const justCreated = consumePendingPost(params.id)
           if (data && !error) {
             setPost(data)
             setLoading(false)
             // Show content immediately for faster perceived performance
             setShowContent(true)
+            // Just created from /post/new: celebrate now that the post is on screen.
+            if (justCreated) {
+              toast.success("🎉 Post created!", {
+                description: "Your issue has been posted successfully ✅",
+              })
+            }
             return
           }
         }
@@ -481,7 +512,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       }
     }
     fetchPost()
-  }, [params.id, toast, supabase])
+  }, [params.id, toast, supabase, awaitingSubmission])
 
 
   useEffect(() => {
