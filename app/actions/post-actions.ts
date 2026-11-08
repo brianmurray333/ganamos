@@ -105,6 +105,8 @@ export async function payAnonymousFixLightningAddressAction(
   let lockId: string | null = null
   // Once we've tried to pay, never release the lock (a retry could pay twice)
   let paymentAttempted = false
+  let paidHash: string | null = null // set once LND confirms the payment
+  let paymentRecorded = false
   const releaseLock = async () => {
     if (!lockId) return
     await supabase
@@ -288,6 +290,8 @@ export async function payAnonymousFixLightningAddressAction(
       }
     }
 
+    paidHash = (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage || "unknown"
+
     // Mark as paid
     const now = new Date().toISOString()
     const { error: updateError } = await supabase
@@ -323,6 +327,7 @@ export async function payAnonymousFixLightningAddressAction(
         error: "Payment was sent but there was an error updating our records. Please contact support.",
       }
     }
+    paymentRecorded = true
 
     // Create activity for the anonymous fix payment
     await supabase.from("activities").insert({
@@ -369,11 +374,12 @@ export async function payAnonymousFixLightningAddressAction(
   } catch (error) {
     if (!paymentAttempted) await releaseLock()
     console.error("Unexpected error in payAnonymousFixLightningAddressAction:", error)
-    if (paymentAttempted) {
+    if (paymentAttempted && !paymentRecorded) {
       await sendRewardOnHoldAlert({
         postId,
-        reason: "payment_uncertain",
+        reason: paidHash ? "paid_but_not_recorded" : "payment_uncertain",
         flow: "Owner approved anonymous fix (Lightning address)",
+        paymentHash: paidHash,
         details: error instanceof Error ? error.message : String(error),
       })
     }
@@ -405,6 +411,8 @@ export async function payAnonymousRewardAction(
 
   const supabase = createAdminClient()
   let paymentAttempted = false
+  let paidHash: string | null = null // set once LND confirms the payment
+  let paymentRecorded = false
 
   try {
     // 0. SECURITY: only the anonymous fixer (holder of the claim token issued
@@ -526,6 +534,8 @@ export async function payAnonymousRewardAction(
       }
     }
 
+    paidHash = (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage || "unknown"
+
     // 6. Mark the reward as claimed in the database (lock remains set, paid_at is the permanent indicator)
     const now = new Date().toISOString()
     const { error: updateError } = await supabase
@@ -555,6 +565,7 @@ export async function payAnonymousRewardAction(
         details: updateError.message,
       }
     }
+    paymentRecorded = true
 
     console.log(`Anonymous reward successfully paid for post ${postId}. Payment hash: ${paymentResult.paymentHash}`)
 
@@ -602,11 +613,12 @@ export async function payAnonymousRewardAction(
     }
   } catch (error) {
     console.error("Unexpected error in payAnonymousRewardAction:", error)
-    if (paymentAttempted) {
+    if (paymentAttempted && !paymentRecorded) {
       await sendRewardOnHoldAlert({
         postId,
-        reason: "payment_uncertain",
+        reason: paidHash ? "paid_but_not_recorded" : "payment_uncertain",
         flow: "Anonymous fixer claimed reward (invoice)",
+        paymentHash: paidHash,
         details: error instanceof Error ? error.message : String(error),
       })
     }
