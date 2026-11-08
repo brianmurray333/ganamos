@@ -21,6 +21,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { submitAnonymousFixForReviewAction } from '@/app/actions/post-actions'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { sendFixSubmittedForReviewEmail } from '@/lib/transaction-emails'
+import { hashClaimToken, verifyClaimToken } from '@/lib/payouts'
 
 // Type definitions for better type safety
 interface MockClientOptions {
@@ -112,6 +113,14 @@ function createCompleteMockClient(options: MockClientOptions = {}) {
 }
 
 /**
+ * The action uses the cookie-store client for the claim, and admin clients
+ * (`{ supabaseKey }`) to store the claim-token hash and for owner notifications.
+ */
+function routeClients(regular: any, admin: any) {
+  vi.mocked(createServerSupabaseClient).mockImplementation((opts?: any) => (opts?.supabaseKey ? admin : regular))
+}
+
+/**
  * Creates a mock post with default values for testing
  */
 function createTestPost(overrides = {}) {
@@ -175,9 +184,7 @@ describe('submitAnonymousFixForReviewAction', () => {
       })
       
       // First call returns regular client, second returns admin client
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockRegularClient)
-        .mockReturnValueOnce(mockAdminClient)
+      routeClients(mockRegularClient, mockAdminClient)
 
       const postId = 'test-post-123'
       const fixImageUrl = 'https://example.com/fix-image.jpg'
@@ -489,9 +496,7 @@ describe('submitAnonymousFixForReviewAction', () => {
         ownerProfileData: testOwner
       })
       
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockRegularClient)
-        .mockReturnValueOnce(mockAdminClient)
+      routeClients(mockRegularClient, mockAdminClient)
 
       // ACT
       await submitAnonymousFixForReviewAction(
@@ -585,9 +590,7 @@ describe('submitAnonymousFixForReviewAction', () => {
         ownerProfileData: testOwner
       })
       
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockRegularClient)
-        .mockReturnValueOnce(mockAdminClient)
+      routeClients(mockRegularClient, mockAdminClient)
 
       // ACT
       await submitAnonymousFixForReviewAction(
@@ -617,9 +620,7 @@ describe('submitAnonymousFixForReviewAction', () => {
         ownerProfileData: testOwner
       })
       
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockRegularClient)
-        .mockReturnValueOnce(mockAdminClient)
+      routeClients(mockRegularClient, mockAdminClient)
       
       // Make email sending fail
       vi.mocked(sendFixSubmittedForReviewEmail).mockRejectedValueOnce(
@@ -920,9 +921,7 @@ describe('submitAnonymousFixForReviewAction', () => {
       // Clear any previous mocks
       vi.clearAllMocks()
       
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockRegularClient)
-        .mockReturnValueOnce(mockAdminClient)
+      routeClients(mockRegularClient, mockAdminClient)
 
       // ACT
       await submitAnonymousFixForReviewAction(
@@ -934,16 +933,18 @@ describe('submitAnonymousFixForReviewAction', () => {
       )
 
       // ASSERT
-      // Verify createServerSupabaseClient was called twice
-      expect(createServerSupabaseClient).toHaveBeenCalledTimes(2)
-      
-      // First call is with cookie store (regular client)
+      // 1) cookie store (claim), 2) admin: store the claim-token hash, 3) admin: notifications
+      expect(createServerSupabaseClient).toHaveBeenCalledTimes(3)
       expect(createServerSupabaseClient).toHaveBeenNthCalledWith(1, expect.any(Object))
-      
-      // Second call should be with service role key for admin operations
       expect(createServerSupabaseClient).toHaveBeenNthCalledWith(2, {
         supabaseKey: process.env.SUPABASE_SECRET_API_KEY
       })
+      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(3, {
+        supabaseKey: process.env.SUPABASE_SECRET_API_KEY
+      })
+      // The owner's email is looked up with the admin client
+      expect(mockAdminClient.from).toHaveBeenCalledWith('profiles')
+      expect(mockRegularClient.from).not.toHaveBeenCalledWith('profiles')
     })
   })
 
@@ -1004,6 +1005,68 @@ describe('submitAnonymousFixForReviewAction', () => {
           p_ai_analysis: aiAnalysis
         })
       )
+    })
+  })
+
+  describe('Claim token for the anonymous fixer', () => {
+    it('returns a claim token and stores only its SHA-256 hash (admin client) after a successful claim', async () => {
+      const mockRegularClient = createCompleteMockClient({ postData: createTestPost() })
+      const mockAdminClient = createCompleteMockClient({ ownerProfileData: createTestOwnerProfile() })
+      routeClients(mockRegularClient, mockAdminClient)
+
+      const result = await submitAnonymousFixForReviewAction('test-post-123', 'https://example.com/fix.jpg', 'Fixed', 5, 'Low')
+
+      expect(result.success).toBe(true)
+      expect(result.claimToken).toMatch(/^[0-9a-f]{64}$/)
+      const tokenUpdates = mockAdminClient.from('posts').update.mock.calls
+        .map((c: any[]) => c[0])
+        .filter((u: any) => 'anonymous_claim_token_hash' in u)
+      expect(tokenUpdates).toEqual([{ anonymous_claim_token_hash: hashClaimToken(result.claimToken!) }])
+      expect(verifyClaimToken(tokenUpdates[0].anonymous_claim_token_hash, result.claimToken)).toBe(true)
+      // The plaintext token is never written anywhere
+      const allWrites = [
+        ...mockAdminClient.from('posts').update.mock.calls,
+        ...mockRegularClient.from('posts').update.mock.calls,
+      ]
+      expect(JSON.stringify(allWrites)).not.toContain(result.claimToken)
+      // The claim happened before the token was issued
+      expect(mockRegularClient.rpc).toHaveBeenCalledWith('atomic_claim_job', expect.any(Object))
+    })
+
+    it('issues no token (and stores none) when the job was already claimed', async () => {
+      const mockRegularClient = createCompleteMockClient({
+        postData: createTestPost(),
+        rpcResult: { success: false, error: 'Job already claimed' },
+      })
+      const mockAdminClient = createCompleteMockClient({})
+      routeClients(mockRegularClient, mockAdminClient)
+
+      const result = await submitAnonymousFixForReviewAction('test-post-123', 'https://example.com/fix.jpg', 'Fixed', 5, 'Low')
+
+      expect(result).toEqual({ success: false, error: 'This job has already been claimed by someone else.' })
+      expect(mockAdminClient.from).not.toHaveBeenCalled()
+    })
+
+    it('issues no token when the claim RPC errors', async () => {
+      const mockRegularClient = createCompleteMockClient({ postData: createTestPost(), rpcError: { message: 'db down' } })
+      const mockAdminClient = createCompleteMockClient({})
+      routeClients(mockRegularClient, mockAdminClient)
+
+      const result = await submitAnonymousFixForReviewAction('test-post-123', 'https://example.com/fix.jpg', 'Fixed', 5, 'Low')
+
+      expect(result.success).toBe(false)
+      expect(result.claimToken).toBeUndefined()
+      expect(mockAdminClient.from).not.toHaveBeenCalled()
+    })
+
+    it('issues a different token for each submission', async () => {
+      const tokens: string[] = []
+      for (let i = 0; i < 2; i++) {
+        routeClients(createCompleteMockClient({ postData: createTestPost() }), createCompleteMockClient({}))
+        const r = await submitAnonymousFixForReviewAction('test-post-123', 'https://example.com/fix.jpg', 'Fixed', 5, 'Low')
+        tokens.push(r.claimToken!)
+      }
+      expect(tokens[0]).not.toBe(tokens[1])
     })
   })
 })

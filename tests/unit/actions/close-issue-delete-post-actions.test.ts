@@ -1,1048 +1,525 @@
 /**
- * Unit Tests for closeIssueAction and deletePostAction
- * 
- * Tests the business logic for:
- * - closeIssueAction: Closing issues and assigning fixers with reward transfer
- * - deletePostAction: Soft-deleting posts with reward refund
- * 
- * SCOPE: Tests authorization, validation, reward transfers, and error handling
+ * Unit tests for closeIssueAction and deletePostAction (app/actions/post-actions.ts).
+ *
+ * - closeIssueAction: the post owner (or an approved group admin) closes an issue and
+ *   assigns a fixer by username. The post is marked fixed atomically with the admin client
+ *   and the post's STORED reward is paid once via the pay_fix_reward RPC.
+ * - deletePostAction: soft-deletes a post (admin client, atomic) and refunds the reward to
+ *   the poster, only if this request actually deleted the row.
+ *
+ * Runs against the stateful fake DB (tests/unit/helpers/fake-supabase-db.ts), so
+ * assertions are on resulting balances, transactions and post state.
  */
-
 import { vi, beforeEach, describe, it, expect } from 'vitest'
 
-// ============================================================================
-// 1️⃣ CRITICAL: Mock dependencies BEFORE imports
-// ============================================================================
-const mockCookieStore = {
-  get: vi.fn(),
-  set: vi.fn(),
-  delete: vi.fn(),
-}
-
 vi.mock('next/headers', () => ({
-  cookies: vi.fn(() => Promise.resolve(mockCookieStore)),
+  cookies: vi.fn(() => Promise.resolve({ get: vi.fn(), set: vi.fn(), delete: vi.fn() })),
+}))
+vi.mock('@/lib/transaction-emails', () => ({
+  sendIssueFixedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendRewardEarnedEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendFixSubmittedForReviewEmail: vi.fn().mockResolvedValue({ success: true }),
+  sendGroupAdminClosedIssueEmail: vi.fn().mockResolvedValue({ success: true }),
+}))
+vi.mock('@/lib/safety-caps', () => ({
+  checkBalanceCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkPostRewardCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+  checkLivePostsCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
+}))
+vi.mock('@/lib/sms-alerts', () => ({ alertLargePostBounty: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('@/lib/lightning', () => ({ createInvoice: vi.fn(), checkInvoice: vi.fn(), payInvoice: vi.fn() }))
+vi.mock('@/lib/verify-fix', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/verify-fix')>()),
+  verifyFixImages: vi.fn(() => {
+    throw new Error('closeIssueAction must not need AI verification')
+  }),
 }))
 
-vi.mock('uuid', () => ({
-  v4: vi.fn(() => 'test-activity-id-123'),
-}))
+import { closeIssueAction, deletePostAction } from '@/app/actions/post-actions'
+import { sendGroupAdminClosedIssueEmail, sendRewardEarnedEmail } from '@/lib/transaction-emails'
+import { createFakeSupabase, type FakeSupabase } from '@/tests/unit/helpers/fake-supabase-db'
 
-// ============================================================================
-// 2️⃣ Import modules AFTER mocks
-// ============================================================================
-import * as postActions from '@/app/actions/post-actions'
-import { createServerSupabaseClient } from '@/lib/supabase'
-import { createMockSession } from '@/tests/mocks'
+const OWNER_ID = 'owner-user-1'
+const FIXER_ID = 'fixer-user-1'
+const FIXER_USERNAME = 'fixeruser'
+const OTHER_ID = 'other-user-1'
+const CHILD_ID = 'child-user-1'
+const GROUP_ADMIN_ID = 'group-admin-1'
+const GROUP_ID = 'group-1'
+const POST_ID = 'post4567-aaaa-bbbb-cccc-000000000001'
+const REWARD = 1000
+const TITLE = 'Test Issue'
+const OWNER_START = 5000
+const FIXER_START = 2000
 
-const { closeIssueAction, deletePostAction } = postActions
-
-// ============================================================================
-// 3️⃣ Test Constants
-// ============================================================================
-const TEST_USER_ID = 'test-user-123'
-const TEST_POST_ID = 'post-456'
-const TEST_FIXER_USERNAME = 'fixeruser'
-const TEST_FIXER_ID = 'fixer-789'
-const TEST_REWARD_AMOUNT = 1000
-const TEST_POST_TITLE = 'Test Issue'
-
-const MOCK_POST = {
-  id: TEST_POST_ID,
-  user_id: TEST_USER_ID,
-  group_id: null, // No group by default
-  title: TEST_POST_TITLE,
-  reward: TEST_REWARD_AMOUNT,
-  fixed: false,
-  under_review: false,
-  deleted_at: null,
-  created_at: new Date().toISOString(),
-}
-
-const MOCK_FIXER_PROFILE = {
-  id: TEST_FIXER_ID,
-  username: TEST_FIXER_USERNAME,
-  email: 'fixer@example.com',
-  name: 'Fixer User',
-}
-
-const MOCK_POSTER_PROFILE = {
-  id: TEST_USER_ID,
-  username: 'posteruser',
-  email: 'poster@example.com',
-  name: 'Poster User',
-  balance: 5000,
-}
-
-// ============================================================================
-// 4️⃣ Helper Functions
-// ============================================================================
-
-/**
- * Creates a mock Supabase client for closeIssueAction tests
- */
-function createCloseIssueMockClient(options: {
-  hasSession?: boolean
-  sessionUserId?: string
-  postData?: any
-  postError?: any
-  fixerData?: any
-  fixerError?: any
-  updateError?: any
-  isFunded?: boolean
-} = {}) {
-  const {
-    hasSession = true,
-    sessionUserId = TEST_USER_ID,
-    postData = MOCK_POST,
-    postError = null,
-    fixerData = MOCK_FIXER_PROFILE,
-    fixerError = null,
-    updateError = null,
-    isFunded = true,
-  } = options
-
-  const fundingTxResult = isFunded
-    ? { data: [{ id: 'funding-tx-123' }], error: null }
-    : { data: [], error: null }
-
-  // Every write (post update, transaction insert, ...) is recorded here so tests can
-  // assert that rejected calls change nothing and pay nothing.
-  const writes: { table: string; op: string; payload: any }[] = []
-
-  function createChainableMock(resolvedValue: any) {
-    const chainable: any = {}
-    const terminal = vi.fn().mockResolvedValue(resolvedValue)
-    for (const method of ['select', 'eq', 'lt', 'gte', 'ilike', 'limit']) {
-      chainable[method] = vi.fn(() => chainable)
-    }
-    chainable.single = terminal
-    chainable.then = terminal().then.bind(terminal())
-    chainable.limit = vi.fn().mockResolvedValue(resolvedValue)
-    chainable.insert = vi.fn((payload: any) => {
-      writes.push({ table: 'transactions', op: 'insert', payload })
-      return chainable
-    })
-    return chainable
+function world(post: Record<string, any> = {}, extra: Record<string, any[]> = {}) {
+  return {
+    profiles: [
+      { id: OWNER_ID, username: 'posteruser', name: 'Poster', email: 'poster@example.com', balance: OWNER_START, pet_coins: 0, fixed_issues_count: 0 },
+      { id: FIXER_ID, username: FIXER_USERNAME, name: 'Fixer', email: 'fixer@example.com', balance: FIXER_START, pet_coins: 0, fixed_issues_count: 0 },
+      { id: OTHER_ID, username: 'other', name: 'Other', email: 'other@example.com', balance: 0, pet_coins: 0 },
+      { id: CHILD_ID, username: 'child', name: 'Child', email: 'child@ganamos.app', balance: 100, pet_coins: 0 },
+      { id: GROUP_ADMIN_ID, username: 'admin', name: 'Group Admin', email: 'admin@example.com', balance: 0, pet_coins: 0 },
+    ],
+    posts: [
+      {
+        id: POST_ID,
+        user_id: OWNER_ID,
+        group_id: null,
+        title: TITLE,
+        reward: REWARD,
+        fixed: false,
+        fixed_by: null,
+        under_review: false,
+        deleted_at: null,
+        reward_paid_at: null,
+        anonymous_reward_paid_at: null,
+        ...post,
+      },
+    ],
+    transactions: [
+      { id: 'funding-tx', user_id: post.user_id ?? OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, memo: `Posted issue ${POST_ID.substring(0, 8)}` },
+    ],
+    connected_accounts: [{ id: 'conn-1', primary_user_id: OWNER_ID, connected_user_id: CHILD_ID }],
+    group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'admin', status: 'approved' }],
+    groups: [{ id: GROUP_ID, name: 'Neighborhood' }],
+    activities: [],
+    ...extra,
   }
-
-  const mockClient: any = {
-    auth: {
-      getSession: vi.fn().mockResolvedValue({
-        data: { 
-          session: hasSession ? createMockSession(sessionUserId) : null 
-        },
-        error: null,
-      }),
-      getUser: vi.fn().mockResolvedValue({
-        data: { 
-          user: hasSession ? { id: sessionUserId, email: 'test@example.com' } : null 
-        },
-        error: hasSession ? null : { message: 'Not authenticated' },
-      }),
-    },
-    from: vi.fn((table: string) => {
-      if (table === 'posts') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: postData,
-                error: postError,
-              }),
-            })),
-          })),
-          update: vi.fn((payload: any) => {
-            writes.push({ table: 'posts', op: 'update', payload })
-            return {
-              eq: vi.fn().mockResolvedValue({
-                data: postData,
-                error: updateError,
-              }),
-            }
-          }),
-        }
-      }
-
-      if (table === 'profiles') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: fixerData,
-                error: fixerError,
-              }),
-            })),
-          })),
-          update: vi.fn((payload: any) => {
-            writes.push({ table: 'profiles', op: 'update', payload })
-            return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
-          }),
-        }
-      }
-
-      if (table === 'group_members') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({
-                    data: null,
-                    error: { code: 'PGRST116', message: 'No rows found' },
-                  }),
-                })),
-              })),
-            })),
-          })),
-        }
-      }
-
-      if (table === 'transactions') {
-        return createChainableMock(fundingTxResult)
-      }
-
-      return mockClient
-    }),
-    writes,
-  }
-
-  return mockClient
 }
 
-/** Assert that a rejected closeIssueAction neither marked the post fixed nor paid anyone. */
-function expectNoWrites(mockClient: any) {
-  expect(mockClient.writes).toEqual([])
+let db: FakeSupabase
+const post = () => db.row('posts', POST_ID)!
+const balance = (id: string) => db.row('profiles', id)!.balance
+const positiveTxs = () => db.rows('transactions', t => t.amount > 0)
+const payoutRpcs = () => db.ops(o => o.op === 'rpc' && o.table === 'pay_fix_reward')
+const writes = () => db.ops(o => o.op !== 'select')
+
+function setup(postOverrides: Record<string, any> = {}, extra: Record<string, any[]> = {}, signedInAs: string | null = OWNER_ID) {
+  db = createFakeSupabase(world(postOverrides, extra)).install()
+  db.user = signedInAs ? { id: signedInAs } : null
+  return db
 }
 
-/**
- * closeIssueAction mock that also supports the full internal createFixRewardAction
- * path (fixer profile read/update, transaction insert, activity insert), with all
- * writes recorded in `writes`.
- */
-function createCloseIssueSuccessPathMockClient(options: {
-  fixerBalance?: number
-  txInsertError?: any
-  postData?: any
-} = {}) {
-  const { fixerBalance = 2000, txInsertError = null, postData = MOCK_POST } = options
-  const mockClient = createCloseIssueMockClient({ postData })
-  const writes = mockClient.writes
-  const originalFrom = mockClient.from
-  mockClient.from = vi.fn((table: string) => {
-    if (table === 'transactions') {
-      const chainable: any = {}
-      for (const method of ['select', 'eq', 'lt', 'gte', 'ilike']) {
-        chainable[method] = vi.fn(() => chainable)
-      }
-      // Funding check
-      chainable.limit = vi.fn().mockResolvedValue({ data: [{ id: 'funding-tx-123' }], error: null })
-      chainable.insert = vi.fn((payload: any) => {
-        writes.push({ table: 'transactions', op: 'insert', payload })
-        return {
-          select: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue(
-              txInsertError ? { data: null, error: txInsertError } : { data: { id: 'transaction-123' }, error: null }
-            ),
-          })),
-        }
-      })
-      return chainable
-    }
-    if (table === 'activities') {
-      return {
-        insert: vi.fn((payload: any) => {
-          writes.push({ table: 'activities', op: 'insert', payload })
-          return Promise.resolve({ data: null, error: null })
-        }),
-      }
-    }
-    if (table === 'profiles') {
-      return {
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({
-              data: { ...MOCK_FIXER_PROFILE, balance: fixerBalance, pet_coins: 0, fixed_issues_count: 0 },
-              error: null,
-            }),
-          })),
-        })),
-        update: vi.fn((payload: any) => {
-          writes.push({ table: 'profiles', op: 'update', payload })
-          return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
-        }),
-      }
-    }
-    return originalFrom(table)
-  })
-  return mockClient
-}
-
-/**
- * Creates a mock Supabase client for deletePostAction tests
- */
-function createDeletePostMockClient(options: {
-  hasSession?: boolean
-  sessionUserId?: string
-  isConnectedAccount?: boolean
-  postData?: any
-  postError?: any
-  updateError?: any
-  profileData?: any
-  profileError?: any
-  balanceUpdateError?: any
-  transactionError?: any
-  activityError?: any
-} = {}) {
-  const {
-    hasSession = true,
-    sessionUserId = TEST_USER_ID,
-    isConnectedAccount = false,
-    postData = MOCK_POST,
-    postError = null,
-    updateError = null,
-    profileData = MOCK_POSTER_PROFILE,
-    profileError = null,
-    balanceUpdateError = null,
-    transactionError = null,
-    activityError = null,
-  } = options
-
-  const mockClient: any = {
-    auth: {
-      getSession: vi.fn().mockResolvedValue({
-        data: { 
-          session: hasSession ? createMockSession(sessionUserId) : null 
-        },
-        error: null,
-      }),
-      getUser: vi.fn().mockResolvedValue({
-        data: { 
-          user: hasSession ? { id: sessionUserId, email: 'test@example.com' } : null 
-        },
-        error: hasSession ? null : { message: 'Not authenticated' },
-      }),
-    },
-    from: vi.fn((table: string) => {
-      if (table === 'connected_accounts') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: isConnectedAccount ? { id: 'connected-id' } : null,
-                  error: null,
-                }),
-              })),
-            })),
-          })),
-        }
-      }
-
-      if (table === 'posts') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: postData,
-                error: postError,
-              }),
-            })),
-          })),
-          update: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue({
-              data: postData,
-              error: updateError,
-            }),
-          })),
-        }
-      }
-
-      if (table === 'profiles') {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: profileData,
-                error: profileError,
-              }),
-            })),
-          })),
-          update: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue({
-              data: profileData,
-              error: balanceUpdateError,
-            }),
-          })),
-        }
-      }
-
-      if (table === 'transactions') {
-        return {
-          insert: vi.fn().mockResolvedValue({
-            data: transactionError ? null : { id: 'transaction-123' },
-            error: transactionError,
-          }),
-        }
-      }
-
-      if (table === 'activities') {
-        return {
-          insert: vi.fn().mockResolvedValue({
-            data: activityError ? null : { id: 'activity-123' },
-            error: activityError,
-          }),
-        }
-      }
-
-      return mockClient
-    }),
-  }
-
-  return mockClient
-}
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.spyOn(console, 'log').mockImplementation(() => {})
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+})
 
 // ============================================================================
-// 5️⃣ Test Suite: closeIssueAction
-// ============================================================================
-
 describe('closeIssueAction', () => {
-  // Note: closeIssueAction calls createFixRewardAction directly inside the module, so a
-  // vi.spyOn on the module namespace never intercepts it (an earlier version of this file
-  // asserted `expect(spy).not.toHaveBeenCalled()`, which could never fail). The real
-  // createFixRewardAction runs against the mock client instead, and rejection tests assert
-  // via expectNoWrites() that nothing was marked fixed and nothing was paid.
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  const close = (username = FIXER_USERNAME) => closeIssueAction(POST_ID, OWNER_ID, username)
 
-  // --------------------------------------------------------------------------
-  // Success Cases
-  // --------------------------------------------------------------------------
+  describe('successful closure', () => {
+    it('marks the post fixed by the fixer and pays exactly the stored reward, once', async () => {
+      setup()
 
-  describe('Successful Issue Closure', () => {
-    it('should successfully close issue with valid fixer and pay exactly the post reward', async () => {
-      const mockClient = createCloseIssueSuccessPathMockClient({ fixerBalance: 2000 })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
+      const result = await close()
 
       expect(result).toEqual({ success: true })
-
-      const postUpdates = mockClient.writes.filter((w: any) => w.table === 'posts')
-      expect(postUpdates).toHaveLength(1)
-      expect(postUpdates[0].payload).toMatchObject({ fixed: true, fixed_by: TEST_FIXER_ID })
-
-      const txInserts = mockClient.writes.filter((w: any) => w.table === 'transactions')
-      expect(txInserts).toHaveLength(1)
-      expect(txInserts[0].payload).toMatchObject({
-        user_id: TEST_FIXER_ID,
-        type: 'internal',
-        amount: TEST_REWARD_AMOUNT,
-        status: 'completed',
-      })
-
-      const balanceUpdates = mockClient.writes.filter((w: any) => w.table === 'profiles')
-      expect(balanceUpdates).toHaveLength(1)
-      expect(balanceUpdates[0].payload).toMatchObject({
-        balance: 2000 + TEST_REWARD_AMOUNT,
-        pet_coins: TEST_REWARD_AMOUNT,
-        fixed_issues_count: 1,
-      })
+      expect(post()).toMatchObject({ fixed: true, fixed_by: FIXER_ID, fixed_by_is_anonymous: false, under_review: false, reward_paid_to: FIXER_ID })
+      expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
+      expect(db.row('profiles', FIXER_ID)).toMatchObject({ pet_coins: REWARD, fixed_issues_count: 1 })
+      expect(positiveTxs()).toEqual([
+        expect.objectContaining({ user_id: FIXER_ID, type: 'internal', amount: REWARD, status: 'completed', memo: `Fix reward earned: ${TITLE}` }),
+      ])
+      expect(balance(OWNER_ID)).toBe(OWNER_START) // the owner already paid when posting
     })
 
-    it('should refuse to pay out a reward post that was never funded', async () => {
-      const mockClient = createCloseIssueMockClient({ isFunded: false })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('pays via the pay_fix_reward RPC (admin client) exactly once, with no direct balance writes', async () => {
+      setup()
 
-      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
+      await close()
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe("This post's reward was never funded. Cannot issue reward.")
-      expectNoWrites(mockClient)
-    })
-  })
-
-  // --------------------------------------------------------------------------
-  // Authorization Tests
-  // --------------------------------------------------------------------------
-
-  describe('Authorization', () => {
-    it('should reject when not authenticated', async () => {
-      const mockClient = createCloseIssueMockClient({ hasSession: false })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Not authenticated')
-      expectNoWrites(mockClient)
+      expect(payoutRpcs()).toHaveLength(1)
+      expect(payoutRpcs()[0]).toMatchObject({ role: 'admin', payload: { p_post_id: POST_ID, p_fixer_id: FIXER_ID } })
+      expect(db.ops(o => o.table === 'profiles' && o.op === 'update')).toHaveLength(0)
+      expect(db.ops(o => o.table === 'posts' && o.op === 'update')).toEqual([
+        expect.objectContaining({ role: 'admin', rowsAffected: 1 }),
+      ])
     })
 
-    it('should reject when session user is not the post owner or group admin', async () => {
-      const mockClient = createCloseIssueMockClient({
-        sessionUserId: 'different-user-id',
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('notifies the fixer and records a fix activity', async () => {
+      setup()
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
+      await close()
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Only the original poster or a group admin can close this issue')
-      expectNoWrites(mockClient)
-    })
-  })
-
-  // --------------------------------------------------------------------------
-  // Validation Tests
-  // --------------------------------------------------------------------------
-
-  describe('Validation', () => {
-    it('should reject when post not found', async () => {
-      const mockClient = createCloseIssueMockClient({
-        postData: null,
-        postError: { message: 'Post not found' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Post not found')
-      expectNoWrites(mockClient)
+      expect(sendRewardEarnedEmail).toHaveBeenCalledWith(expect.objectContaining({ toEmail: 'fixer@example.com', rewardAmount: REWARD }))
+      expect(db.rows('activities', a => a.type === 'fix' && a.user_id === FIXER_ID)).toHaveLength(1)
     })
 
-    it('should reject when post is already fixed', async () => {
-      const fixedPost = { ...MOCK_POST, fixed: true }
-      const mockClient = createCloseIssueMockClient({ postData: fixedPost })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('closing twice pays once', async () => {
+      setup()
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
+      const first = await close()
+      const second = await close()
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Post is already marked as fixed')
-      expectNoWrites(mockClient)
+      expect(first.success).toBe(true)
+      expect(second).toEqual({ success: false, error: 'Post is already marked as fixed' })
+      expect(payoutRpcs()).toHaveLength(1)
+      expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
     })
 
-    it('should allow closing post even when under review (group admins can always approve)', async () => {
-      // Posts under review should still be closeable by authorized users
-      // This ensures group admins can always approve fixes
-      const reviewPost = { 
-        ...MOCK_POST, 
-        under_review: true,
-        submitted_fix_by_id: 'some-fixer-id',
-        submitted_fix_by_name: 'Some Fixer',
-      }
-      const mockClient = createCloseIssueMockClient({ postData: reviewPost })
-      
-      // Extend mock to support all tables used by createFixRewardAction
-      const originalFrom = mockClient.from
-      mockClient.from = vi.fn((table: string) => {
-        if (table === 'transactions') {
-          const chainable: any = {}
-          for (const method of ['select', 'eq', 'lt', 'gte', 'ilike']) {
-            chainable[method] = vi.fn(() => chainable)
-          }
-          chainable.limit = vi.fn().mockResolvedValue({ data: [{ id: 'funding-tx-123' }], error: null })
-          chainable.single = vi.fn().mockResolvedValue({ data: { id: 'transaction-123' }, error: null })
-          chainable.insert = vi.fn(() => ({
-            select: vi.fn(() => ({
-              single: vi.fn().mockResolvedValue({
-                data: { id: 'transaction-123' },
-                error: null,
-              }),
-            })),
-          }))
-          return chainable
-        }
-        if (table === 'activities') {
-          return {
-            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }
-        }
-        if (table === 'profiles') {
-          return {
-            select: vi.fn(() => ({
-              eq: vi.fn(() => ({
-                single: vi.fn().mockResolvedValue({
-                  data: MOCK_FIXER_PROFILE,
-                  error: null,
-                }),
-              })),
-            })),
-            update: vi.fn(() => ({
-              eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-            })),
-          }
-        }
-        return originalFrom(table)
-      })
-      
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('two overlapping closes (to different fixers) pay exactly one of them', async () => {
+      setup()
+      db.latency = db.barrier(op => op.table === 'posts' && op.op === 'update')
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
+      const results = await Promise.all([close(FIXER_USERNAME), close('other')])
 
-      // Should succeed - group admins and post owners can always close issues
+      expect(results.filter(r => r.success)).toHaveLength(1)
+      expect(payoutRpcs()).toHaveLength(1)
+      expect(positiveTxs()).toHaveLength(1)
+      expect(balance(FIXER_ID) - FIXER_START + balance(OTHER_ID)).toBe(REWARD)
+    })
+
+    it('allows closing a post that is under review (owners/admins can always approve)', async () => {
+      setup({ under_review: true, submitted_fix_by_id: OTHER_ID })
+
+      const result = await close()
+
       expect(result.success).toBe(true)
+      expect(post()).toMatchObject({ fixed: true, fixed_by: FIXER_ID, under_review: false })
+      expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
     })
 
-    it('should reject when post is deleted', async () => {
-      const deletedPost = { ...MOCK_POST, deleted_at: new Date().toISOString() }
-      const mockClient = createCloseIssueMockClient({ postData: deletedPost })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('lets an approved group admin close the issue, and emails the owner', async () => {
+      setup({ group_id: GROUP_ID }, {}, GROUP_ADMIN_ID)
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
+      const result = await close()
+
+      expect(result.success).toBe(true)
+      expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
+      expect(sendGroupAdminClosedIssueEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ toEmail: 'poster@example.com', adminName: 'Group Admin', rewardAmount: REWARD, groupName: 'Neighborhood' })
       )
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Post has been deleted')
-      expectNoWrites(mockClient)
     })
 
-    it('should reject when fixer username not found', async () => {
-      const mockClient = createCloseIssueMockClient({
-        fixerData: null,
-        fixerError: { message: 'User not found' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('closes a zero-reward post without any payout', async () => {
+      setup({ reward: 0 })
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        'nonexistent-user'
-      )
+      const result = await close()
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('User "nonexistent-user" not found')
-      expectNoWrites(mockClient)
+      expect(result).toEqual({ success: true })
+      expect(post().fixed).toBe(true)
+      expect(payoutRpcs()).toHaveLength(0)
+      expect(balance(FIXER_ID)).toBe(FIXER_START)
     })
   })
 
-  // --------------------------------------------------------------------------
-  // Error Handling
-  // --------------------------------------------------------------------------
+  describe('rejections change nothing', () => {
+    it('refuses a reward post that was never funded', async () => {
+      setup({}, { transactions: [] })
 
-  describe('Error Handling', () => {
-    it('should handle post update errors', async () => {
-      const mockClient = createCloseIssueMockClient({
-        updateError: { message: 'Database error' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+      const result = await close()
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
+      expect(result).toEqual({ success: false, error: "This post's reward was never funded. Cannot issue reward." })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('rejects when not authenticated', async () => {
+      setup({}, {}, null)
+
+      expect(await close()).toEqual({ success: false, error: 'Not authenticated' })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('rejects a caller who is neither the owner nor a group admin', async () => {
+      setup({}, {}, OTHER_ID)
+
+      expect(await close()).toEqual({ success: false, error: 'Only the original poster or a group admin can close this issue' })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('ignores the deprecated effectiveUserId: a connected account cannot close for its parent', async () => {
+      setup({}, {}, CHILD_ID)
+
+      const result = await closeIssueAction(POST_ID, OWNER_ID, FIXER_USERNAME)
 
       expect(result.success).toBe(false)
-      expect(result.error).toBe('Failed to update post')
+      expect(writes()).toHaveLength(0)
     })
 
-    it('should report failure and credit no balance when the reward transaction cannot be created', async () => {
-      const mockClient = createCloseIssueSuccessPathMockClient({
-        txInsertError: { message: 'insert failed' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('rejects a group member who is not an approved admin', async () => {
+      setup({ group_id: GROUP_ID }, { group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'member', status: 'approved' }] }, GROUP_ADMIN_ID)
 
-      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
-
-      expect(result).toEqual({ success: false, error: 'Failed to create transaction' })
-      // No balance may be credited without a reward transaction
-      expect(mockClient.writes.filter((w: any) => w.table === 'profiles')).toHaveLength(0)
-      // Current behavior: the post was already marked fixed before the transfer was attempted
-      // (closeIssueAction: "Post is already marked as fixed, return failure so user knows
-      // reward wasn't transferred"). Asserted so that a change here is noticed.
-      expect(mockClient.writes.filter((w: any) => w.table === 'posts')).toHaveLength(1)
+      expect((await close()).success).toBe(false)
+      expect(writes()).toHaveLength(0)
     })
 
-    it('should handle unexpected errors gracefully', async () => {
-      const mockClient = createCloseIssueMockClient()
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-      
-      // Force an unexpected error
-      mockClient.from.mockImplementation(() => {
+    it('rejects an unknown post', async () => {
+      setup()
+
+      expect(await closeIssueAction('missing-post', OWNER_ID, FIXER_USERNAME)).toEqual({ success: false, error: 'Post not found' })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('rejects a post already marked fixed', async () => {
+      setup({ fixed: true, fixed_by: OTHER_ID })
+
+      expect(await close()).toEqual({ success: false, error: 'Post is already marked as fixed' })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('rejects a deleted post', async () => {
+      setup({ deleted_at: '2026-01-01T00:00:00Z' })
+
+      expect(await close()).toEqual({ success: false, error: 'Post has been deleted' })
+      expect(writes()).toHaveLength(0)
+    })
+
+    it('rejects an unknown fixer username', async () => {
+      setup()
+
+      expect(await close('nonexistent-user')).toEqual({ success: false, error: 'User "nonexistent-user" not found' })
+      expect(writes()).toHaveLength(0)
+    })
+  })
+
+  describe('error handling', () => {
+    it('reports a post update error and pays nothing', async () => {
+      setup()
+      db.failOp = op => (op.table === 'posts' && op.op === 'update' ? { message: 'Database error' } : null)
+
+      expect(await close()).toEqual({ success: false, error: 'Failed to update post' })
+      expect(payoutRpcs()).toHaveLength(0)
+      expect(balance(FIXER_ID)).toBe(FIXER_START)
+    })
+
+    it('reports a payout failure, credits nothing and reverts the fixed mark', async () => {
+      setup()
+      db.failOp = op => (op.op === 'rpc' ? { message: 'connection reset' } : null)
+
+      const result = await close()
+
+      expect(result).toEqual({ success: false, error: 'Failed to pay reward.' })
+      expect(balance(FIXER_ID)).toBe(FIXER_START)
+      expect(positiveTxs()).toHaveLength(0)
+      expect(post()).toMatchObject({ fixed: false, fixed_by: null })
+    })
+
+    it('does not pay again if the reward was already paid (e.g. by another path)', async () => {
+      setup({ reward_paid_at: '2026-01-01T00:00:00Z', reward_paid_to: OTHER_ID })
+
+      const result = await close()
+
+      expect(result).toEqual({ success: false, error: 'This reward has already been paid.' })
+      expect(balance(FIXER_ID)).toBe(FIXER_START)
+      expect(positiveTxs()).toHaveLength(0)
+    })
+
+    it('returns the error message on unexpected exceptions', async () => {
+      setup()
+      db.sessionClient.from.mockImplementation(() => {
         throw new Error('Unexpected database error')
       })
 
-      const result = await closeIssueAction(
-        TEST_POST_ID,
-        TEST_USER_ID,
-        TEST_FIXER_USERNAME
-      )
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Unexpected database error')
+      expect(await close()).toEqual({ success: false, error: 'Unexpected database error' })
     })
   })
 })
 
 // ============================================================================
-// 6️⃣ Test Suite: deletePostAction
-// ============================================================================
-
 describe('deletePostAction', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
+  const del = (effectiveUserId = OWNER_ID) => deletePostAction(POST_ID, effectiveUserId)
+  const refundTxs = () => db.rows('transactions', t => t.amount > 0 && /Refund/.test(t.memo))
 
-  // --------------------------------------------------------------------------
-  // Success Cases
-  // --------------------------------------------------------------------------
+  describe('successful deletion', () => {
+    it('soft-deletes the post (admin client), refunds the reward once and logs an activity', async () => {
+      setup()
 
-  describe('Successful Post Deletion', () => {
-    it('should successfully delete post and refund reward', async () => {
-      const mockClient = createDeletePostMockClient()
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+      const result = await del()
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(true)
-      expect(result.error).toBeUndefined()
-      
-      // Verify soft delete was performed
-      expect(mockClient.from).toHaveBeenCalledWith('posts')
-      
-      // Verify balance was refunded
-      expect(mockClient.from).toHaveBeenCalledWith('profiles')
-      
-      // Verify activity was created
-      expect(mockClient.from).toHaveBeenCalledWith('activities')
-      
-      // Verify transaction record was created
-      expect(mockClient.from).toHaveBeenCalledWith('transactions')
+      expect(result).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toEqual([
+        expect.objectContaining({ user_id: OWNER_ID, type: 'internal', amount: REWARD, status: 'completed', memo: `Refund for deleted post: ${TITLE}` }),
+      ])
+      expect(db.rows('activities', a => a.type === 'post_deleted')).toEqual([
+        expect.objectContaining({ user_id: OWNER_ID, related_id: POST_ID, metadata: { title: TITLE, reward: REWARD } }),
+      ])
     })
 
-    it('should delete post with zero reward', async () => {
-      const postWithZeroReward = { ...MOCK_POST, reward: 0 }
-      const mockClient = createDeletePostMockClient({
-        postData: postWithZeroReward,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('performs the soft delete, refund and records with the admin client', async () => {
+      setup()
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      await del()
 
-      expect(result.success).toBe(true)
-      // Verified: post is deleted successfully even with zero reward
+      const sensitive = db.ops(o => o.op !== 'select' && ['posts', 'profiles', 'transactions', 'activities'].includes(o.table))
+      expect(sensitive.length).toBeGreaterThanOrEqual(4)
+      sensitive.forEach(o => expect(o.role).toBe('admin'))
+      // The soft delete is conditional (atomic) on the post still being live and unfixed
+      const softDelete = db.ops(o => o.table === 'posts' && o.op === 'update')[0]
+      expect(softDelete.filters).toEqual(expect.arrayContaining([['is', 'deleted_at', null], ['eq', 'fixed', false]]))
     })
 
-    it('should work for connected accounts', async () => {
-      const mockClient = createDeletePostMockClient({
-        isConnectedAccount: true,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('deletes a zero-reward post without refunding', async () => {
+      setup({ reward: 0 })
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(true)
-    })
-  })
-
-  // --------------------------------------------------------------------------
-  // Authorization Tests
-  // --------------------------------------------------------------------------
-
-  describe('Authorization', () => {
-    it('should reject when not authenticated', async () => {
-      const mockClient = createDeletePostMockClient({ hasSession: false })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Not authenticated')
+      expect(await del()).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
     })
 
-    it('should reject when effectiveUserId is not session user or connected account', async () => {
-      const mockClient = createDeletePostMockClient({
-        sessionUserId: 'different-user-id',
-        isConnectedAccount: false,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('deletes a null-reward post without refunding', async () => {
+      setup({ reward: null })
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Unauthorized')
+      expect(await del()).toEqual({ success: true })
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
     })
 
-    it('should reject when effectiveUserId is not the post owner', async () => {
-      const postByDifferentUser = { ...MOCK_POST, user_id: 'different-owner' }
-      const mockClient = createDeletePostMockClient({
-        postData: postByDifferentUser,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('lets a parent delete their connected account\'s post (refund goes to the poster)', async () => {
+      setup({ user_id: CHILD_ID }, {}, OWNER_ID)
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      expect(await del(CHILD_ID)).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
+      expect(balance(CHILD_ID)).toBe(100 + REWARD)
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+    })
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Only the original poster can delete this post')
+    it('uses a fallback title when the post has none', async () => {
+      setup({ title: null })
+
+      expect(await del()).toEqual({ success: true })
+      expect(refundTxs()[0].memo).toBe('Refund for deleted post: Issue')
     })
   })
 
-  // --------------------------------------------------------------------------
-  // Validation Tests
-  // --------------------------------------------------------------------------
+  describe('refund happens only if this request actually deleted the post', () => {
+    it('does not refund when the post was deleted concurrently (no row updated)', async () => {
+      setup()
+      // Another request deletes the post between our read and our update
+      db.beforeOp = op => {
+        if (op.table === 'posts' && op.op === 'update') post().deleted_at = '2026-01-01T00:00:00Z'
+      }
 
-  describe('Validation', () => {
-    it('should reject when post not found', async () => {
-      const mockClient = createDeletePostMockClient({
-        postData: null,
-        postError: { message: 'Post not found' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+      const result = await del()
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Post not found')
+      expect(result).toEqual({ success: false, error: 'Post has already been deleted or fixed' })
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+      expect(db.rows('activities')).toHaveLength(0)
     })
 
-    it('should reject deletion of fixed posts', async () => {
-      const fixedPost = { ...MOCK_POST, fixed: true }
-      const mockClient = createDeletePostMockClient({ postData: fixedPost })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('does not refund when the post was fixed concurrently (no row updated)', async () => {
+      setup()
+      db.beforeOp = op => {
+        if (op.table === 'posts' && op.op === 'update') Object.assign(post(), { fixed: true, fixed_by: FIXER_ID })
+      }
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      const result = await del()
 
       expect(result.success).toBe(false)
-      expect(result.error).toBe('Cannot delete a post that has been marked as fixed')
+      expect(post().deleted_at).toBeFalsy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
     })
 
-    it('should reject deletion of posts under review', async () => {
-      const reviewPost = { ...MOCK_POST, under_review: true }
-      const mockClient = createDeletePostMockClient({ postData: reviewPost })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('two overlapping deletes refund exactly once', async () => {
+      setup()
+      db.latency = db.barrier(op => op.table === 'posts' && op.op === 'update')
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      const results = await Promise.all([del(), del()])
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Cannot delete a post that is under review')
+      expect(results.filter(r => r.success)).toHaveLength(1)
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toHaveLength(1)
     })
 
-    it('should reject deletion of already deleted posts', async () => {
-      const deletedPost = { ...MOCK_POST, deleted_at: new Date().toISOString() }
-      const mockClient = createDeletePostMockClient({ postData: deletedPost })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('deleting twice refunds once', async () => {
+      setup()
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      await del()
+      const second = await del()
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Post has already been deleted')
+      expect(second).toEqual({ success: false, error: 'Post has already been deleted' })
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toHaveLength(1)
     })
   })
 
-  // --------------------------------------------------------------------------
-  // Error Handling
-  // --------------------------------------------------------------------------
+  describe('authorization', () => {
+    it('rejects when not authenticated', async () => {
+      setup({}, {}, null)
 
-  describe('Error Handling', () => {
-    it('should handle post update errors', async () => {
-      const mockClient = createDeletePostMockClient({
-        updateError: { message: 'Database error' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Failed to delete post')
+      expect(await del()).toEqual({ success: false, error: 'Not authenticated' })
+      expect(writes()).toHaveLength(0)
     })
 
-    it('should continue deletion even if profile fetch fails', async () => {
-      const mockClient = createDeletePostMockClient({
-        profileError: { message: 'Profile not found' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('rejects an effectiveUserId that is neither the session user nor a connected account', async () => {
+      setup({}, {}, OTHER_ID)
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      // Deletion should succeed even if refund fails
-      expect(result.success).toBe(true)
+      expect(await del()).toEqual({ success: false, error: 'Unauthorized' })
+      expect(writes()).toHaveLength(0)
     })
 
-    it('should continue deletion even if balance update fails', async () => {
-      const mockClient = createDeletePostMockClient({
-        balanceUpdateError: { message: 'Update failed' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('rejects when effectiveUserId is not the post owner', async () => {
+      setup({ user_id: OTHER_ID })
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
+      expect(await del()).toEqual({ success: false, error: 'Only the original poster can delete this post' })
+      expect(writes()).toHaveLength(0)
+    })
+  })
 
-      // Deletion should succeed even if refund fails
-      expect(result.success).toBe(true)
+  describe('validation', () => {
+    it.each([
+      ['an unknown post', {}, 'missing-post', 'Post not found'],
+      ['a fixed post', { fixed: true }, POST_ID, 'Cannot delete a post that has been marked as fixed'],
+      ['a post under review', { under_review: true }, POST_ID, 'Cannot delete a post that is under review'],
+      ['an already deleted post', { deleted_at: '2026-01-01T00:00:00Z' }, POST_ID, 'Post has already been deleted'],
+    ])('rejects %s and refunds nothing', async (_label, overrides, postId, error) => {
+      setup(overrides)
+
+      expect(await deletePostAction(postId, OWNER_ID)).toEqual({ success: false, error })
+      expect(writes()).toHaveLength(0)
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+    })
+  })
+
+  describe('error handling', () => {
+    it('reports a soft-delete error and refunds nothing', async () => {
+      setup()
+      db.failOp = op => (op.table === 'posts' && op.op === 'update' ? { message: 'Database error' } : null)
+
+      expect(await del()).toEqual({ success: false, error: 'Failed to delete post' })
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
     })
 
-    it('should continue deletion even if transaction creation fails', async () => {
-      const mockClient = createDeletePostMockClient({
-        transactionError: { message: 'Transaction insert failed' },
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+    it('still reports the deletion when the refund profile read fails', async () => {
+      setup()
+      db.failOp = op => (op.table === 'profiles' && op.op === 'select' ? { message: 'Profile not found' } : null)
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      // Deletion should succeed even if transaction record fails
-      expect(result.success).toBe(true)
+      expect(await del()).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
     })
 
-    it('should handle unexpected errors gracefully', async () => {
-      const mockClient = createDeletePostMockClient()
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-      
-      // Force an unexpected error
-      mockClient.from.mockImplementation(() => {
+    it('still reports the deletion when the balance update fails', async () => {
+      setup()
+      db.failOp = op => (op.table === 'profiles' && op.op === 'update' ? { message: 'Update failed' } : null)
+
+      expect(await del()).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+    })
+
+    it('still reports the deletion when the refund transaction record fails', async () => {
+      setup()
+      db.failOp = op => (op.table === 'transactions' && op.op === 'insert' ? { message: 'Transaction insert failed' } : null)
+
+      expect(await del()).toEqual({ success: true })
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+    })
+
+    it('returns the error message on unexpected exceptions', async () => {
+      setup()
+      db.sessionClient.from.mockImplementation(() => {
         throw new Error('Unexpected error')
       })
 
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Unexpected error')
-    })
-  })
-
-  // --------------------------------------------------------------------------
-  // Edge Cases
-  // --------------------------------------------------------------------------
-
-  describe('Edge Cases', () => {
-    it('should handle null reward gracefully', async () => {
-      const postWithNullReward = { ...MOCK_POST, reward: null }
-      const mockClient = createDeletePostMockClient({
-        postData: postWithNullReward,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(true)
-    })
-
-    it('should handle missing post title gracefully', async () => {
-      const postWithoutTitle = { ...MOCK_POST, title: null }
-      const mockClient = createDeletePostMockClient({
-        postData: postWithoutTitle,
-      })
-      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
-
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(true)
-    })
-  })
-
-  // --------------------------------------------------------------------------
-  // Admin Client Tests (Critical for RLS bypass)
-  // --------------------------------------------------------------------------
-
-  describe('Admin Client Usage', () => {
-    it('should use admin client for balance updates, transactions, and activities', async () => {
-      // Create separate mock clients for user session and admin
-      const mockUserClient: any = {
-        auth: {
-          getSession: vi.fn().mockResolvedValue({
-            data: { session: createMockSession(TEST_USER_ID) },
-            error: null,
-          }),
-        },
-        from: vi.fn((table: string) => {
-          if (table === 'connected_accounts') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  eq: vi.fn(() => ({
-                    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-                  })),
-                })),
-              })),
-            }
-          }
-          if (table === 'posts') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: MOCK_POST, error: null }),
-                })),
-              })),
-              update: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({ data: MOCK_POST, error: null }),
-              })),
-            }
-          }
-          return {
-            select: vi.fn(() => ({ eq: vi.fn(() => ({ single: vi.fn().mockResolvedValue({ data: null, error: null }) })) })),
-            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-            update: vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ data: null, error: null }) })),
-          }
-        }),
-      }
-
-      const mockAdminClient: any = {
-        from: vi.fn((table: string) => {
-          if (table === 'profiles') {
-            return {
-              select: vi.fn(() => ({
-                eq: vi.fn(() => ({
-                  single: vi.fn().mockResolvedValue({ data: MOCK_POSTER_PROFILE, error: null }),
-                })),
-              })),
-              update: vi.fn(() => ({
-                eq: vi.fn().mockResolvedValue({ data: MOCK_POSTER_PROFILE, error: null }),
-              })),
-            }
-          }
-          return {
-            insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-          }
-        }),
-      }
-
-      vi.clearAllMocks()
-      vi.mocked(createServerSupabaseClient)
-        .mockReturnValueOnce(mockUserClient)  // First call: user session client
-        .mockReturnValueOnce(mockAdminClient) // Second call: admin client
-
-      const result = await deletePostAction(TEST_POST_ID, TEST_USER_ID)
-
-      expect(result.success).toBe(true)
-
-      // Verify createServerSupabaseClient was called twice
-      expect(createServerSupabaseClient).toHaveBeenCalledTimes(2)
-
-      // First call should be with cookie store (user session)
-      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(1, expect.any(Object))
-
-      // Second call should be with service role key (admin client)
-      expect(createServerSupabaseClient).toHaveBeenNthCalledWith(2, {
-        supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-      })
-
-      // Verify admin client was used for balance-sensitive operations
-      expect(mockAdminClient.from).toHaveBeenCalledWith('activities')
-      expect(mockAdminClient.from).toHaveBeenCalledWith('profiles')
-      expect(mockAdminClient.from).toHaveBeenCalledWith('transactions')
+      expect(await del()).toEqual({ success: false, error: 'Unexpected error' })
     })
   })
 })

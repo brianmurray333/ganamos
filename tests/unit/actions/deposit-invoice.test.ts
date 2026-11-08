@@ -77,6 +77,9 @@ const MOCK_PROFILE_SUFFICIENT = {
   fixed_issues_count: 0,
 }
 
+/** Balance returned by the credit_deposit RPC in these tests */
+const CREDITED_BALANCE = 7777
+
 const MOCK_TRANSACTION_PENDING = {
   id: 'tx-123',
   user_id: VALID_USER_ID,
@@ -134,6 +137,7 @@ function createMockSupabaseClient(overrides = {}) {
     }),
     single: vi.fn(),
     limit: vi.fn(() => Promise.resolve({ data: [{ id: 'test' }], error: null })),
+    rpc: vi.fn(),
     ...overrides,
   }
   return mockClient
@@ -557,11 +561,28 @@ describe('checkDepositStatus', () => {
 
     vi.mocked(sendBitcoinReceivedEmail).mockResolvedValue({ success: true })
     vi.mocked(checkBalanceCap).mockResolvedValue({ allowed: true, capLevel: 'none' })
+
+    // credit_deposit (SQL) completes the pending deposit and credits balance + pet_coins
+    // atomically, returning the new balance. Return a value distinct from any client-side
+    // computation so tests prove the response uses the DB's balance.
+    mockAdminSupabaseClient.rpc.mockImplementation(async (fn: string) =>
+      fn === 'credit_deposit'
+        ? { data: CREDITED_BALANCE, error: null }
+        : { data: null, error: { message: `unexpected rpc ${fn}` } }
+    )
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
   })
+
+  /** No direct writes to balances or transaction status: only the atomic RPC may do that. */
+  const expectNoDirectBalanceOrStatusWrites = () => {
+    const writes = vi.mocked(mockAdminSupabaseClient.update).mock.calls.filter(
+      call => call[0].balance !== undefined || call[0].pet_coins !== undefined || call[0].status !== undefined
+    )
+    expect(writes).toHaveLength(0)
+  }
 
   describe('Authentication & Security', () => {
     it('should require valid session with no userId fallback', async () => {
@@ -618,6 +639,8 @@ describe('checkDepositStatus', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Unauthorized: Transaction does not belong to authenticated user')
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalled()
+      expectNoDirectBalanceOrStatusWrites()
     })
   })
 
@@ -700,7 +723,7 @@ describe('checkDepositStatus', () => {
       })
     })
 
-    it('should update profile balance on settlement', async () => {
+    it('should credit the deposit through the atomic credit_deposit RPC', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -708,10 +731,11 @@ describe('checkDepositStatus', () => {
 
       await checkDepositStatus(VALID_R_HASH_HEX)
 
-      expect(mockAdminSupabaseClient.update).toHaveBeenCalledWith({
-        balance: MOCK_PROFILE_SUFFICIENT.balance + 1000,
-        pet_coins: MOCK_PROFILE_SUFFICIENT.pet_coins + 1000,
-        updated_at: expect.any(String),
+      expect(mockAdminSupabaseClient.rpc).toHaveBeenCalledTimes(1)
+      expect(mockAdminSupabaseClient.rpc).toHaveBeenCalledWith('credit_deposit', {
+        p_transaction_id: MOCK_TRANSACTION_PENDING.id,
+        p_user_id: VALID_USER_ID,
+        p_amount: 1000,
       })
     })
 
@@ -736,14 +760,13 @@ describe('checkDepositStatus', () => {
       const result = await checkDepositStatus(VALID_R_HASH_HEX)
 
       expect(result.amount).toBe(actualAmountPaid)
-      expect(mockAdminSupabaseClient.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          balance: MOCK_PROFILE_SUFFICIENT.balance + actualAmountPaid,
-        })
+      expect(mockAdminSupabaseClient.rpc).toHaveBeenCalledWith(
+        'credit_deposit',
+        expect.objectContaining({ p_amount: actualAmountPaid })
       )
     })
 
-    it('should update pet_coins in 1:1 ratio with balance', async () => {
+    it('should not write balance or pet_coins directly (credit_deposit credits both 1:1)', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -751,15 +774,10 @@ describe('checkDepositStatus', () => {
 
       await checkDepositStatus(VALID_R_HASH_HEX)
 
-      const balanceUpdate = vi.mocked(mockAdminSupabaseClient.update).mock.calls.find(
-        call => call[0].balance !== undefined
-      )
-
-      expect(balanceUpdate).toBeDefined()
-      expect(balanceUpdate![0].balance).toBe(balanceUpdate![0].pet_coins)
+      expectNoDirectBalanceOrStatusWrites()
     })
 
-    it('should return new balance in response', async () => {
+    it('should return the balance reported by credit_deposit', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -767,7 +785,24 @@ describe('checkDepositStatus', () => {
 
       const result = await checkDepositStatus(VALID_R_HASH_HEX)
 
-      expect(result.newBalance).toBe(MOCK_PROFILE_SUFFICIENT.balance + 1000)
+      expect(result).toMatchObject({ success: true, settled: true, amount: 1000, newBalance: CREDITED_BALANCE })
+    })
+
+    it('should treat a NULL credit_deposit result as already credited (no second credit side effects)', async () => {
+      // e.g. a concurrent check completed the deposit between our read and our credit
+      mockAdminSupabaseClient.rpc.mockResolvedValue({ data: null, error: null })
+      mockAdminSupabaseClient.single
+        .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
+        .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
+        .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
+
+      const result = await checkDepositStatus(VALID_R_HASH_HEX)
+
+      expect(result).toEqual({ success: true, settled: true, amount: 1000, newBalance: null })
+      expect(mockAdminSupabaseClient.insert).not.toHaveBeenCalled() // no duplicate deposit activity
+      expect(sendBitcoinReceivedEmail).not.toHaveBeenCalled()
+      expect(revalidatePath).not.toHaveBeenCalled()
+      expectNoDirectBalanceOrStatusWrites()
     })
   })
 
@@ -789,7 +824,7 @@ describe('checkDepositStatus', () => {
       })
     })
 
-    it('should transition transaction from pending to completed', async () => {
+    it('should complete the pending transaction inside credit_deposit, not with a separate update', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -797,26 +832,14 @@ describe('checkDepositStatus', () => {
 
       await checkDepositStatus(VALID_R_HASH_HEX)
 
-      expect(mockAdminSupabaseClient.update).toHaveBeenCalledWith({
-        status: 'completed',
-        amount: 1000,
-        updated_at: expect.any(String),
-      })
+      expect(mockAdminSupabaseClient.rpc).toHaveBeenCalledWith(
+        'credit_deposit',
+        expect.objectContaining({ p_transaction_id: MOCK_TRANSACTION_PENDING.id })
+      )
+      expectNoDirectBalanceOrStatusWrites()
     })
 
-    it('should update transaction amount with actual paid amount', async () => {
-      const actualAmountPaid = 1500
-
-      vi.mocked(checkInvoice).mockResolvedValue({
-        success: true,
-        settled: true,
-        amountPaid: actualAmountPaid.toString(),
-        state: 'SETTLED',
-        creationDate: '1609459200',
-        settleDate: '1609459300',
-        preimage: 'abc123',
-      })
-
+    it('should only look up the transaction while it is pending', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -824,11 +847,8 @@ describe('checkDepositStatus', () => {
 
       await checkDepositStatus(VALID_R_HASH_HEX)
 
-      const txUpdate = vi.mocked(mockAdminSupabaseClient.update).mock.calls.find(
-        call => call[0].status === 'completed'
-      )
-
-      expect(txUpdate![0].amount).toBe(actualAmountPaid)
+      expect(mockAdminSupabaseClient.eq).toHaveBeenCalledWith('r_hash_str', VALID_R_HASH_HEX)
+      expect(mockAdminSupabaseClient.eq).toHaveBeenCalledWith('status', 'pending')
     })
 
     it('should create activity record for deposit', async () => {
@@ -1005,6 +1025,7 @@ describe('checkDepositStatus', () => {
       expect(result.success).toBe(true)
       expect(result.settled).toBe(true)
       expect(result.newBalance).toBeNull()
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalled()
     })
 
     it('should not duplicate balance updates for completed transactions', async () => {
@@ -1024,6 +1045,7 @@ describe('checkDepositStatus', () => {
       )
 
       expect(balanceUpdates).toHaveLength(0)
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalled()
     })
   })
 
@@ -1085,9 +1107,10 @@ describe('checkDepositStatus', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('User profile not found')
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalled()
     })
 
-    it('should handle transaction update errors', async () => {
+    it('should report failure and skip all side effects when credit_deposit errors', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({
         success: true,
         settled: true,
@@ -1098,28 +1121,20 @@ describe('checkDepositStatus', () => {
         preimage: 'abc123',
       })
 
-      // The profile is read (for the balance-cap check) before the transaction update
+      // The profile is read (for the balance-cap check) before the credit
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
 
-      mockAdminSupabaseClient.update.mockReturnValueOnce({
-        eq: vi.fn().mockResolvedValue({
-          data: null,
-          error: { message: 'Database error' },
-        }),
-      } as any)
+      // The SQL function raised, so its status change and credit were rolled back together
+      mockAdminSupabaseClient.rpc.mockResolvedValue({ data: null, error: { message: 'profile_not_found' } })
 
       const result = await checkDepositStatus(VALID_R_HASH_HEX)
 
-      expect(result.success).toBe(false)
-      expect(result.error).toBe('Failed to update transaction')
-
-      // Balance must not be credited when the transaction could not be marked completed
-      const balanceUpdates = vi.mocked(mockAdminSupabaseClient.update).mock.calls.filter(
-        call => call[0].balance !== undefined
-      )
-      expect(balanceUpdates).toHaveLength(0)
+      expect(result).toEqual({ success: false, error: 'Failed to update balance' })
+      expect(mockAdminSupabaseClient.insert).not.toHaveBeenCalled()
+      expect(sendBitcoinReceivedEmail).not.toHaveBeenCalled()
+      expectNoDirectBalanceOrStatusWrites()
     })
 
     it('should not credit a deposit that would exceed the hard balance cap', async () => {
@@ -1154,9 +1169,10 @@ describe('checkDepositStatus', () => {
       expect(result.error).toBe('Balance would exceed the 40,000 sats limit.')
       // Neither the transaction nor the balance may be touched
       expect(mockAdminSupabaseClient.update).not.toHaveBeenCalled()
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalled()
     })
 
-    it('should handle balance update errors', async () => {
+    it('should not fall back to direct balance writes when credit_deposit errors', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({
         success: true,
         settled: true,
@@ -1170,27 +1186,14 @@ describe('checkDepositStatus', () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
-
-      let updateCallCount = 0
-      mockAdminSupabaseClient.update.mockImplementation(() => {
-        updateCallCount++
-        if (updateCallCount === 2) {
-          return {
-            eq: vi.fn().mockResolvedValue({
-              data: null,
-              error: { message: 'Balance update failed' },
-            }),
-          } as any
-        }
-        return {
-          eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-        } as any
-      })
+      mockAdminSupabaseClient.rpc.mockResolvedValue({ data: null, error: { message: 'Balance update failed' } })
 
       const result = await checkDepositStatus(VALID_R_HASH_HEX)
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Failed to update balance')
+      expect(mockAdminSupabaseClient.rpc).toHaveBeenCalledTimes(1)
+      expect(mockAdminSupabaseClient.update).not.toHaveBeenCalled()
     })
   })
 })

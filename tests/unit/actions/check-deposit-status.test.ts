@@ -137,11 +137,46 @@ function createFakeDb(initial: Tables) {
     return q
   }
 
+  /**
+   * Same semantics as the SQL function credit_deposit (supabase/migrations/
+   * 20261108000000_atomic_payouts.sql): in ONE atomic step, flip the transaction
+   * pending -> completed (only if it is this user's pending deposit) and credit
+   * balance + pet_coins. Returns the new balance, or NULL if nothing was pending.
+   * If the profile credit fails, the whole thing rolls back (deposit stays pending).
+   * The check-and-write below runs without yielding, so it is atomic with respect
+   * to other in-flight calls, like a row-locked UPDATE in Postgres.
+   */
+  async function creditDeposit(args: { p_transaction_id: string; p_user_id: string; p_amount: number }) {
+    await wait(opts.latency('rpc', 'credit_deposit', ''))
+    const { p_transaction_id, p_user_id, p_amount } = args
+    if (p_amount == null || p_amount < 0) return { data: null, error: { message: 'invalid_amount' } }
+    const tx = (tables.transactions ||= []).find(
+      t => t.id === p_transaction_id && t.user_id === p_user_id && t.type === 'deposit' && t.status === 'pending'
+    )
+    if (!tx) return { data: null, error: null }
+    const profile = (tables.profiles ||= []).find(p => p.id === p_user_id)
+    const newBalance = (profile?.balance || 0) + p_amount
+    const profileError = opts.failUpdate('profiles', { balance: newBalance })
+    if (!profile || profileError) {
+      // RAISE -> whole function rolls back: transaction stays pending
+      return { data: null, error: profileError || { message: 'profile_not_found' } }
+    }
+    tx.status = 'completed'
+    tx.amount = p_amount
+    profile.balance = newBalance
+    profile.pet_coins = (profile.pet_coins || 0) + p_amount
+    return { data: newBalance, error: null }
+  }
+
   const client = {
     auth: {
       getSession: vi.fn(async () => ({ data: { session: opts.session }, error: null })),
     },
     from: vi.fn((table: string) => builder(table)),
+    rpc: vi.fn((fn: string, args: any) => {
+      if (fn === 'credit_deposit') return creditDeposit(args)
+      return Promise.resolve({ data: null, error: { message: `unexpected rpc ${fn}` } })
+    }),
   }
 
   return { tables, opts, client }
@@ -299,23 +334,28 @@ describe('checkDepositStatus - resulting state (stateful fake DB)', () => {
       expect(depositActivities()).toHaveLength(0)
     })
 
-    // REAL BUG? lightning-actions.ts marks the transaction "completed" (L315-322) BEFORE
-    // crediting the balance (L332-339), in two separate non-transactional writes. If the
-    // balance write fails, the transaction stays "completed" with no credit, and every
-    // later poll takes the "already completed" branch (L221-246) and returns success with
-    // newBalance: null, so the user's paid deposit is never credited. Intended behavior
-    // (from the original suite's "balance update failure and rollback" case): a failed
-    // credit must leave the deposit retryable. Remove `.fails` once that holds.
-    it.fails('leaves the deposit retryable when the balance update fails', async () => {
+    // Fixed (was REAL BUG): the transaction used to be marked "completed" BEFORE the balance
+    // was credited, in two separate writes; a failed balance write left a paid deposit
+    // "completed" but never credited. Now credit_deposit does both in one DB transaction,
+    // so a failed credit leaves the deposit pending and the next poll credits it.
+    it('leaves the deposit retryable when the balance update fails', async () => {
       db.opts.failUpdate = (table, payload) =>
         table === 'profiles' && 'balance' in payload ? { message: 'balance update failed' } : null
 
       const first = await checkDepositStatus(R_HASH)
       expect(first).toMatchObject({ success: false, error: 'Failed to update balance' })
       expect(profile().balance).toBe(START_BALANCE)
+      expect(tx().status).toBe('pending')
+      expect(depositActivities()).toHaveLength(0)
 
       // Database recovers; the next poll must credit the deposit
       db.opts.failUpdate = () => null
+      const retry = await checkDepositStatus(R_HASH)
+      expect(retry).toMatchObject({ success: true, settled: true, newBalance: START_BALANCE + DEPOSIT })
+      expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(tx().status).toBe('completed')
+
+      // ...and only once
       await checkDepositStatus(R_HASH)
       expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
     })
@@ -332,15 +372,13 @@ describe('checkDepositStatus - resulting state (stateful fake DB)', () => {
       expect(tx().status).toBe('pending')
     })
 
-    // REAL BUG? Double credit race. checkDepositStatus reads the pending transaction
-    // (L210-215), then marks it completed with `.update(...).eq("id", transaction.id)`
-    // (L315-322) WITHOUT a `status = 'pending'` guard (no compare-and-set / row lock / RPC),
-    // and credits with a read-modify-write of profiles.balance (L279-292, L332-339).
-    // Two overlapping calls (the deposit page polls on setInterval; a client can also call
-    // the server action directly) can both pass the pending check and both credit.
+    // Fixed (was REAL BUG): double credit race. checkDepositStatus used to mark the
+    // transaction completed without a `status = 'pending'` guard and credit with a
+    // read-modify-write of profiles.balance, so two overlapping polls could both credit.
+    // Now credit_deposit is conditional on the transaction still being pending.
     // Here call B reads the pending transaction before A completes it, but its profile read
-    // is slower (lands after A's credit), so B adds the deposit a second time.
-    it.fails('credits a settled deposit exactly once when two checks overlap', async () => {
+    // is slower (lands after A's credit); B must not add the deposit a second time.
+    it('credits a settled deposit exactly once when two checks overlap', async () => {
       let profileReads = 0
       db.opts.latency = (table, op, columns) => {
         if (table === 'profiles' && op === 'select' && columns.includes('balance')) {
@@ -359,15 +397,25 @@ describe('checkDepositStatus - resulting state (stateful fake DB)', () => {
       expect(results.filter(r => r.success && r.newBalance != null)).toHaveLength(1)
     })
 
-    // REAL BUG? Same race, fully interleaved: both calls credit from the same starting
-    // balance (so the lost update happens to hide the double credit in `balance`), but both
-    // report a fresh credit and both write a deposit activity for one payment.
-    it.fails('records a single deposit activity when two checks run in lockstep', async () => {
+    // Fixed (was REAL BUG): same race, fully interleaved. Both calls read the pending
+    // transaction before either credits; only the one whose credit_deposit wins reports a
+    // fresh credit and writes the deposit activity.
+    it('records a single deposit activity when two checks run in lockstep', async () => {
       const results = await Promise.all([checkDepositStatus(R_HASH), checkDepositStatus(R_HASH)])
 
+      // Both calls really raced into the credit step (neither was short-circuited earlier)
+      expect(db.client.rpc).toHaveBeenCalledTimes(2)
+      expect(db.client.rpc).toHaveBeenCalledWith('credit_deposit', {
+        p_transaction_id: TX_ID,
+        p_user_id: USER_ID,
+        p_amount: DEPOSIT,
+      })
       expect(profile().balance).toBe(START_BALANCE + DEPOSIT)
+      expect(profile().pet_coins).toBe(START_BALANCE + DEPOSIT)
       expect(depositActivities()).toHaveLength(1)
       expect(results.filter(r => r.success && r.newBalance != null)).toHaveLength(1)
+      // The loser still reports the (already credited) settled deposit, without a balance
+      expect(results.filter(r => r.success && r.settled && r.newBalance === null)).toHaveLength(1)
     })
   })
 })
