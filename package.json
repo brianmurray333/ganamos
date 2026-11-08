@@ -59,6 +59,7 @@
     "exifr": "^7.1.3",
     "globe.gl": "^2.45.0",
     "groq-sdk": "latest",
+    "jose": "^4.15.9",
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
     "libphonenumber-js": "^1.10.51",

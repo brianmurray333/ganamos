@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase" // For createFundedA
 import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning-validation"
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
+import { sendRewardOnHoldAlert } from "@/lib/security-alerts"
 import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
 import { AUTO_APPROVE_CONFIDENCE, createAdminClient, generateClaimToken, isPostRewardFunded, payFixReward, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
 
@@ -104,6 +105,8 @@ export async function payAnonymousFixLightningAddressAction(
   let lockId: string | null = null
   // Once we've tried to pay, never release the lock (a retry could pay twice)
   let paymentAttempted = false
+  let paidHash: string | null = null // set once LND confirms the payment
+  let paymentRecorded = false
   const releaseLock = async () => {
     if (!lockId) return
     await supabase
@@ -274,11 +277,20 @@ export async function payAnonymousFixLightningAddressAction(
         }
       }
       console.error("SECURITY: anonymous Lightning-address payout outcome uncertain; keeping lock", { postId, lockId })
+      await sendRewardOnHoldAlert({
+        postId,
+        amount: post.reward,
+        reason: "payment_uncertain",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        details: String((paymentResult as any)?.error ?? ""),
+      })
       return {
         success: false,
         error: "The payment could not be confirmed. The reward is on hold; please contact support.",
       }
     }
+
+    paidHash = (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage || "unknown"
 
     // Mark as paid
     const now = new Date().toISOString()
@@ -302,11 +314,20 @@ export async function payAnonymousFixLightningAddressAction(
 
     if (updateError) {
       console.error("Error marking anonymous fix reward as paid:", updateError)
+      await sendRewardOnHoldAlert({
+        postId,
+        amount: post.reward,
+        reason: "paid_but_not_recorded",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        paymentHash: (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage,
+        details: updateError.message,
+      })
       return {
         success: false,
         error: "Payment was sent but there was an error updating our records. Please contact support.",
       }
     }
+    paymentRecorded = true
 
     // Create activity for the anonymous fix payment
     await supabase.from("activities").insert({
@@ -353,6 +374,15 @@ export async function payAnonymousFixLightningAddressAction(
   } catch (error) {
     if (!paymentAttempted) await releaseLock()
     console.error("Unexpected error in payAnonymousFixLightningAddressAction:", error)
+    if (paymentAttempted && !paymentRecorded) {
+      await sendRewardOnHoldAlert({
+        postId,
+        reason: paidHash ? "paid_but_not_recorded" : "payment_uncertain",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        paymentHash: paidHash,
+        details: error instanceof Error ? error.message : String(error),
+      })
+    }
     return {
       success: false,
       error: "An unexpected error occurred while processing the payment.",
@@ -380,6 +410,9 @@ export async function payAnonymousRewardAction(
   }
 
   const supabase = createAdminClient()
+  let paymentAttempted = false
+  let paidHash: string | null = null // set once LND confirms the payment
+  let paymentRecorded = false
 
   try {
     // 0. SECURITY: only the anonymous fixer (holder of the claim token issued
@@ -470,6 +503,7 @@ export async function payAnonymousRewardAction(
     console.log(`Attempting to pay anonymous reward for post ${postId}: ${post.reward} sats`)
 
     const { payInvoice } = await import("@/lib/lightning")
+    paymentAttempted = true
     const paymentResult = await payInvoice(lightningInvoice.trim())
 
     if (!paymentResult.success) {
@@ -486,12 +520,21 @@ export async function payAnonymousRewardAction(
         }
       }
       console.error("SECURITY: anonymous reward payout outcome uncertain; keeping lock", { postId, lockId })
+      await sendRewardOnHoldAlert({
+        postId,
+        amount: post.reward,
+        reason: "payment_uncertain",
+        flow: "Anonymous fixer claimed reward (invoice)",
+        details: String((paymentResult as any)?.error ?? ""),
+      })
       return {
         success: false,
         error: "The payment could not be confirmed. The reward is on hold; please contact support.",
         details: (paymentResult as any).error,
       }
     }
+
+    paidHash = (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage || "unknown"
 
     // 6. Mark the reward as claimed in the database (lock remains set, paid_at is the permanent indicator)
     const now = new Date().toISOString()
@@ -506,6 +549,14 @@ export async function payAnonymousRewardAction(
 
     if (updateError) {
       console.error("Error marking anonymous reward as paid:", updateError)
+      await sendRewardOnHoldAlert({
+        postId,
+        amount: post.reward,
+        reason: "paid_but_not_recorded",
+        flow: "Anonymous fixer claimed reward (invoice)",
+        paymentHash: (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage,
+        details: updateError.message,
+      })
       // Payment was successful but we couldn't update the database
       // This is a critical issue that needs manual intervention
       return {
@@ -514,6 +565,7 @@ export async function payAnonymousRewardAction(
         details: updateError.message,
       }
     }
+    paymentRecorded = true
 
     console.log(`Anonymous reward successfully paid for post ${postId}. Payment hash: ${paymentResult.paymentHash}`)
 
@@ -561,6 +613,15 @@ export async function payAnonymousRewardAction(
     }
   } catch (error) {
     console.error("Unexpected error in payAnonymousRewardAction:", error)
+    if (paymentAttempted && !paymentRecorded) {
+      await sendRewardOnHoldAlert({
+        postId,
+        reason: paidHash ? "paid_but_not_recorded" : "payment_uncertain",
+        flow: "Anonymous fixer claimed reward (invoice)",
+        paymentHash: paidHash,
+        details: error instanceof Error ? error.message : String(error),
+      })
+    }
     return {
       success: false,
       error: "An unexpected error occurred while processing the payment.",

@@ -397,9 +397,32 @@ export default function NewPostPage() {
       // Use requestAnimationFrame to ensure DOM is ready while staying in user interaction window
       requestAnimationFrame(() => {
         if (descriptionRef.current) {
-          descriptionRef.current.focus()
+          // preventScroll: the field is near the top; don't let Safari jump the page
+          descriptionRef.current.focus({ preventScroll: true })
         }
       })
+    }
+  }, [step])
+
+  // iOS Safari scrolls the page when the keyboard opens even if the focused
+  // field is already visible above it. If the description fits in the visible
+  // area at the top of the page, put the page back.
+  useEffect(() => {
+    if (step !== "details" || typeof window === "undefined") return
+    const vv = window.visualViewport
+    if (!vv) return
+    const keepInPlace = () => {
+      const el = descriptionRef.current
+      if (!el || document.activeElement !== el) return
+      if (window.scrollY <= 0 && vv.offsetTop <= 0) return
+      const bottomInPage = el.getBoundingClientRect().bottom + window.scrollY
+      if (bottomInPage + 8 <= vv.height) window.scrollTo(0, 0)
+    }
+    vv.addEventListener("resize", keepInPlace)
+    vv.addEventListener("scroll", keepInPlace)
+    return () => {
+      vv.removeEventListener("resize", keepInPlace)
+      vv.removeEventListener("scroll", keepInPlace)
     }
   }, [step])
 
@@ -1018,8 +1041,7 @@ export default function NewPostPage() {
                   }}
                   rows={2}
                   required
-                  autoFocus
-                  className="resize-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  className="resize-none caret-green-500 focus-visible:ring-1 focus-visible:ring-green-500 focus-visible:ring-offset-0 focus-visible:border-green-500"
                   enterKeyHint="done"
                 />
               </div>
@@ -1291,7 +1313,7 @@ export default function NewPostPage() {
                 )}
 
               <div className="space-y-6">
-                <div className="flex flex-col items-center space-y-4 py-6">
+                <div className="flex flex-col items-center space-y-4 py-2">
                   <div className="flex items-center justify-between w-full max-w-xs">
                     <button
                       type="button"
@@ -1400,7 +1422,7 @@ export default function NewPostPage() {
                           setReward(newAmount)
                         }}
                         placeholder="Enter amount"
-                        className="w-full px-4 py-3 text-center text-lg border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        className="w-full px-4 py-3 text-center text-lg border border-gray-300 rounded-lg caret-green-500 focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
                         min="0"
                         max="50000"
                         autoFocus
