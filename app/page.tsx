@@ -16,6 +16,14 @@ import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { DonationModal } from "@/components/donation-modal"
 import { useDonationModal } from "@/components/donation-modal-provider"
 
+// Supabase auth-helpers keep the session in an `sb-<project>-auth-token`
+// cookie (possibly chunked as .0, .1). Its presence means a session will most
+// likely be restored, before the async session check has finished.
+function hasStoredAuthSession() {
+  if (typeof document === "undefined") return false
+  return /(?:^|;\s*)sb-[^=]+-auth-token(?:\.\d+)?=/.test(document.cookie)
+}
+
 const MapView = dynamic(
   () => import("@/components/map-view").then((mod) => mod.MapView),
   { 
@@ -212,6 +220,27 @@ export default function DashboardPage() {
   const isHeaderReady = () => {
     return profile !== null && !loading && !isLoading
   }
+
+  // While auth resolves, don't guess: if there's a stored Supabase session we
+  // expect a signed-in user, so keep a skeleton pill instead of flashing the
+  // "Sign Up" CTA. Give up after a few seconds in case the session is stale.
+  const [expectSignedIn, setExpectSignedIn] = useState(false)
+  useEffect(() => {
+    if (!hasStoredAuthSession()) return
+    setExpectSignedIn(true)
+    const t = setTimeout(() => setExpectSignedIn(false), 6000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const headerState: "pending" | "anonymous" | "user" = !sessionLoaded
+    ? "pending"
+    : user
+      ? isHeaderReady()
+        ? "user"
+        : "pending"
+      : expectSignedIn
+        ? "pending"
+        : "anonymous"
 
   useEffect(() => {
     if (profile && connectedAccounts.length > 0) {
@@ -443,14 +472,6 @@ export default function DashboardPage() {
     localStorage.setItem('activeFilters', JSON.stringify(newFilters))
   }
 
-  if (!sessionLoaded) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">Loading...</div>
-      </div>
-    )
-  }
-
   return (
     <>
       {/* Desktop: Side-by-side layout */}
@@ -464,7 +485,12 @@ export default function DashboardPage() {
           {/* Mobile Header - Floating sats balance pill OR sign-up CTA for anonymous */}
           <div className="lg:hidden sticky top-0 z-10 bg-gradient-to-b from-background via-background to-transparent pb-2 w-full flex justify-center will-change-transform" style={{ contain: 'layout style paint', transform: 'translate3d(0,0,0)' }}>
             <div className="w-full max-w-md pt-3 px-4 relative min-h-[56px]">
-              {!user ? (
+              {headerState === "pending" ? (
+                // Auth / profile still resolving - placeholder pill, same footprint as the balance pill
+                <div className="flex items-center justify-end">
+                  <div className="h-10 w-24 rounded-full bg-gray-200 dark:bg-gray-800 animate-pulse" aria-hidden="true" />
+                </div>
+              ) : headerState === "anonymous" ? (
                 // Anonymous user - show sign-up CTA
                 <div className="flex items-center justify-end gap-2 animate-in fade-in duration-200 fill-mode-both">
                   <Button 
@@ -475,7 +501,8 @@ export default function DashboardPage() {
                     Sign Up to Earn
                   </Button>
                 </div>
-              ) : isHeaderReady() && (
+              ) : (
+
             // Header content - fades in when ready
             <div className="flex items-center justify-end animate-in fade-in duration-200 fill-mode-both">
               {/* Sats Balance Pill */}

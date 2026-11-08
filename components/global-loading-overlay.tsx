@@ -3,37 +3,38 @@
 import { useAuth } from "@/components/auth-provider"
 import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
+
+// Home renders its own skeleton layout while auth resolves, so it never gets
+// the full-screen spinner (it's also the PWA launch screen).
+const PAGES_WITH_OWN_LOADING = ["/"]
 import { Loader2 } from "lucide-react"
 
 export function GlobalLoadingOverlay() {
   const { loading, sessionLoaded } = useAuth()
   const pathname = usePathname()
-  const [minTimeElapsed, setMinTimeElapsed] = useState(false)
   const [authTimeout, setAuthTimeout] = useState(false)
 
   useEffect(() => {
-    // Minimum spinner display time for better UX
-    const minTimeId = setTimeout(() => {
-      setMinTimeElapsed(true)
-    }, 500)
-
     // Timeout to prevent infinite loading
     const timeoutId = setTimeout(() => {
       setAuthTimeout(true)
     }, 3000)
 
     return () => {
-      clearTimeout(minTimeId)
       clearTimeout(timeoutId)
     }
   }, [])
 
   // Don't show loading overlay on pages that handle their own loading
-  const isPublicPage = pathname === "/map" || pathname?.startsWith("/auth/") || pathname?.startsWith("/admin")
+  const isPublicPage =
+    PAGES_WITH_OWN_LOADING.includes(pathname ?? "") ||
+    pathname === "/map" ||
+    pathname?.startsWith("/auth/") ||
+    pathname?.startsWith("/admin")
 
   // Show loading while auth state is being determined
   const isLoading = (loading || !sessionLoaded) && !authTimeout
-  const showSpinner = (isLoading || !minTimeElapsed) && !authTimeout && !isPublicPage
+  const showSpinner = isLoading && !authTimeout && !isPublicPage
 
   if (!showSpinner) {
     return null
