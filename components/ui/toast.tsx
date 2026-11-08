@@ -55,7 +55,8 @@ function Toast({ className, swipeDirection = ["up", "left", "right"], ...props }
       swipeDirection={swipeDirection}
       className={cn(
         // Top-anchored stack: the newest toast (index 0) sits at the top, older ones peek out below it.
-        "group/toast pointer-events-auto absolute left-0 right-0 top-0 z-[calc(1000-var(--toast-index))] w-full origin-top select-none rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none will-change-transform focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        // Positioning layer only; the visible compact pill is ToastContent (centered, sized to its text).
+        "group/toast pointer-events-none absolute left-0 right-0 top-0 z-[calc(1000-var(--toast-index))] flex w-full origin-top select-none justify-center outline-none will-change-transform",
         "[--gap:0.75rem] [--height:var(--toast-frontmost-height,var(--toast-height))] [--offset-y:calc(var(--toast-offset-y)+calc(var(--toast-index)*var(--gap))+var(--toast-swipe-movement-y))] [--peek:0.75rem] [--scale:calc(max(0,1-(var(--toast-index)*0.1)))] [--shrink:calc(1-var(--scale))]",
         "h-[var(--height)] [transform:translateX(var(--toast-swipe-movement-x))_translateY(calc(var(--toast-swipe-movement-y)+(var(--toast-index)*var(--peek))+(var(--shrink)*var(--height))))_scale(var(--scale))] [transition:transform_500ms_cubic-bezier(0.22,1,0.36,1),opacity_500ms,height_150ms]",
         // Invisible bridge across the gap above each toast so hover/expansion doesn't flicker.
@@ -83,7 +84,7 @@ function ToastContent({ className, ...props }: ToastPrimitive.Content.Props) {
     <ToastPrimitive.Content
       data-slot="toast-content"
       className={cn(
-        "flex h-full items-center gap-3 overflow-hidden p-4 transition-opacity duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[behind]:opacity-0 data-[expanded]:opacity-100",
+        "pointer-events-auto flex min-h-[2.75rem] w-fit max-w-full items-center gap-2 overflow-hidden rounded-[1.375rem] border bg-popover px-3.5 py-2.5 text-sm text-popover-foreground shadow-lg transition-[opacity,border-radius] duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[behind]:opacity-60 data-[expanded]:opacity-100 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
         className
       )}
       {...props}
@@ -95,7 +96,7 @@ function ToastTitle({ className, ...props }: ToastPrimitive.Title.Props) {
   return (
     <ToastPrimitive.Title
       data-slot="toast-title"
-      className={cn("text-sm font-medium", className)}
+      className={cn("truncate font-semibold", className)}
       {...props}
     />
   )
@@ -105,7 +106,7 @@ function ToastDescription({ className, ...props }: ToastPrimitive.Description.Pr
   return (
     <ToastPrimitive.Description
       data-slot="toast-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-muted-foreground", className)}
       {...props}
     />
   )
@@ -113,14 +114,17 @@ function ToastDescription({ className, ...props }: ToastPrimitive.Description.Pr
 
 function ToastAction({
   className,
-  render = <Button variant="outline" size="sm" />,
+  render,
   ...props
 }: ToastPrimitive.Action.Props) {
   return (
     <ToastPrimitive.Action
       data-slot="toast-action"
       render={render}
-      className={cn("shrink-0", className)}
+      className={cn(
+        "relative shrink-0 whitespace-nowrap font-semibold text-primary after:absolute after:-inset-x-2 after:-inset-y-3 after:content-[''] hover:underline focus-visible:outline-none focus-visible:underline",
+        className
+      )}
       {...props}
     />
   )
@@ -171,32 +175,86 @@ function ToastIcon({ type, icon }: { type: string | undefined; icon?: React.Reac
   )
 }
 
-function ToastList() {
-  const { toasts } = ToastPrimitive.useToastManager<ToastData>()
+/** Titles that say nothing on their own; the pill shows the description instead. */
+const GENERIC_TITLE = /^(error|success|done|ok|warning|info|notice|oops)[.!]?$/i
 
-  return toasts.map((toastItem) => (
-    <Toast key={toastItem.id} toast={toastItem}>
-      <ToastContent>
+function textOf(node: React.ReactNode): string {
+  return typeof node === "string" || typeof node === "number" ? String(node) : ""
+}
+
+function CompactToast({ toastItem }: { toastItem: ToastPrimitive.Root.ToastObject<ToastData> }) {
+  const [open, setOpen] = React.useState(false)
+  const titleText = textOf(toastItem.title).trim()
+  const useDescriptionAsTitle = (!titleText || GENERIC_TITLE.test(titleText)) && !!toastItem.description
+  const primary = useDescriptionAsTitle ? toastItem.description : toastItem.title
+  const extra = useDescriptionAsTitle ? null : toastItem.description
+  const cancel = toastItem.data?.cancel
+  const hasAction = !!toastItem.actionProps
+
+  return (
+    <Toast toast={toastItem}>
+      <ToastContent
+        className={cn(
+          open && extra &&
+            "grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 gap-y-1 rounded-2xl"
+        )}
+        onClick={extra ? () => setOpen((v) => !v) : undefined}
+        // Keyboard users can reveal the detail too
+        role={extra ? "button" : undefined}
+        tabIndex={extra ? 0 : undefined}
+        onKeyDown={
+          extra
+            ? (e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault()
+                  setOpen((v) => !v)
+                }
+              }
+            : undefined
+        }
+        aria-expanded={extra ? open : undefined}
+      >
         <ToastIcon type={toastItem.type} icon={toastItem.data?.icon} />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <ToastTitle />
-          <ToastDescription />
-        </div>
-        {toastItem.data?.cancel && (
+        <ToastPrimitive.Title
+          data-slot="toast-title"
+          className={cn("min-w-0 font-semibold", open ? "whitespace-normal" : "truncate", extra && "cursor-pointer")}
+        >
+          {primary}
+        </ToastPrimitive.Title>
+        {(hasAction || cancel) && <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border" />}
+        {cancel && (
           <ToastClose
-            render={<Button variant="ghost" size="sm" />}
-            className="h-9 w-auto after:hidden"
+            render={<button type="button" />}
+            className="h-auto w-auto font-semibold text-muted-foreground after:-inset-x-2 after:-inset-y-3"
             aria-label={undefined}
-            onClick={toastItem.data.cancel.onClick}
+            onClick={(e) => {
+              e.stopPropagation()
+              cancel.onClick?.()
+            }}
           >
-            {toastItem.data.cancel.label}
+            {cancel.label}
           </ToastClose>
         )}
-        <ToastAction />
-        {!toastItem.data?.cancel && <ToastClose />}
+        {hasAction && (
+          // Stop the click on its way back up (after the action's own onClick
+          // has run) so it doesn't also toggle the pill's expanded state.
+          <span className="contents" onClick={(e) => e.stopPropagation()}>
+            <ToastAction />
+          </span>
+        )}
+        {extra && open && (
+          <ToastPrimitive.Description data-slot="toast-description" className="col-span-4 col-start-2 text-muted-foreground">
+            {extra}
+          </ToastPrimitive.Description>
+        )}
       </ToastContent>
     </Toast>
-  ))
+  )
+}
+
+function ToastList() {
+  const { toasts } = ToastPrimitive.useToastManager<ToastData>()
+  return toasts.map((toastItem) => <CompactToast key={toastItem.id} toastItem={toastItem} />)
 }
 
 /**
