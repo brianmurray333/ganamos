@@ -226,65 +226,33 @@ export async function POST(request: NextRequest) {
     const now = new Date()
     const title = description.substring(0, 50)
     
-    const { error: insertError } = await supabase
-      .from('posts')
-      .insert({
-        id: postId,
-        user_id: userId,
-        created_by: profile.name,
-        created_by_avatar: profile.avatar_url,
-        title,
-        description,
-        image_url: DEFAULT_JOB_IMAGE,
-        location: null,
-        latitude: null,
-        longitude: null,
-        reward,
-        claimed: false,
-        fixed: false,
-        created_at: now.toISOString(),
-        group_id: linkedAccount.selected_group_id,
-        city: null,
-        is_anonymous: false,
-      })
-    
+    // Create the post and reserve its reward atomically (locks the balance,
+    // respects pending withdrawals, records funding_transaction_id).
+    const { data: created, error: insertError } = await supabase.rpc('create_post_atomic', {
+      p_post_id: postId,
+      p_user_id: userId,
+      p_title: title,
+      p_description: description,
+      p_image_url: DEFAULT_JOB_IMAGE,
+      p_has_image: true,
+      p_reward: reward,
+      p_group_id: linkedAccount.selected_group_id,
+      p_created_by: profile.name,
+      p_created_by_avatar: profile.avatar_url,
+      p_memo: `Posted job via Alexa: ${title}`,
+    })
+
     if (insertError) {
       console.error('[Alexa Jobs] Error creating post:', insertError)
+      const insufficient = /insufficient balance/i.test(insertError.message || '')
       return NextResponse.json(
-        { success: false, error: 'Failed to create job' },
-        { status: 500 }
+        { success: false, error: insufficient ? 'Insufficient balance for this job.' : 'Failed to create job' },
+        { status: insufficient ? 400 : 500 }
       )
     }
-    
-    // Deduct reward from user's balance
-    const newBalance = profile.balance - reward
-    
-    const { error: balanceError } = await supabase
-      .from('profiles')
-      .update({ 
-        balance: newBalance,
-        updated_at: now.toISOString(),
-      })
-      .eq('id', userId)
-    
-    if (balanceError) {
-      console.error('[Alexa Jobs] Error updating balance:', balanceError)
-      // Note: The job was already created, so we should log this but not fail
-    }
-    
-    // Create a transaction record
-    await supabase
-      .from('transactions')
-      .insert({
-        user_id: userId,
-        type: 'internal',
-        amount: -reward,
-        status: 'completed',
-        memo: `Posted job via Alexa: ${title}`,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString(),
-      })
-    
+
+    const newBalance = (created as { new_balance?: number } | null)?.new_balance ?? profile.balance - reward
+
     // Create activity record
     await supabase
       .from('activities')

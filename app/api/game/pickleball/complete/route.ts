@@ -65,6 +65,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Claim the completion atomically: only one request settles a game.
+    const { data: claimedGame } = await supabase
+      .from("pickleball_games")
+      .update({ status: "completed", updated_at: new Date().toISOString() })
+      .eq("id", gameId)
+      .eq("host_device_id", deviceId)
+      .eq("status", game.status)
+      .neq("status", "completed")
+      .select("id")
+    if (!claimedGame?.length) {
+      return NextResponse.json({ success: true, alreadyCompleted: true })
+    }
+
     // Record final results
     const gameUpdate: Record<string, any> = {
       status: "completed",
@@ -82,7 +95,7 @@ export async function POST(request: NextRequest) {
     const payouts: Array<{ userId: string; petName: string; amount: number }> = []
 
     // Settle wager if active
-    if (wagerAmount > 0 && wagerStatus === "active") {
+    if (wagerAmount > 0 && wagerStatus === "active" && game.status === "playing") {
       const loserSide = winnerSide === "left" ? "right" : "left"
       // Never settle a wager for implicit/undefined consent.
       const winners = players.filter((p: any) => p.side === winnerSide && p.wagerAccepted === true)

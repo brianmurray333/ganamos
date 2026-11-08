@@ -269,6 +269,7 @@ function formatInvoiceResponse(data: any) {
     creationDate: data.creation_date,
     settleDate: data.settle_date,
     preimage: data.r_preimage ? Buffer.from(data.r_preimage, 'base64').toString('hex') : null,
+    ...(typeof data.memo === 'string' ? { memo: data.memo as string } : {}),
   }
 }
 

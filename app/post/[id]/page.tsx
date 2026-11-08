@@ -1081,44 +1081,15 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         if (isAnonymousFixer && post.submitted_fix_lightning_address) {
           const { payAnonymousFixLightningAddressAction } = await import("@/app/actions/post-actions")
           
-          // First mark as fixed (required by payAnonymousFixLightningAddressAction)
-          const { error: updateError } = await supabase
-            .from("posts")
-            .update({
-              fixed: true,
-              fixed_at: nowIso,
-              fixed_by: null,
-              fixed_by_is_anonymous: true,
-              fixed_image_url: post.submitted_fix_image_url,
-              fixer_note: post.submitted_fix_note,
-              fix_proof_text: post.submitted_fix_proof_text || null,
-              under_review: false,
-            })
-            .eq("id", post.id)
-          
-          if (updateError) {
-            console.error("Error marking fix as approved:", updateError)
-            throw new Error("Failed to approve fix")
-          }
-          
+          // The server action approves and pays atomically (it marks the post
+          // fixed only after the payment succeeds).
           // Now attempt payment
           // Server pays the address the fixer submitted (stored on the post)
           const paymentResult = await payAnonymousFixLightningAddressAction(post.id)
 
           if (!paymentResult.success) {
             console.error("Error paying Lightning address:", paymentResult.error)
-            // Revert the fix status since payment failed
-            await supabase
-              .from("posts")
-              .update({
-                fixed: false,
-                fixed_at: null,
-                fixed_by: null,
-                fixed_by_is_anonymous: false,
-                under_review: true, // Keep under review so they can retry
-              })
-              .eq("id", post.id)
-            
+            // Nothing was approved server-side; the fix stays under review.
             toast.error("Payment Failed", {
               description: paymentResult.error || "Failed to send reward to Lightning address. Please try again or ask the fixer to provide a new invoice.",
             })
@@ -1145,8 +1116,34 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           toast.success("Fix approved!", {
             description: `${formatSatsValue(post.reward || 0)} sats sent via Lightning.`,
           })
+        } else if (isAnonymousFixer) {
+          // Anonymous without Lightning address: approve server-side; the
+          // fixer claims the reward later with their claim token.
+          const { approveAnonymousFixAction } = await import("@/app/actions/post-actions")
+          const approval = await approveAnonymousFixAction(post.id)
+          if (!approval.success) {
+            throw new Error(approval.error || "Failed to approve fix")
+          }
+          setPost((prevPost) =>
+            prevPost
+              ? {
+                  ...prevPost,
+                  fixed: true,
+                  fixed_at: nowIso,
+                  fixed_by: null,
+                  fixed_by_is_anonymous: true,
+                  fixed_image_url: post.submitted_fix_image_url,
+                  fixer_note: post.submitted_fix_note,
+                  fix_proof_text: post.submitted_fix_proof_text || null,
+                  under_review: false,
+                }
+              : null,
+          )
+          toast.success("Fix Approved", {
+            description: "Fix approved! The anonymous fixer can claim the reward by creating an account.",
+          })
         } else {
-          // For logged-in users or anonymous without Lightning address
+          // For logged-in users
           const { error } = await supabase
             .from("posts")
             .update({

@@ -12,12 +12,27 @@ vi.mock('@/app/actions/post-actions', () => ({
 }))
 
 const mockInsert = vi.fn()
+const mockPostsUpdate = vi.fn()
+function chain(result: any): any {
+  const c: any = {}
+  for (const m of ['eq', 'is', 'neq']) c[m] = vi.fn(() => c)
+  c.select = vi.fn(() => Promise.resolve(result))
+  return c
+}
 
 vi.mock('@/lib/supabase', () => ({
   createServerSupabaseClient: vi.fn(() => ({
     from: vi.fn((table: string) => {
       if (table === 'l402_used_tokens') {
         return { insert: mockInsert }
+      }
+      if (table === 'posts') {
+        return {
+          update: (values: any) => {
+            mockPostsUpdate(values)
+            return chain({ data: [{ id: 'post' }], error: null })
+          },
+        }
       }
       return {}
     }),
@@ -97,6 +112,8 @@ describe('POST /api/fixes - Replay Protection', () => {
     expect(response.status).toBe(201)
     expect(data.success).toBe(true)
     expect(postActions.submitAnonymousFixForReviewAction).toHaveBeenCalled()
+    // The verified L402 hash (the fixer's credential) is linked server-side
+    expect(mockPostsUpdate).toHaveBeenCalledWith({ submitted_fix_payment_hash: 'new-hash-456' })
   })
 
   it('should record payment hash with correct endpoint', async () => {

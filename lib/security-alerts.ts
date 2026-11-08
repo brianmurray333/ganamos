@@ -235,3 +235,34 @@ export async function sendWithdrawalsDisabledAttemptAlert(params: {
   }
 }
 
+
+/**
+ * A Lightning reward payout's outcome is unknown (timeout / non-definitive
+ * error). The post's payout lock is kept so nothing can pay it again; an
+ * admin must check the node for the payment and reconcile by hand.
+ */
+export async function sendRewardOnHoldAlert(params: {
+  postId: string
+  amount: number
+  source: string
+  error?: string
+}): Promise<void> {
+  const esc = (v: unknown) =>
+    String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string))
+  const html = `
+<!DOCTYPE html>
+<html><body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #333;">
+  <h2>Reward payout on hold</h2>
+  <p>A Lightning reward payout could not be confirmed. The post stays locked so the reward can't be paid twice.
+  Check the node for this payment, then mark the post paid or clear its <code>anonymous_reward_payment_lock</code>.</p>
+  <p><strong>Post:</strong> <code>${esc(params.postId)}</code><br/>
+  <strong>Amount:</strong> ${esc(params.amount)} sats<br/>
+  <strong>Source:</strong> ${esc(params.source)}<br/>
+  <strong>Error:</strong> ${esc(params.error)}</p>
+</body></html>`
+  try {
+    await sendEmail(ADMIN_EMAIL, 'Ganamos Alert - Reward payout on hold', html)
+  } catch (error) {
+    console.error('[Security Alert] Failed to send reward-on-hold email:', error)
+  }
+}

@@ -9,6 +9,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { createServerSupabaseClient } from './supabase'
 import { sendEmail } from './email'
 import { alertLargeWithdrawal, sendSmsAlert } from './sms-alerts'
 import { formatSatsValue } from './utils'
@@ -577,5 +578,40 @@ export async function sendSystemThresholdAlert(
       } 
     }
   )
+}
+
+
+/**
+ * Emergency kill-switch for withdrawals that works without an admin session.
+ * Uses the service role client directly. Only call from server-side security code
+ * (e.g. threshold breach auto-disable). Lives here, not in a "use server"
+ * module, so browsers cannot invoke it as a server action.
+ */
+export async function emergencyDisableWithdrawals(reason: string) {
+  try {
+    const adminSupabase = createServerSupabaseClient({
+      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
+    })
+
+    const { error } = await adminSupabase
+      .from("system_settings")
+      .update({
+        withdrawals_enabled: false,
+        updated_at: new Date().toISOString(),
+        updated_by: reason,
+      })
+      .eq("id", "main")
+
+    if (error) {
+      console.error("[SECURITY] Emergency disable withdrawals failed:", error)
+      return { success: false, error: error.message }
+    }
+
+    console.log(`[SECURITY] Withdrawals EMERGENCY DISABLED. Reason: ${reason}`)
+    return { success: true }
+  } catch (error) {
+    console.error("[SECURITY] Emergency disable withdrawals exception:", error)
+    return { success: false, error: "Failed to emergency disable withdrawals" }
+  }
 }
 

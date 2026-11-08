@@ -149,6 +149,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Link this L402 token (and payout target) to the submission.
+    const { createAdminClient, recordAgentFixPayoutDetails } = await import('@/lib/payouts')
+    await recordAgentFixPayoutDetails(createAdminClient(), {
+      postId: post_id,
+      paymentHash: verification.paymentHash!,
+      payoutInvoice: payout_invoice || null,
+    })
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'
 
     return corsResponse(

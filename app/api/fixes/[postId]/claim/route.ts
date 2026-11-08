@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyL402Token, parseL402Header } from '@/lib/l402'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { extractInvoiceAmount } from '@/lib/lightning-validation'
+import { createAdminClient, payAnonymousRewardViaLightning } from '@/lib/payouts'
 
 export const dynamic = 'force-dynamic'
 
@@ -78,7 +78,7 @@ export async function POST(
       .select(`
         id, reward, fixed, deleted_at,
         submitted_fix_payment_hash,
-        anonymous_reward_paid_at, anonymous_reward_payment_hash
+        anonymous_reward_paid_at, anonymous_reward_payment_hash, reward_paid_at
       `)
       .eq('id', postId)
       .single()
@@ -89,7 +89,7 @@ export async function POST(
       )
     }
 
-    if (post.submitted_fix_payment_hash !== verification.paymentHash) {
+    if (!post.submitted_fix_payment_hash || post.submitted_fix_payment_hash !== verification.paymentHash) {
       return corsResponse(
         NextResponse.json(
           { error: 'L402 token does not match a fix submission on this post.' },
@@ -110,7 +110,7 @@ export async function POST(
       )
     }
 
-    if (post.anonymous_reward_paid_at) {
+    if (post.anonymous_reward_paid_at || post.reward_paid_at) {
       return corsResponse(
         NextResponse.json({
           error: 'Reward has already been paid.',
@@ -126,14 +126,13 @@ export async function POST(
       )
     }
 
-    // Update the stored payout invoice
-    await supabase
-      .from('posts')
-      .update({ submitted_fix_payout_invoice: body.payout_invoice })
-      .eq('id', postId)
-
-    // Attempt payment
-    const payoutResult = await payFixer(postId, body.payout_invoice, post.reward, supabase)
+    // Pay atomically, at most once (lock + paid markers), for exactly the
+    // post's reward. The new invoice is used for this attempt only.
+    const payoutResult = await payAnonymousRewardViaLightning(createAdminClient(), {
+      postId,
+      target: body.payout_invoice,
+      source: 'POST /api/fixes/[postId]/claim',
+    })
 
     if (payoutResult.success) {
       return corsResponse(
@@ -141,21 +140,24 @@ export async function POST(
           success: true,
           post_id: postId,
           reward_paid: true,
-          reward_amount: post.reward,
+          reward_amount: payoutResult.amount,
           payment_hash: payoutResult.paymentHash,
-          message: `Reward of ${post.reward} sats paid successfully.`,
+          message: `Reward of ${payoutResult.amount} sats paid successfully.`,
         })
       )
     }
 
+    const retryable = payoutResult.code === 'invalid_invoice' || payoutResult.code === 'payment_failed'
     return corsResponse(
       NextResponse.json({
         success: false,
         post_id: postId,
         reward_paid: false,
         error: payoutResult.error,
-        message: 'Payment failed. You can retry with a different invoice.',
-      }, { status: 502 })
+        message: retryable
+          ? 'Payment failed. You can retry with a different invoice.'
+          : payoutResult.error,
+      }, { status: retryable ? 502 : 409 })
     )
   } catch (error) {
     console.error('Error in POST /api/fixes/[postId]/claim:', error)
@@ -163,72 +165,6 @@ export async function POST(
       NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     )
   }
-}
-
-async function payFixer(
-  postId: string,
-  payoutTarget: string,
-  reward: number,
-  supabase: ReturnType<typeof createServerSupabaseClient>,
-): Promise<{ success: boolean; paymentHash?: string; error?: string }> {
-  const trimmed = payoutTarget.trim().toLowerCase()
-  let invoiceToPay = trimmed
-
-  if (trimmed.includes('@') && trimmed.includes('.')) {
-    const [user, domain] = trimmed.split('@')
-    const lookupUrl = `https://${domain}/.well-known/lnurlp/${user}`
-
-    const lookupResponse = await fetch(lookupUrl)
-    if (!lookupResponse.ok) {
-      return { success: false, error: 'Failed to lookup Lightning address' }
-    }
-
-    const lookupData = await lookupResponse.json()
-    if (!lookupData.callback) {
-      return { success: false, error: 'Invalid Lightning address response' }
-    }
-
-    const callbackUrl = new URL(lookupData.callback)
-    callbackUrl.searchParams.set('amount', (reward * 1000).toString())
-
-    const invoiceResponse = await fetch(callbackUrl.toString())
-    if (!invoiceResponse.ok) {
-      return { success: false, error: 'Failed to generate invoice from Lightning address' }
-    }
-
-    const invoiceData = await invoiceResponse.json()
-    if (!invoiceData.pr) {
-      return { success: false, error: 'Invalid invoice response from Lightning address' }
-    }
-
-    invoiceToPay = invoiceData.pr
-  }
-
-  const invoiceAmount = extractInvoiceAmount(invoiceToPay)
-  if (invoiceAmount !== null && invoiceAmount > reward) {
-    return {
-      success: false,
-      error: `Invoice amount (${invoiceAmount} sats) exceeds reward (${reward} sats). Refusing to pay.`,
-    }
-  }
-
-  const { payInvoice } = await import('@/lib/lightning')
-  const paymentResult = await payInvoice(invoiceToPay)
-
-  if (!paymentResult.success) {
-    return { success: false, error: 'Lightning payment failed' }
-  }
-
-  const now = new Date().toISOString()
-  await supabase
-    .from('posts')
-    .update({
-      anonymous_reward_paid_at: now,
-      anonymous_reward_payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
-    })
-    .eq('id', postId)
-
-  return { success: true, paymentHash: paymentResult.paymentHash || paymentResult.paymentPreimage }
 }
 
 function corsResponse(response: NextResponse): NextResponse {

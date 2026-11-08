@@ -98,6 +98,10 @@ export async function GET(request: NextRequest) {
         .eq('id', post.id)
         .is('deleted_at', null)
         .eq('fixed', false)
+        .eq('under_review', false)
+        .is('reward_paid_at', null)
+        .is('anonymous_reward_paid_at', null)
+        .is('anonymous_reward_payment_lock', null)
         .select('id')
       if (!expiredRows?.length) continue
 
@@ -123,32 +127,19 @@ export async function GET(request: NextRequest) {
         post.reward > 0 &&
         (await isPostRewardFunded(adminSupabase as any, { id: post.id }))
       ) {
+        const { error: refundError } = await adminSupabase.rpc('refund_post_reward', {
+          p_post_id: post.id,
+          p_memo: `Refund for expired post: ${post.title || 'Issue'}`,
+        })
         const { data: profile } = await adminSupabase
           .from('profiles')
-          .select('balance, email, name')
+          .select('email, name')
           .eq('id', post.user_id)
           .single()
 
-        if (profile) {
-          // Update balance
-          await adminSupabase
-            .from('profiles')
-            .update({
-              balance: (profile.balance || 0) + post.reward,
-              updated_at: nowIso,
-            })
-            .eq('id', post.user_id)
-
-          // Create transaction record
-          await adminSupabase.from('transactions').insert({
-            id: uuidv4(),
-            user_id: post.user_id,
-            type: 'internal',
-            amount: post.reward,
-            status: 'completed',
-            memo: `Refund for expired post: ${post.title || 'Issue'}`,
-          })
-
+        if (refundError) {
+          console.error(`Refund failed for expired post ${post.id}:`, refundError)
+        } else if (profile) {
           // Send confirmation email
           if (profile.email && !profile.email.includes('@ganamos.app')) {
             await sendPostExpiredConfirmationEmail({

@@ -59,6 +59,7 @@ import {
   claimAnonymousRewardAction,
   payAnonymousFixLightningAddressAction,
   markPostFixedAnonymouslyAction,
+  approveAnonymousFixAction,
 } from '@/app/actions/post-actions'
 import { payInvoice } from '@/lib/lightning'
 import { verifyFixImages } from '@/lib/verify-fix'
@@ -618,5 +619,106 @@ describe('payAnonymousFixLightningAddressAction (owner approves an anonymous fix
     // A retry can't pay a second time
     expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
     expect(payInvoice).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ============================================================================
+describe('claimAnonymousRewardAction: only approved, funded rewards', () => {
+  it('refuses a post that was never approved, even if fixed_by_is_anonymous is set', async () => {
+    // e.g. the owner flipped fixed_by_is_anonymous over REST (now pinned by
+    // the DB guard) on a post whose fix was only submitted for review
+    setup(underReview({ fixed_by_is_anonymous: true }), NEW_USER_ID)
+
+    const result = await claimAnonymousRewardAction(POST_ID, NEW_USER_ID, TOKEN)
+
+    expect(result.success).toBe(false)
+    expect(balance(NEW_USER_ID)).toBe(0)
+    expect(db.ops(o => o.op === 'rpc')).toHaveLength(0)
+  })
+
+  it('refuses an unfunded reward', async () => {
+    setup(fixedAnonymously({ funding_transaction_id: null }), NEW_USER_ID)
+
+    const result = await claimAnonymousRewardAction(POST_ID, NEW_USER_ID, TOKEN)
+
+    expect(result.success).toBe(false)
+    expect(balance(NEW_USER_ID)).toBe(0)
+    expect(db.ops(o => o.op === 'rpc')).toHaveLength(0)
+  })
+
+  it('refuses a post fixed by a registered user', async () => {
+    setup(fixedAnonymously({ fixed_by: ATTACKER_ID }), NEW_USER_ID)
+
+    const result = await claimAnonymousRewardAction(POST_ID, NEW_USER_ID, TOKEN)
+
+    expect(result.success).toBe(false)
+    expect(balance(NEW_USER_ID)).toBe(0)
+  })
+
+  it('refuses a deleted post', async () => {
+    setup(fixedAnonymously({ deleted_at: '2026-11-08T12:00:00Z' }), NEW_USER_ID)
+
+    const result = await claimAnonymousRewardAction(POST_ID, NEW_USER_ID, TOKEN)
+
+    expect(result.success).toBe(false)
+    expect(balance(NEW_USER_ID)).toBe(0)
+  })
+})
+
+describe('payAnonymousRewardAction: only funded rewards', () => {
+  it('refuses an unfunded reward without paying', async () => {
+    setup(fixedAnonymously({ funding_transaction_id: null }))
+
+    const result = await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)
+
+    expect(result.success).toBe(false)
+    expect(payInvoice).not.toHaveBeenCalled()
+  })
+})
+
+describe('approveAnonymousFixAction (owner approves an anonymous fix with no payout address)', () => {
+  it('marks the fix approved server-side so the fixer can claim it', async () => {
+    setup(underReview(), OWNER_ID)
+
+    expect(await approveAnonymousFixAction(POST_ID)).toEqual({ success: true })
+    expect(post()).toMatchObject({ fixed: true, fixed_by: null, fixed_by_is_anonymous: true, under_review: false })
+
+    db.user = { id: NEW_USER_ID }
+    expect(await claimAnonymousRewardAction(POST_ID, NEW_USER_ID, TOKEN)).toEqual({ success: true, amount: REWARD })
+    expect(balance(NEW_USER_ID)).toBe(REWARD)
+  })
+
+  it('allows an approved group admin', async () => {
+    setup(underReview({ group_id: GROUP_ID }), GROUP_ADMIN_ID)
+    expect(await approveAnonymousFixAction(POST_ID)).toEqual({ success: true })
+  })
+
+  it.each([
+    ['not signed in', null],
+    ['signed in as someone else', ATTACKER_ID],
+  ])('refuses when %s', async (_label, who) => {
+    setup(underReview(), who)
+    const result = await approveAnonymousFixAction(POST_ID)
+    expect(result.success).toBe(false)
+    expect(post().fixed).toBe(false)
+  })
+
+  it('refuses an unfunded reward', async () => {
+    setup(underReview({ funding_transaction_id: null }), OWNER_ID)
+    const result = await approveAnonymousFixAction(POST_ID)
+    expect(result.success).toBe(false)
+    expect(post().fixed).toBe(false)
+  })
+
+  it.each([
+    ['no fix under review', { under_review: false }],
+    ['a signed-in submitter', { submitted_fix_by_id: ATTACKER_ID }],
+    ['no claim token issued', { anonymous_claim_token_hash: null }],
+    ['an already fixed post', { fixed: true }],
+    ['a deleted post', { deleted_at: '2026-11-08T12:00:00Z' }],
+  ])('refuses %s', async (_label, overrides) => {
+    setup(underReview(overrides), OWNER_ID)
+    const result = await approveAnonymousFixAction(POST_ID)
+    expect(result.success).toBe(false)
   })
 })

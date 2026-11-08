@@ -4,10 +4,11 @@ import { createInvoice, checkInvoice } from "@/lib/lightning"
 import { v4 as uuidv4 } from "uuid" // Ensure uuid is imported if used, e.g. in createFundedAnonymousPostAction
 import { createServerSupabaseClient } from "@/lib/supabase" // For createFundedAnonymousPostAction
 import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning-validation"
+import { sendRewardOnHoldAlert } from "@/lib/security-alerts"
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
 import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
-import { AUTO_APPROVE_CONFIDENCE, createAdminClient, generateClaimToken, isPostRewardFunded, payFixReward, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
+import { AUTO_APPROVE_CONFIDENCE, createAdminClient, generateClaimToken, isPostFundingInvoiceMemo, isPostRewardFunded, payAnonymousRewardViaLightning, payFixReward, resolvePayoutInvoice, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
 
 async function getCookieStore() {
   const { cookies } = await import("next/headers")
@@ -149,6 +150,10 @@ export async function payAnonymousFixLightningAddressAction(
       return { success: false, error: "This fix is not anonymous." }
     }
 
+    if (post.fixed || !post.under_review) {
+      return { success: false, error: "There is no anonymous fix awaiting approval on this post." }
+    }
+
     const lightningAddress: string | null = post.submitted_fix_lightning_address
     if (!lightningAddress) {
       return { success: false, error: "The fixer has not provided a Lightning address." }
@@ -190,71 +195,13 @@ export async function payAnonymousFixLightningAddressAction(
       }
     }
 
-    const trimmed = lightningAddress.trim().toLowerCase()
-    let invoiceToPay = trimmed
-
-    // If it's a Lightning address (user@domain.com), convert it to an invoice
-    if (trimmed.includes("@") && trimmed.includes(".")) {
-      try {
-        // Lightning address lookup: GET https://[domain]/.well-known/lnurlp/[user]
-        const [user, domain] = trimmed.split("@")
-        const lookupUrl = `https://${domain}/.well-known/lnurlp/${user}`
-        
-        const lookupResponse = await fetch(lookupUrl)
-        if (!lookupResponse.ok) {
-          await releaseLock()
-        return { success: false, error: "Failed to lookup Lightning address" }
-        }
-
-        const lookupData = await lookupResponse.json()
-        if (!lookupData.callback) {
-          await releaseLock()
-        return { success: false, error: "Invalid Lightning address response" }
-        }
-
-        // Request invoice from callback
-        const callbackUrl = new URL(lookupData.callback)
-        callbackUrl.searchParams.set("amount", (post.reward * 1000).toString()) // Convert to millisats
-
-        const invoiceResponse = await fetch(callbackUrl.toString())
-        if (!invoiceResponse.ok) {
-          await releaseLock()
-        return { success: false, error: "Failed to generate invoice from Lightning address" }
-        }
-
-        const invoiceData = await invoiceResponse.json()
-        if (!invoiceData.pr) {
-          await releaseLock()
-        return { success: false, error: "Invalid invoice response from Lightning address" }
-        }
-
-        invoiceToPay = invoiceData.pr
-      } catch (error) {
-        console.error("Error converting Lightning address to invoice:", error)
-        await releaseLock()
-        return {
-          success: false,
-          error: "Failed to convert Lightning address to invoice. Please provide a Lightning invoice instead.",
-        }
-      }
-    }
-
-    // Validate it's now a Lightning invoice
-    if (!validateLightningInvoice(invoiceToPay)) {
+    // Invoice for exactly the stored reward (Lightning addresses resolved).
+    const resolved = await resolvePayoutInvoice(lightningAddress, post.reward)
+    if (!resolved.ok) {
       await releaseLock()
-        return { success: false, error: "Invalid Lightning invoice format." }
+      return { success: false, error: resolved.error }
     }
-
-    // Guard: reject invoices that exceed the post reward to prevent draining
-    const { extractInvoiceAmount } = await import("@/lib/lightning-validation")
-    const invoiceAmount = extractInvoiceAmount(invoiceToPay)
-    if (invoiceAmount === null || invoiceAmount > post.reward) {
-      await releaseLock()
-      return {
-        success: false,
-        error: `Payout invoice amount (${invoiceAmount} sats) exceeds post reward (${post.reward} sats). Refusing to pay.`,
-      }
-    }
+    const invoiceToPay = resolved.invoice
 
     // Pay the invoice
     const { payInvoice } = await import("@/lib/lightning")
@@ -274,6 +221,12 @@ export async function payAnonymousFixLightningAddressAction(
         }
       }
       console.error("SECURITY: anonymous Lightning-address payout outcome uncertain; keeping lock", { postId, lockId })
+      await sendRewardOnHoldAlert({
+        postId,
+        amount: post.reward,
+        source: "payAnonymousFixLightningAddressAction",
+        error: String((paymentResult as any)?.error ?? "unknown"),
+      })
       return {
         success: false,
         error: "The payment could not be confirmed. The reward is on hold; please contact support.",
@@ -361,6 +314,89 @@ export async function payAnonymousFixLightningAddressAction(
 }
 
 /**
+ * Approves an anonymous fix that has no payout address. The fixer can later
+ * claim the reward into an account (claimAnonymousRewardAction) or over
+ * Lightning (payAnonymousRewardAction) with their claim token.
+ *
+ * SECURITY: only the post owner or an approved group admin; the post must
+ * have a pending anonymous submission and a funded reward. Browser sessions
+ * can't set fixed / fixed_by_is_anonymous themselves (DB trigger).
+ */
+export async function approveAnonymousFixAction(
+  postId: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!postId) return { success: false, error: "Post ID is required." }
+
+  const authClient = createServerSupabaseClient({ cookieStore: await getCookieStore() })
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return { success: false, error: "Not authenticated" }
+
+  const admin = createAdminClient()
+  try {
+    const { data: post, error: fetchError } = await admin
+      .from("posts")
+      .select("id, user_id, group_id, reward, fixed, under_review, deleted_at, submitted_fix_by_id, submitted_fix_image_url, submitted_fix_note, submitted_fix_proof_text, anonymous_claim_token_hash")
+      .eq("id", postId)
+      .single()
+    if (fetchError || !post) return { success: false, error: "Post not found." }
+
+    let isAuthorized = post.user_id === user.id
+    if (!isAuthorized && post.group_id) {
+      const { data: membership } = await admin
+        .from("group_members")
+        .select("role")
+        .eq("group_id", post.group_id)
+        .eq("user_id", user.id)
+        .eq("status", "approved")
+        .maybeSingle()
+      isAuthorized = membership?.role === "admin"
+    }
+    if (!isAuthorized) {
+      console.error("SECURITY ALERT: unauthorized anonymous fix approval attempt", { postId, userId: user.id })
+      return { success: false, error: "Only the post owner can approve this fix." }
+    }
+
+    if (post.deleted_at) return { success: false, error: "Post has been deleted." }
+    if (post.fixed || !post.under_review || post.submitted_fix_by_id !== null || !post.anonymous_claim_token_hash) {
+      return { success: false, error: "There is no anonymous fix awaiting approval on this post." }
+    }
+    if (post.reward && post.reward > 0 && !(await isPostRewardFunded(admin, { id: postId }))) {
+      console.error("SECURITY: anonymous approval attempted on unfunded post", { postId, approverId: user.id })
+      return { success: false, error: "This post's reward was never funded. Cannot issue reward." }
+    }
+
+    const now = new Date().toISOString()
+    const { data: approved, error } = await admin
+      .from("posts")
+      .update({
+        fixed: true,
+        fixed_at: now,
+        fixed_by: null,
+        fixed_by_is_anonymous: true,
+        fixed_image_url: post.submitted_fix_image_url,
+        fixer_note: post.submitted_fix_note,
+        fix_proof_text: post.submitted_fix_proof_text || null,
+        under_review: false,
+      })
+      .eq("id", postId)
+      .eq("fixed", false)
+      .eq("under_review", true)
+      .is("submitted_fix_by_id", null)
+      .is("deleted_at", null)
+      .select("id")
+    if (error) {
+      console.error("Error approving anonymous fix:", error)
+      return { success: false, error: "Failed to approve fix." }
+    }
+    if (!approved?.length) return { success: false, error: "This fix has already been handled." }
+    return { success: true }
+  } catch (error) {
+    console.error("Unexpected error in approveAnonymousFixAction:", error)
+    return { success: false, error: "An unexpected error occurred." }
+  }
+}
+
+/**
  * Processes Lightning invoice payment for anonymous reward claims.
  * Validates the post has an unclaimed anonymous reward, decodes the invoice,
  * pays it via Lightning, and marks the reward as claimed.
@@ -394,177 +430,23 @@ export async function payAnonymousRewardAction(
       return { success: false, error: "This reward can only be claimed from the device that submitted the fix." }
     }
 
-    // 1. ATOMIC LOCK: Attempt to acquire lock before any validation
-    // This prevents race conditions where multiple requests pass validation simultaneously
-    const lockId = uuidv4()
-    const { data: lockedPost, error: lockError } = await supabase
-      .from("posts")
-      .update({ anonymous_reward_payment_lock: lockId })
-      .eq("id", postId)
-      .eq("fixed_by_is_anonymous", true)
-      .eq("fixed", true)
-      .is("anonymous_reward_paid_at", null)
-      .is("reward_paid_at", null)
-      .is("anonymous_reward_payment_lock", null) // Only if not already locked
-      .select(`
-        *,
-        group:group_id(
-          id,
-          name,
-          description
-        ),
-        assigned_to_user:assigned_to(
-          id,
-          name
-        )
-      `)
-      .single()
-
-    if (lockError || !lockedPost) {
-      // Could not acquire lock - either already locked, already paid, or doesn't exist
-      console.log("Could not acquire payment lock for post:", postId, lockError?.message)
-      return { success: false, error: "Reward unavailable or already being processed." }
+    // Locked, funded, once-only payout of the stored reward; the invoice must
+    // be for exactly the reward. Uncertain failures keep the lock (on hold).
+    const payout = await payAnonymousRewardViaLightning(supabase, {
+      postId,
+      target: lightningInvoice,
+      source: "payAnonymousRewardAction",
+      requireAnonymousFixer: true,
+    })
+    if (!payout.success) {
+      return { success: false, error: payout.error }
     }
-
-    // Use the locked post data for remaining operations
-    const post = lockedPost
-
-    // Helper to release lock on failure
-    const releaseLock = async () => {
-      await supabase
-        .from("posts")
-        .update({ anonymous_reward_payment_lock: null })
-        .eq("id", postId)
-        .eq("anonymous_reward_payment_lock", lockId) // Only release our own lock
-    }
-
-    // 2. Enhanced Lightning invoice validation
-    if (!validateLightningInvoice(lightningInvoice)) {
-      await releaseLock()
-      return { success: false, error: "Invalid Lightning invoice format." }
-    }
-
-    // 3. Validate invoice amount matches reward (if amount is specified in invoice)
-    if (!validateInvoiceAmount(lightningInvoice, post.reward)) {
-      await releaseLock()
-      return {
-        success: false,
-        error: `Invoice amount doesn't match reward amount of ${post.reward} sats.`,
-      }
-    }
-
-    // 4. Check Lightning configuration
-    const LND_REST_URL = process.env.LND_REST_URL
-    const LND_ADMIN_MACAROON = process.env.LND_ADMIN_MACAROON
-
-    if (!LND_REST_URL || !LND_ADMIN_MACAROON) {
-      console.error("Lightning configuration missing in payAnonymousRewardAction")
-      await releaseLock()
-      return {
-        success: false,
-        error: "Lightning payment system is currently unavailable.",
-      }
-    }
-
-    // 5. Attempt to pay the Lightning invoice
-    console.log(`Attempting to pay anonymous reward for post ${postId}: ${post.reward} sats`)
-
-    const { payInvoice } = await import("@/lib/lightning")
-    const paymentResult = await payInvoice(lightningInvoice.trim())
-
-    if (!paymentResult.success) {
-      console.error("Failed to pay Lightning invoice:", paymentResult.error, paymentResult.details)
-      // Only a definitive LND payment_error means nothing was sent. Anything
-      // else (HTTP error, timeout) may have paid: keep the lock so a retry
-      // with a fresh invoice can't pay twice; reconcile manually.
-      if ((paymentResult as any)?.details?.payment_error) {
-        await releaseLock()
-        return {
-          success: false,
-          error: "Failed to process Lightning payment. Please check your invoice and try again.",
-          details: paymentResult.error,
-        }
-      }
-      console.error("SECURITY: anonymous reward payout outcome uncertain; keeping lock", { postId, lockId })
-      return {
-        success: false,
-        error: "The payment could not be confirmed. The reward is on hold; please contact support.",
-        details: (paymentResult as any).error,
-      }
-    }
-
-    // 6. Mark the reward as claimed in the database (lock remains set, paid_at is the permanent indicator)
-    const now = new Date().toISOString()
-    const { error: updateError } = await supabase
-      .from("posts")
-      .update({
-        anonymous_reward_paid_at: now,
-        anonymous_reward_payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
-      })
-      .eq("id", postId)
-      .eq("anonymous_reward_payment_lock", lockId) // Verify we still hold the lock
-
-    if (updateError) {
-      console.error("Error marking anonymous reward as paid:", updateError)
-      // Payment was successful but we couldn't update the database
-      // This is a critical issue that needs manual intervention
-      return {
-        success: false,
-        error: "Payment was sent but there was an error updating our records. Please contact support.",
-        details: updateError.message,
-      }
-    }
-
-    console.log(`Anonymous reward successfully paid for post ${postId}. Payment hash: ${paymentResult.paymentHash}`)
-
-    // Create activity for the anonymous reward payment
-    await supabase.from("activities").insert({
-      id: uuidv4(),
-      user_id: null, // Anonymous fix
-      type: "reward",
-      related_id: postId,
-      related_table: "posts",
-      timestamp: now,
-      metadata: { 
-        amount: post ? post.reward : undefined,
-        payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
-        payment_method: "lightning",
-        is_anonymous: true,
-      },
-    });
-
-    // Create transaction for audit trail completeness
-    // Use system user (00000000-0000-0000-0000-000000000000) to track anonymous payouts
-    const SYSTEM_USER_ID = '00000000-0000-0000-0000-000000000000'
-    const { error: txError } = await supabase.from("transactions").insert({
-      id: uuidv4(),
-      user_id: SYSTEM_USER_ID,
-      type: "internal",
-      amount: post.reward, // Positive amount (reward disbursed)
-      status: "completed",
-      payment_hash: paymentResult.paymentHash || paymentResult.paymentPreimage,
-      memo: `Anonymous fix reward payout for post ${postId}`,
-      created_at: now,
-      updated_at: now,
-    });
-
-    if (txError) {
-      console.error("Error creating anonymous reward transaction:", txError)
-      // Don't fail the payment - transaction is for audit only
-    } else {
-      console.log(`Created transaction for anonymous reward payout: ${post.reward} sats for post ${postId}`)
-    }
-
-    return {
-      success: true,
-      paymentHash: paymentResult.paymentHash || paymentResult.paymentPreimage,
-    }
+    return { success: true, paymentHash: payout.paymentHash || undefined }
   } catch (error) {
     console.error("Unexpected error in payAnonymousRewardAction:", error)
     return {
       success: false,
       error: "An unexpected error occurred while processing the payment.",
-      details: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -715,7 +597,8 @@ export async function createFundedAnonymousPostAction(postDetails: {
   funding_payment_request: string // Added this
   expires_at?: string | null
 }): Promise<{ success: boolean; postId?: string; error?: string }> {
-  const supabase = createServerSupabaseClient(await getCookieStore())
+  const admin = createAdminClient()
+  const supabase = admin
   const postId = uuidv4()
   const now = new Date()
 
@@ -740,7 +623,12 @@ export async function createFundedAnonymousPostAction(postDetails: {
 
     // SECURITY: the funding invoice must actually be paid, for at least the
     // reward, and may fund only one post.
-    if (!postDetails.funding_r_hash || !Number.isFinite(postDetails.reward) || postDetails.reward < 0) {
+    if (
+      !postDetails.funding_r_hash ||
+      !/^[0-9a-f]{64}$/i.test(postDetails.funding_r_hash) ||
+      !Number.isInteger(postDetails.reward) ||
+      postDetails.reward < 0
+    ) {
       return { success: false, error: "Invalid funding details." }
     }
     const fundingCheck = await checkInvoice(postDetails.funding_r_hash)
@@ -753,7 +641,23 @@ export async function createFundedAnonymousPostAction(postDetails: {
       })
       return { success: false, error: "Funding payment not confirmed." }
     }
-    const { data: existingFunded } = await supabase
+    // SECURITY: only invoices issued to fund a post count. Any other settled
+    // invoice on the node (a deposit, donation, order, fee) was already
+    // credited or spent elsewhere and must not also fund a reward.
+    if (!isPostFundingInvoiceMemo((fundingCheck as any).memo)) {
+      console.error("SECURITY: Anonymous post funding with a non-funding invoice", {
+        rHash: postDetails.funding_r_hash.substring(0, 16),
+      })
+      return { success: false, error: "Funding payment not confirmed." }
+    }
+    const [{ data: asDeposit }, { data: asPayment }] = await Promise.all([
+      admin.from("transactions").select("id").eq("r_hash_str", postDetails.funding_r_hash).limit(1),
+      admin.from("transactions").select("id").eq("payment_hash", postDetails.funding_r_hash).limit(1),
+    ])
+    if ((asDeposit && asDeposit.length > 0) || (asPayment && asPayment.length > 0)) {
+      return { success: false, error: "This payment has already been used." }
+    }
+    const { data: existingFunded } = await admin
       .from("posts")
       .select("id")
       .eq("funding_r_hash", postDetails.funding_r_hash)
@@ -762,7 +666,8 @@ export async function createFundedAnonymousPostAction(postDetails: {
       return { success: false, error: "This payment has already been used to fund a post." }
     }
 
-    const { data, error } = await supabase
+    // Service role: funding fields are reset for browser-role inserts.
+    const { data, error } = await admin
       .from("posts")
       .insert({
         id: postId,
@@ -1091,8 +996,10 @@ export async function submitAnonymousFixForReviewAction(
   aiConfidence: number | null,
   aiAnalysis: string | null,
   fixProofText: string | null = null,
-  l402PaymentHash: string | null = null,
-  payoutInvoice: string | null = null,
+  /** IGNORED (see note below). */
+  _l402PaymentHash: string | null = null,
+  /** IGNORED (see note below). */
+  _payoutInvoice: string | null = null,
 ): Promise<{ success: boolean; error?: string; claimToken?: string }> {
   if (!postId || (!fixImageUrl && !fixProofText)) {
     return { success: false, error: "Post ID and either a fix image or proof text are required." }
@@ -1171,20 +1078,9 @@ export async function submitAnonymousFixForReviewAction(
       }
     }
 
-    // Store L402 payment hash and payout invoice for agent status polling
-    if (l402PaymentHash || payoutInvoice) {
-      const { error: l402Error } = await supabase
-        .from("posts")
-        .update({
-          ...(l402PaymentHash && { submitted_fix_payment_hash: l402PaymentHash }),
-          ...(payoutInvoice && { submitted_fix_payout_invoice: payoutInvoice }),
-        })
-        .eq("id", postId)
-
-      if (l402Error) {
-        console.error("Error storing L402 payment hash / payout invoice:", l402Error)
-      }
-    }
+    // NOTE: l402PaymentHash / payoutInvoice are ignored here (this action is
+    // callable from browsers). POST /api/fixes records them with the service
+    // role after verifying the L402 token (recordAgentFixPayoutDetails).
 
     // Claim succeeded - now fetch post data for email notifications
     const { data: postData, error: fetchError } = await supabase
@@ -1627,7 +1523,10 @@ export async function claimAnonymousRewardAction(
       .from('posts')
       .select('id, title, reward, anonymous_claim_token_hash')
       .eq('id', postId)
+      .eq('fixed', true) // approved (server-side) fix
+      .is('fixed_by', null)
       .eq('fixed_by_is_anonymous', true)
+      .is('deleted_at', null)
       .is('anonymous_reward_paid_at', null)
       .is('reward_paid_at', null)
       .single()
@@ -1642,6 +1541,12 @@ export async function claimAnonymousRewardAction(
       return { success: false, error: 'This reward can only be claimed from the device that submitted the fix' }
     }
     
+    // SECURITY: never pay a reward that was not funded
+    if (post.reward && post.reward > 0 && !(await isPostRewardFunded(supabase, { id: postId }))) {
+      console.error('SECURITY: anonymous reward claim on unfunded post', { postId, userId })
+      return { success: false, error: "This post's reward was never funded." }
+    }
+
     // Associate the fix with the user (only while still anonymous and unpaid)
     const { data: associated, error: updatePostError } = await supabase
       .from('posts')
@@ -1650,6 +1555,8 @@ export async function claimAnonymousRewardAction(
         fixed_by_is_anonymous: false, // Now associated with a user
       })
       .eq('id', postId)
+      .eq('fixed', true)
+      .is('fixed_by', null)
       .eq('fixed_by_is_anonymous', true)
       .is('anonymous_reward_paid_at', null)
       .is('anonymous_reward_payment_lock', null)
@@ -2538,6 +2445,11 @@ export async function deletePostAction(
       .eq('id', postId)
       .is('deleted_at', null)
       .eq('fixed', false)
+      .eq('under_review', false)
+      // Never delete (and refund) while a reward payout is paid or in flight
+      .is('reward_paid_at', null)
+      .is('anonymous_reward_paid_at', null)
+      .is('anonymous_reward_payment_lock', null)
       .select('id')
 
     if (updateError) {
@@ -2545,7 +2457,7 @@ export async function deletePostAction(
       return { success: false, error: 'Failed to delete post' }
     }
     if (!deletedRows?.length) {
-      return { success: false, error: 'Post has already been deleted or fixed' }
+      return { success: false, error: 'This post can no longer be deleted (fixed, under review, or a reward payout is in progress)' }
     }
 
     // Create activity for the deletion
@@ -2569,46 +2481,13 @@ export async function deletePostAction(
       console.error('SECURITY: Skipping refund for unfunded post reward', { postId, userId: effectiveUserId, reward: post.reward })
     }
     if (rewardFunded) {
-      const { data: profile, error: profileError } = await adminSupabase
-        .from('profiles')
-        .select('balance')
-        .eq('id', effectiveUserId)
-        .single()
-
-      if (profileError) {
-        console.error('Error fetching profile for refund:', profileError)
-      }
-
-      if (profile) {
-        const newBalance = (profile.balance || 0) + post.reward
-        console.log(`Refunding ${post.reward} sats to user ${effectiveUserId}. Current balance: ${profile.balance}, New balance: ${newBalance}`)
-        
-        const { error: balanceUpdateError } = await adminSupabase
-          .from('profiles')
-          .update({
-            balance: newBalance,
-            updated_at: nowIso,
-          })
-          .eq('id', effectiveUserId)
-
-        if (balanceUpdateError) {
-          console.error('Error updating profile balance for refund:', balanceUpdateError)
-        } else {
-          console.log(`Successfully updated balance to ${newBalance} for user ${effectiveUserId}`)
-        }
-
-        // Create a transaction record for the refund
-        const { error: txError } = await adminSupabase.from('transactions').insert({
-          user_id: effectiveUserId,
-          type: 'internal',
-          amount: post.reward,
-          status: 'completed',
-          memo: `Refund for deleted post: ${post.title || 'Issue'}`,
-        })
-
-        if (txError) {
-          console.error('Error creating refund transaction:', txError)
-        }
+      // Atomic, once-only refund (refuses if the reward was paid or is locked)
+      const { error: refundError } = await adminSupabase.rpc('refund_post_reward', {
+        p_post_id: postId,
+        p_memo: `Refund for deleted post: ${post.title || 'Issue'}`,
+      })
+      if (refundError) {
+        console.error('Error refunding post reward:', refundError)
       }
     }
 

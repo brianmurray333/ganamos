@@ -218,6 +218,15 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // A wager can only be (re)set before play, and never after one was
+      // settled: re-arming a finished game would reuse players' old consent.
+      if ((game.status !== "lobby" && game.status !== "setup") || game.wager_status === "settled") {
+        return NextResponse.json(
+          { success: false, error: "The wager can only be changed in the lobby before the game starts" },
+          { status: 409 }
+        )
+      }
+
       // Verify host has sufficient balance
       if (wagerAmount > 0) {
         const { data: hostProfile } = await supabase
@@ -235,8 +244,11 @@ export async function POST(request: NextRequest) {
       }
 
       // Update host player's wagerAccepted in the players array
+      // Other players must consent again to the new amount.
       const updatedPlayers = players.map((p: any, i: number) =>
-        i === 0 ? { ...p, wagerAccepted: wagerAmount > 0 ? true : undefined } : p
+        i === 0
+          ? { ...p, wagerAccepted: wagerAmount > 0 ? true : undefined }
+          : { ...p, wagerAccepted: undefined }
       )
 
       const newExpiry = new Date(Date.now() + 100 * 1000).toISOString()

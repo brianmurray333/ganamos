@@ -17,7 +17,8 @@ import {
   sendWithdrawalApprovalRequest,
   sendSystemThresholdAlert,
 } from "@/lib/withdrawal-security"
-import { emergencyDisableWithdrawals } from "@/app/actions/admin-actions"
+import { emergencyDisableWithdrawals } from "@/lib/withdrawal-security"
+import { extractInvoiceAmount, isAmountlessInvoice, validateLightningInvoice } from "@/lib/lightning-validation"
 import { authenticatedRequestClient } from "@/lib/request-auth"
 
 export async function POST(request: Request) {
@@ -128,6 +129,22 @@ export async function POST(request: Request) {
 
     if (!paymentRequest || isNaN(amount) || amount <= 0) {
       return NextResponse.json({ success: false, error: "Invalid payment request or amount" }, { status: 400 })
+    }
+
+    // SECURITY: LND pays the amount encoded in the invoice, not `amount`.
+    // Everything below (balance, limits, approvals) is checked against
+    // `amount`, so the invoice must be for exactly that (or amountless, in
+    // which case `amount` is sent).
+    if (typeof paymentRequest !== "string" || !validateLightningInvoice(paymentRequest.trim())) {
+      return NextResponse.json({ success: false, error: "Invalid Lightning invoice" }, { status: 400 })
+    }
+    const invoiceAmount = extractInvoiceAmount(paymentRequest.trim())
+    if (!isAmountlessInvoice(paymentRequest.trim()) && invoiceAmount !== amount) {
+      console.error("SECURITY: withdrawal amount does not match invoice", { requested: amount, invoiceAmount })
+      return NextResponse.json({
+        success: false,
+        error: `Invoice is for ${invoiceAmount} sats but the withdrawal amount is ${amount} sats`,
+      }, { status: 400 })
     }
 
     // SECURITY: Determine effective userId (own account or connected account)
@@ -381,6 +398,25 @@ async function processWithdrawal(
   const paymentResult = await payInvoice(paymentRequest, amount)
   console.log("[Withdraw API] Payment result:", JSON.stringify(paymentResult, null, 2))
   
+  if (!paymentResult.success && !(paymentResult as any)?.details?.payment_error) {
+    // Not a definitive LND failure (timeout, HTTP/network error): the payment
+    // may still complete. Keep the withdrawal pending so its sats stay
+    // reserved; an admin reconciles it against the node.
+    console.error("[Withdraw API] SECURITY: payment outcome uncertain; leaving withdrawal pending", { transactionId, userId })
+    await logWithdrawalAudit(adminSupabase, {
+      transactionId,
+      userId,
+      action: 'delayed',
+      details: { outcome: 'uncertain', error: (paymentResult as any).error },
+      ipAddress,
+      userAgent,
+    })
+    return NextResponse.json({
+      success: false,
+      error: "The payment could not be confirmed yet. Your withdrawal is pending review; please contact support if it doesn't arrive.",
+    }, { status: 202 })
+  }
+
   if (!paymentResult.success) {
     console.log("[Withdraw API] Payment failed, updating transaction to failed (balance NOT deducted)")
     
