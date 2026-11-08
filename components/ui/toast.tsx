@@ -222,7 +222,13 @@ function CompactToast({ toastItem }: { toastItem: ToastPrimitive.Root.ToastObjec
             {cancel.label}
           </ToastClose>
         )}
-        {hasAction && <ToastAction onClickCapture={(e) => e.stopPropagation()} />}
+        {hasAction && (
+          // Stop the click on its way back up (after the action's own onClick
+          // has run) so it doesn't also toggle the pill's expanded state.
+          <span className="contents" onClick={(e) => e.stopPropagation()}>
+            <ToastAction />
+          </span>
+        )}
         {extra && open && (
           <ToastPrimitive.Description data-slot="toast-description" className="col-span-4 col-start-2 text-muted-foreground">
             {extra}
