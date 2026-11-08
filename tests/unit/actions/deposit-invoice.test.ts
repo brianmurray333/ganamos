@@ -31,11 +31,22 @@ vi.mock('uuid', () => ({
   v4: vi.fn(() => 'mock-uuid-1234'),
 }))
 
+// Safety caps and SMS alerts are mocked explicitly so the balance-cap decision is
+// controlled by each test (checkBalanceCap otherwise creates its own Supabase client).
+vi.mock('@/lib/safety-caps', () => ({
+  checkBalanceCap: vi.fn(),
+}))
+
+vi.mock('@/lib/sms-alerts', () => ({
+  alertLargeDeposit: vi.fn(() => Promise.resolve()),
+}))
+
 // Import mocked functions for assertions
 import { createInvoice, checkInvoice } from '@/lib/lightning'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { sendBitcoinReceivedEmail } from '@/lib/transaction-emails'
 import { revalidatePath } from 'next/cache'
+import { checkBalanceCap } from '@/lib/safety-caps'
 
 // Test Fixtures
 const VALID_USER_ID = 'user-123'
@@ -545,6 +556,7 @@ describe('checkDepositStatus', () => {
     })
 
     vi.mocked(sendBitcoinReceivedEmail).mockResolvedValue({ success: true })
+    vi.mocked(checkBalanceCap).mockResolvedValue({ allowed: true, capLevel: 'none' })
   })
 
   afterEach(() => {
@@ -617,9 +629,7 @@ describe('checkDepositStatus', () => {
       })
     })
 
-    // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-    // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-    it.skip('should detect settled invoices correctly', async () => {
+    it('should detect settled invoices correctly', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({
         success: true,
         settled: true,
@@ -672,9 +682,7 @@ describe('checkDepositStatus', () => {
     })
   })
 
-  // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-  // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-  describe.skip('Balance Updates', () => {
+  describe('Balance Updates', () => {
     beforeEach(() => {
       mockSupabaseClient.auth.getSession.mockResolvedValue({
         data: { session: VALID_SESSION },
@@ -763,9 +771,7 @@ describe('checkDepositStatus', () => {
     })
   })
 
-  // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-  // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-  describe.skip('Transaction Status', () => {
+  describe('Transaction Status', () => {
     beforeEach(() => {
       mockSupabaseClient.auth.getSession.mockResolvedValue({
         data: { session: VALID_SESSION },
@@ -845,9 +851,7 @@ describe('checkDepositStatus', () => {
     })
   })
 
-  // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-  // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-  describe.skip('Notifications', () => {
+  describe('Notifications', () => {
     beforeEach(() => {
       mockSupabaseClient.auth.getSession.mockResolvedValue({
         data: { session: VALID_SESSION },
@@ -915,9 +919,7 @@ describe('checkDepositStatus', () => {
     })
   })
 
-  // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-  // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-  describe.skip('Cache Management', () => {
+  describe('Cache Management', () => {
     beforeEach(() => {
       mockSupabaseClient.auth.getSession.mockResolvedValue({
         data: { session: VALID_SESSION },
@@ -946,7 +948,8 @@ describe('checkDepositStatus', () => {
       expect(revalidatePath).toHaveBeenCalledWith('/profile')
     })
 
-    it('should revalidate dashboard path on settlement', async () => {
+    // The dashboard moved from /dashboard to / in adfa5eb ("make dashboard the root URL")
+    it('should revalidate dashboard (root) path on settlement', async () => {
       mockAdminSupabaseClient.single
         .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
         .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
@@ -954,7 +957,7 @@ describe('checkDepositStatus', () => {
 
       await checkDepositStatus(VALID_R_HASH_HEX)
 
-      expect(revalidatePath).toHaveBeenCalledWith('/dashboard')
+      expect(revalidatePath).toHaveBeenCalledWith('/')
     })
 
     it('should revalidate wallet path on settlement', async () => {
@@ -1032,9 +1035,7 @@ describe('checkDepositStatus', () => {
       })
     })
 
-    // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-    // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-    it.skip('should log amount mismatches for security monitoring', async () => {
+    it('should log amount mismatches for security monitoring', async () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn')
 
       vi.mocked(checkInvoice).mockResolvedValue({
@@ -1086,9 +1087,7 @@ describe('checkDepositStatus', () => {
       expect(result.error).toBe('User profile not found')
     })
 
-    // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-    // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-    it.skip('should handle transaction update errors', async () => {
+    it('should handle transaction update errors', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({
         success: true,
         settled: true,
@@ -1099,10 +1098,10 @@ describe('checkDepositStatus', () => {
         preimage: 'abc123',
       })
 
-      mockAdminSupabaseClient.single.mockResolvedValueOnce({
-        data: MOCK_TRANSACTION_PENDING,
-        error: null,
-      })
+      // The profile is read (for the balance-cap check) before the transaction update
+      mockAdminSupabaseClient.single
+        .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
+        .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
 
       mockAdminSupabaseClient.update.mockReturnValueOnce({
         eq: vi.fn().mockResolvedValue({
@@ -1115,11 +1114,49 @@ describe('checkDepositStatus', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Failed to update transaction')
+
+      // Balance must not be credited when the transaction could not be marked completed
+      const balanceUpdates = vi.mocked(mockAdminSupabaseClient.update).mock.calls.filter(
+        call => call[0].balance !== undefined
+      )
+      expect(balanceUpdates).toHaveLength(0)
     })
 
-    // BUG IN APPLICATION CODE: Line 333 in lightning-actions.ts uses `effectiveUserId` which is undefined in checkDepositStatus.
-    // Should be `userId` instead. These tests fail due to this production bug. Fix in separate PR.
-    it.skip('should handle balance update errors', async () => {
+    it('should not credit a deposit that would exceed the hard balance cap', async () => {
+      vi.mocked(checkInvoice).mockResolvedValue({
+        success: true,
+        settled: true,
+        amountPaid: '1000',
+        state: 'SETTLED',
+        creationDate: '1609459200',
+        settleDate: '1609459300',
+        preimage: 'abc123',
+      })
+      vi.mocked(checkBalanceCap).mockResolvedValue({
+        allowed: false,
+        capLevel: 'hard',
+        message: 'Balance would exceed the 40,000 sats limit.',
+      })
+
+      mockAdminSupabaseClient.single
+        .mockResolvedValueOnce({ data: MOCK_TRANSACTION_PENDING, error: null })
+        .mockResolvedValueOnce({ data: MOCK_PROFILE_SUFFICIENT, error: null })
+
+      const result = await checkDepositStatus(VALID_R_HASH_HEX)
+
+      expect(checkBalanceCap).toHaveBeenCalledWith(
+        VALID_USER_ID,
+        MOCK_PROFILE_SUFFICIENT.balance + 1000,
+        false
+      )
+      expect(result.success).toBe(false)
+      expect(result.settled).toBe(true)
+      expect(result.error).toBe('Balance would exceed the 40,000 sats limit.')
+      // Neither the transaction nor the balance may be touched
+      expect(mockAdminSupabaseClient.update).not.toHaveBeenCalled()
+    })
+
+    it('should handle balance update errors', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({
         success: true,
         settled: true,
