@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { toast } from "@/components/ui/toast"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +35,9 @@ export function LocationEditorModal({
   const [autocompleteService, setAutocompleteService] = useState<google.maps.places.AutocompleteService | null>(null)
   const [placesService, setPlacesService] = useState<google.maps.places.PlacesService | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
+  // Groups the keystrokes + the details lookup of one search into a single
+  // billed Places session.
+  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
 
   // Initialize Google Maps services
   useEffect(() => {
@@ -90,10 +94,20 @@ export function LocationEditorModal({
       return
     }
 
+    const sessionToken =
+      sessionTokenRef.current ?? new window.google.maps.places.AutocompleteSessionToken()
+    sessionTokenRef.current = sessionToken
+
     autocompleteService.getPlacePredictions(
       {
         input: query,
-        types: ["establishment", "geocode"],
+        // No type filter: specific places (parks, businesses, addresses) as
+        // well as areas. Bias toward the current location so nearby places
+        // rank first instead of the same-named city elsewhere.
+        sessionToken,
+        ...(currentLocation
+          ? { locationBias: { center: { lat: currentLocation.lat, lng: currentLocation.lng }, radius: 20000 } }
+          : { locationBias: "IP_BIAS" }),
       },
       (predictions, status) => {
         if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
@@ -110,17 +124,25 @@ export function LocationEditorModal({
   const handlePlaceSelect = (placeId: string, description: string) => {
     if (!placesService) return
 
-    placesService.getDetails({ placeId }, (place, status) => {
-      if (status === window.google.maps.places.PlacesServiceStatus.OK && place) {
-        const location = {
+    // Close right away; the location fills in when the details arrive.
+    setSearchQuery(description)
+    setShowResults(false)
+    onOpenChange(false)
+
+    const sessionToken = sessionTokenRef.current ?? undefined
+    sessionTokenRef.current = null
+
+    placesService.getDetails({ placeId, fields: ["geometry"], sessionToken }, (place, status) => {
+      const loc = place?.geometry?.location
+      if (status === window.google.maps.places.PlacesServiceStatus.OK && loc) {
+        onLocationChange({
           name: description,
-          lat: place.geometry?.location?.lat() || 0,
-          lng: place.geometry?.location?.lng() || 0,
+          lat: loc.lat(),
+          lng: loc.lng(),
           displayName: description,
-        }
-        onLocationChange(location)
-        setSearchQuery(description)
-        setShowResults(false)
+        })
+      } else {
+        toast.error("Couldn't set location", { description: "Please try selecting it again." })
       }
     })
   }

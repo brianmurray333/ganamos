@@ -21,7 +21,7 @@ import {
   createFundedAnonymousPostAction,
 } from "@/app/actions/post-actions"
 import QRCode from "@/components/qr-code"
-import { getCurrentLocationWithName } from "@/lib/geocoding" // Import the geocoding utility
+import { getCurrentLocationWithName, getPlaceLabel } from "@/lib/geocoding" // Import the geocoding utility
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
 import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
@@ -411,13 +411,14 @@ export default function NewPostPage() {
       const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false })
 
       if (locationInfo) {
+        const label = await getPlaceLabel(locationInfo.latitude, locationInfo.longitude).catch(() => locationInfo.name)
         setCurrentLocation({
-          name: locationInfo.name,
+          name: label,
           lat: locationInfo.latitude,
           lng: locationInfo.longitude,
-          displayName: locationInfo.name,
+          displayName: label,
         })
-        console.log('✅ Auto-populated location from current position:', locationInfo.name)
+        console.log('✅ Auto-populated location from current position:', label)
       }
     } catch (error) {
       console.log('Could not get current location:', error)
@@ -456,9 +457,7 @@ export default function NewPostPage() {
           setIsGettingLocation(true)
           
           // Reverse geocode to get location name
-          const { reverseGeocode, getStandardizedLocation } = await import('@/lib/geocoding')
-          const name = await reverseGeocode(exifLocation.latitude, exifLocation.longitude)
-          const standardized = await getStandardizedLocation(exifLocation.latitude, exifLocation.longitude)
+          const name = await getPlaceLabel(exifLocation.latitude, exifLocation.longitude)
           
           setCurrentLocation({
             name,
@@ -486,11 +485,13 @@ export default function NewPostPage() {
       const locationInfo = await getCurrentLocationWithName({ forceRefresh: true, useCache: false }) // User explicitly requested fresh location
 
       if (locationInfo) {
+        // Place-level label (e.g. "Dolores Park, San Francisco, CA"), falling back to city
+        const label = await getPlaceLabel(locationInfo.latitude, locationInfo.longitude).catch(() => locationInfo.name)
         setCurrentLocation({
-          name: locationInfo.name, // This is the geocoded name (e.g., "City, State")
+          name: label,
           lat: locationInfo.latitude,
           lng: locationInfo.longitude,
-          displayName: locationInfo.name, // Use the geocoded name for display
+          displayName: label,
         })
       } else {
         // This case handles if getCurrentLocationWithName returns null (e.g., geolocation not supported)
