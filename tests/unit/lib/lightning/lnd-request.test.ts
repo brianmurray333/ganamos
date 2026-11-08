@@ -11,6 +11,7 @@ vi.mock('@/lib/env', () => ({
 }))
 
 import { lndRequest } from '@/lib/lightning'
+import { serverEnv } from '@/lib/env'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
@@ -173,22 +174,40 @@ describe('lndRequest', () => {
   })
 
   describe('Configuration Validation', () => {
-    // Note: Configuration validation happens at module load time
-    // These tests verify the actual implementation handles missing config,
-    // but cannot be tested with dynamic mocking since serverEnv is loaded before lndRequest
-    it.skip('should return error when lndRestUrl is missing', async () => {
-      // This would require re-importing the module with different mocks
-      // The implementation correctly checks for missing config at lines 14-17 of lightning.ts
+    // lndRequest reads serverEnv.lightning at call time (lib/lightning.ts), so the mocked
+    // config object can be changed per test and restored afterwards.
+    const original = { ...serverEnv!.lightning }
+
+    afterEach(() => {
+      Object.assign(serverEnv!.lightning, original)
     })
 
-    it.skip('should return error when lndAdminMacaroon is missing', async () => {
-      // This would require re-importing the module with different mocks
-      // The implementation correctly checks for missing config at lines 14-17 of lightning.ts
+    it('should return error when lndRestUrl is missing', async () => {
+      ;(serverEnv!.lightning as any).lndRestUrl = undefined
+
+      const result = await lndRequest('/v1/getinfo', 'GET')
+
+      expect(result).toEqual({ success: false, error: 'Lightning configuration missing' })
+      expect(mockFetch).not.toHaveBeenCalled()
     })
 
-    it.skip('should return error when both config values are missing', async () => {
-      // This would require re-importing the module with different mocks
-      // The implementation correctly checks for missing config at lines 14-17 of lightning.ts
+    it('should return error when lndAdminMacaroon is missing', async () => {
+      ;(serverEnv!.lightning as any).lndAdminMacaroon = ''
+
+      const result = await lndRequest('/v1/channels/transactions', 'POST', { payment_request: 'lnbc1' })
+
+      expect(result).toEqual({ success: false, error: 'Lightning configuration missing' })
+      expect(mockFetch).not.toHaveBeenCalled()
+    })
+
+    it('should return error when both config values are missing', async () => {
+      ;(serverEnv!.lightning as any).lndRestUrl = undefined
+      ;(serverEnv!.lightning as any).lndAdminMacaroon = undefined
+
+      const result = await lndRequest('/v1/getinfo', 'GET')
+
+      expect(result).toEqual({ success: false, error: 'Lightning configuration missing' })
+      expect(mockFetch).not.toHaveBeenCalled()
     })
   })
 

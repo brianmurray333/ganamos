@@ -571,9 +571,9 @@ describe('lib/nostr.ts - Nostr Integration', () => {
   })
 
   describe('Connection Pool Management', () => {
-    // Note: These tests require special mock patterns that are complex to set up
-    // They test internal implementation details of pool management
-    it.skip('should reuse singleton pool across multiple calls', async () => {
+    // The module-level pool is reset by closeNostrPool() in afterEach, so each test starts
+    // without a pool.
+    it('should reuse singleton pool across multiple calls', async () => {
       await postToNostr({
         title: 'Test Issue 1',
         description: 'Test description 1',
@@ -592,15 +592,15 @@ describe('lib/nostr.ts - Nostr Integration', () => {
       expect(SimplePool).toHaveBeenCalledTimes(1)
     })
 
-    it.skip('should close pool when closeNostrPool called', () => {
+    it('should close pool when closeNostrPool called', async () => {
       const mockClose = vi.fn()
-      vi.mocked(SimplePool).mockImplementation(() => ({
-        publish: vi.fn(),
+      vi.mocked(SimplePool).mockImplementationOnce(() => ({
+        publish: vi.fn().mockReturnValue([Promise.resolve()]),
         close: mockClose,
       }) as any)
 
       // Trigger pool creation
-      postToNostr({
+      await postToNostr({
         title: 'Test Issue',
         description: 'Test description',
         reward: 1000,
@@ -609,6 +609,7 @@ describe('lib/nostr.ts - Nostr Integration', () => {
 
       closeNostrPool()
 
+      expect(mockClose).toHaveBeenCalledTimes(1)
       expect(mockClose).toHaveBeenCalledWith(
         expect.arrayContaining([
           'wss://relay.damus.io',

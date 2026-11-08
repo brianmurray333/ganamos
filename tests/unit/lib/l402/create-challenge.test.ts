@@ -380,11 +380,12 @@ describe('createL402Challenge', () => {
       expect(result.challenge).toBeUndefined()
     })
 
-    // NOTE: Test commented out - reveals bug in production code where missing rHash
-    // is not validated, leading to macaroon with undefined identifier.
-    // Production code should be fixed in separate PR to validate rHash exists.
-    it.skip('should handle missing rHash in invoice result', async () => {
-      // ARRANGE: Mock invoice result without rHash
+    // REAL BUG? (low severity, fails closed) lib/l402.ts createL402Challenge uses
+    // `invoiceResult.rHash!` without checking it. If createInvoice reports success without
+    // an rHash, a challenge is returned whose macaroon has no identifier (JSON.stringify drops
+    // `undefined`), so the user is shown an invoice whose payment can never be verified.
+    // Expected: the challenge is refused. Remove `.fails` once rHash is validated.
+    it.fails('should refuse to create a challenge when the invoice result has no rHash', async () => {
       vi.mocked(lightning.createInvoice).mockResolvedValue({
         success: true,
         paymentRequest: 'lnbc10n1pj9x7xmpp5test',
@@ -392,19 +393,11 @@ describe('createL402Challenge', () => {
         addIndex: '12345',
       })
 
-      // ACT & ASSERT: Should throw or handle gracefully
       const result = await createL402Challenge(1000, 'Test')
-      
-      // Either returns error or handles undefined rHash
-      if (!result.success) {
-        expect(result.error).toBeDefined()
-      } else {
-        // If it succeeds, macaroon identifier should handle undefined
-        const macaroon: Macaroon = JSON.parse(
-          Buffer.from(result.challenge!.macaroon, 'base64').toString('utf8')
-        )
-        expect(macaroon.identifier).toBeDefined()
-      }
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBeDefined()
+      expect(result.challenge).toBeUndefined()
     })
 
     it('should not call createInvoice if it would throw before reaching it', async () => {
