@@ -105,6 +105,10 @@ function createCloseIssueMockClient(options: {
     ? { data: [{ id: 'funding-tx-123' }], error: null }
     : { data: [], error: null }
 
+  // Every write (post update, transaction insert, ...) is recorded here so tests can
+  // assert that rejected calls change nothing and pay nothing.
+  const writes: { table: string; op: string; payload: any }[] = []
+
   function createChainableMock(resolvedValue: any) {
     const chainable: any = {}
     const terminal = vi.fn().mockResolvedValue(resolvedValue)
@@ -114,6 +118,10 @@ function createCloseIssueMockClient(options: {
     chainable.single = terminal
     chainable.then = terminal().then.bind(terminal())
     chainable.limit = vi.fn().mockResolvedValue(resolvedValue)
+    chainable.insert = vi.fn((payload: any) => {
+      writes.push({ table: 'transactions', op: 'insert', payload })
+      return chainable
+    })
     return chainable
   }
 
@@ -143,12 +151,15 @@ function createCloseIssueMockClient(options: {
               }),
             })),
           })),
-          update: vi.fn(() => ({
-            eq: vi.fn().mockResolvedValue({
-              data: postData,
-              error: updateError,
-            }),
-          })),
+          update: vi.fn((payload: any) => {
+            writes.push({ table: 'posts', op: 'update', payload })
+            return {
+              eq: vi.fn().mockResolvedValue({
+                data: postData,
+                error: updateError,
+              }),
+            }
+          }),
         }
       }
 
@@ -162,6 +173,10 @@ function createCloseIssueMockClient(options: {
               }),
             })),
           })),
+          update: vi.fn((payload: any) => {
+            writes.push({ table: 'profiles', op: 'update', payload })
+            return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
+          }),
         }
       }
 
@@ -188,8 +203,77 @@ function createCloseIssueMockClient(options: {
 
       return mockClient
     }),
+    writes,
   }
 
+  return mockClient
+}
+
+/** Assert that a rejected closeIssueAction neither marked the post fixed nor paid anyone. */
+function expectNoWrites(mockClient: any) {
+  expect(mockClient.writes).toEqual([])
+}
+
+/**
+ * closeIssueAction mock that also supports the full internal createFixRewardAction
+ * path (fixer profile read/update, transaction insert, activity insert), with all
+ * writes recorded in `writes`.
+ */
+function createCloseIssueSuccessPathMockClient(options: {
+  fixerBalance?: number
+  txInsertError?: any
+  postData?: any
+} = {}) {
+  const { fixerBalance = 2000, txInsertError = null, postData = MOCK_POST } = options
+  const mockClient = createCloseIssueMockClient({ postData })
+  const writes = mockClient.writes
+  const originalFrom = mockClient.from
+  mockClient.from = vi.fn((table: string) => {
+    if (table === 'transactions') {
+      const chainable: any = {}
+      for (const method of ['select', 'eq', 'lt', 'gte', 'ilike']) {
+        chainable[method] = vi.fn(() => chainable)
+      }
+      // Funding check
+      chainable.limit = vi.fn().mockResolvedValue({ data: [{ id: 'funding-tx-123' }], error: null })
+      chainable.insert = vi.fn((payload: any) => {
+        writes.push({ table: 'transactions', op: 'insert', payload })
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue(
+              txInsertError ? { data: null, error: txInsertError } : { data: { id: 'transaction-123' }, error: null }
+            ),
+          })),
+        }
+      })
+      return chainable
+    }
+    if (table === 'activities') {
+      return {
+        insert: vi.fn((payload: any) => {
+          writes.push({ table: 'activities', op: 'insert', payload })
+          return Promise.resolve({ data: null, error: null })
+        }),
+      }
+    }
+    if (table === 'profiles') {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue({
+              data: { ...MOCK_FIXER_PROFILE, balance: fixerBalance, pet_coins: 0, fixed_issues_count: 0 },
+              error: null,
+            }),
+          })),
+        })),
+        update: vi.fn((payload: any) => {
+          writes.push({ table: 'profiles', op: 'update', payload })
+          return { eq: vi.fn().mockResolvedValue({ data: null, error: null }) }
+        }),
+      }
+    }
+    return originalFrom(table)
+  })
   return mockClient
 }
 
@@ -322,17 +406,13 @@ function createDeletePostMockClient(options: {
 // ============================================================================
 
 describe('closeIssueAction', () => {
-  let mockCreateFixRewardAction: any
-
+  // Note: closeIssueAction calls createFixRewardAction directly inside the module, so a
+  // vi.spyOn on the module namespace never intercepts it (an earlier version of this file
+  // asserted `expect(spy).not.toHaveBeenCalled()`, which could never fail). The real
+  // createFixRewardAction runs against the mock client instead, and rejection tests assert
+  // via expectNoWrites() that nothing was marked fixed and nothing was paid.
   beforeEach(() => {
     vi.clearAllMocks()
-    // Spy on createFixRewardAction and mock its return value
-    mockCreateFixRewardAction = vi.spyOn(postActions, 'createFixRewardAction')
-    mockCreateFixRewardAction.mockResolvedValue({
-      success: true,
-      transactionId: 'transaction-123',
-      newBalance: 6000,
-    })
   })
 
   // --------------------------------------------------------------------------
@@ -340,12 +420,45 @@ describe('closeIssueAction', () => {
   // --------------------------------------------------------------------------
 
   describe('Successful Issue Closure', () => {
-    // Note: Success path tests are complex because closeIssueAction calls createFixRewardAction internally
-    // which requires extensive mocking. The integration tests cover the full success flow.
-    // Unit tests focus on authorization, validation, and error handling which are well covered below.
-    it.skip('should successfully close issue with valid fixer - tested in integration tests', () => {
-      // Skipped: Complex due to internal call to createFixRewardAction
-      // Covered by integration tests instead
+    it('should successfully close issue with valid fixer and pay exactly the post reward', async () => {
+      const mockClient = createCloseIssueSuccessPathMockClient({ fixerBalance: 2000 })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
+
+      expect(result).toEqual({ success: true })
+
+      const postUpdates = mockClient.writes.filter((w: any) => w.table === 'posts')
+      expect(postUpdates).toHaveLength(1)
+      expect(postUpdates[0].payload).toMatchObject({ fixed: true, fixed_by: TEST_FIXER_ID })
+
+      const txInserts = mockClient.writes.filter((w: any) => w.table === 'transactions')
+      expect(txInserts).toHaveLength(1)
+      expect(txInserts[0].payload).toMatchObject({
+        user_id: TEST_FIXER_ID,
+        type: 'internal',
+        amount: TEST_REWARD_AMOUNT,
+        status: 'completed',
+      })
+
+      const balanceUpdates = mockClient.writes.filter((w: any) => w.table === 'profiles')
+      expect(balanceUpdates).toHaveLength(1)
+      expect(balanceUpdates[0].payload).toMatchObject({
+        balance: 2000 + TEST_REWARD_AMOUNT,
+        pet_coins: TEST_REWARD_AMOUNT,
+        fixed_issues_count: 1,
+      })
+    })
+
+    it('should refuse to pay out a reward post that was never funded', async () => {
+      const mockClient = createCloseIssueMockClient({ isFunded: false })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe("This post's reward was never funded. Cannot issue reward.")
+      expectNoWrites(mockClient)
     })
   })
 
@@ -366,7 +479,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Not authenticated')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
 
     it('should reject when session user is not the post owner or group admin', async () => {
@@ -383,7 +496,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Only the original poster or a group admin can close this issue')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
   })
 
@@ -407,7 +520,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Post not found')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
 
     it('should reject when post is already fixed', async () => {
@@ -423,7 +536,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Post is already marked as fixed')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
 
     it('should allow closing post even when under review (group admins can always approve)', async () => {
@@ -505,7 +618,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('Post has been deleted')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
 
     it('should reject when fixer username not found', async () => {
@@ -523,7 +636,7 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(result.error).toBe('User "nonexistent-user" not found')
-      expect(mockCreateFixRewardAction).not.toHaveBeenCalled()
+      expectNoWrites(mockClient)
     })
   })
 
@@ -548,9 +661,21 @@ describe('closeIssueAction', () => {
       expect(result.error).toBe('Failed to update post')
     })
 
-    it.skip('should handle reward transfer failures - needs integration test', async () => {
-      // Skipped: Testing internal call behavior is complex in unit tests
-      // This scenario is better covered in integration tests
+    it('should report failure and credit no balance when the reward transaction cannot be created', async () => {
+      const mockClient = createCloseIssueSuccessPathMockClient({
+        txInsertError: { message: 'insert failed' },
+      })
+      vi.mocked(createServerSupabaseClient).mockReturnValue(mockClient)
+
+      const result = await closeIssueAction(TEST_POST_ID, TEST_USER_ID, TEST_FIXER_USERNAME)
+
+      expect(result).toEqual({ success: false, error: 'Failed to create transaction' })
+      // No balance may be credited without a reward transaction
+      expect(mockClient.writes.filter((w: any) => w.table === 'profiles')).toHaveLength(0)
+      // Current behavior: the post was already marked fixed before the transfer was attempted
+      // (closeIssueAction: "Post is already marked as fixed, return failure so user knows
+      // reward wasn't transferred"). Asserted so that a change here is noticed.
+      expect(mockClient.writes.filter((w: any) => w.table === 'posts')).toHaveLength(1)
     })
 
     it('should handle unexpected errors gracefully', async () => {
