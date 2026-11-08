@@ -1,28 +1,50 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import dynamic from "next/dynamic"
-import { LoadingSpinner } from "@/components/loading-spinner"
+import { MapPageSkeleton } from "@/components/map-placeholder"
+import { getCachedLocation, getCurrentLocationWithName } from "@/lib/geocoding"
 
 const MapView = dynamic(
   () => import("@/components/map-view").then((mod) => mod.MapView),
   {
     ssr: false,
-    loading: () => (
-      <div className="w-full h-full bg-gray-100 dark:bg-gray-800 animate-pulse flex items-center justify-center">
-        <span className="text-gray-400">Loading map...</span>
-      </div>
-    ),
+    // Same chrome + neutral canvas as app/map/loading.tsx, so nothing changes
+    // visually until the real map fades in.
+    loading: () => <MapPageSkeleton />,
   }
 )
-import { useAuth } from "@/components/auth-provider"
-import { createBrowserSupabaseClient } from "@/lib/supabase"
-import { getCurrentLocationWithName } from "@/lib/geocoding"
+
+// Stable reference: MapView is memoised on the posts prop and fetches posts itself.
+const NO_POSTS: never[] = []
+
+type MapUserLocation = {
+  latitude: number
+  longitude: number
+  zoomType: string
+  name: string
+  bounds?: any
+  lat: number
+  lng: number
+  cityBounds?: any
+}
+
+function toMapLocation(location: { latitude: number; longitude: number; name: string }): MapUserLocation {
+  return {
+    latitude: location.latitude,
+    longitude: location.longitude,
+    zoomType: "city",
+    name: location.name,
+    lat: location.latitude,
+    lng: location.longitude,
+    bounds: undefined,
+  }
+}
 
 export default function MapPage() {
   const router = useRouter()
-  
+
   // On large screens, redirect to dashboard (which has side-by-side view)
   useEffect(() => {
     const checkScreenSize = () => {
@@ -31,152 +53,63 @@ export default function MapPage() {
         router.replace('/')
       }
     }
-    
+
     checkScreenSize()
     window.addEventListener('resize', checkScreenSize)
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [router])
-  const [isLoading, setIsLoading] = useState(true)
-  const [posts, setPosts] = useState<any[]>([])
-  const searchParams = useSearchParams()
-  const { user } = useAuth()
-  // Memoize supabase client to prevent unnecessary re-renders
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
-  // Track if initial data was loaded to prevent refetch
-  const initialDataLoaded = useRef(false)
 
-  const [userLocation, setUserLocation] = useState<{
-    latitude: number
-    longitude: number
-    zoomType: string
-    name: string
-    bounds?: any
-    lat: number
-    lng: number
-    cityBounds?: any
-  } | null>(null)
-  const [locationError, setLocationError] = useState<string | null>(null)
+  // Render the map right away. Previously the page waited for geolocation
+  // (up to 10s for a fresh GPS fix) and a full posts query before even
+  // mounting the map, behind a "Loading..." spinner. Now we start from the
+  // last known location (if any) and refine it in the background; MapView
+  // fetches posts itself and recentres when a fresher location arrives.
+  const [userLocation, setUserLocation] = useState<MapUserLocation | null>(() => {
+    if (typeof window === "undefined") return null
+    const cached = getCachedLocation()
+    return cached ? toMapLocation(cached) : null
+  })
 
   useEffect(() => {
-    // Skip if already loaded (prevents refetch on app resume)
-    if (initialDataLoaded.current) return
-    
-    const initializeMapData = async () => {
-      setIsLoading(true)
+    let cancelled = false
 
+    const resolveLocation = async () => {
       try {
-        // Always try fresh location first, fallback to cached if available
         const location = await getCurrentLocationWithName({ useCache: true, preferCached: true })
-        if (location) {
-          setUserLocation({
-            latitude: location.latitude,
-            longitude: location.longitude,
-            zoomType: "city",
-            name: location.name,
-            lat: location.latitude,
-            lng: location.longitude,
-            bounds: undefined,
-          })
+        if (cancelled || !location) return
 
-          // Get city bounds using Google Places API
-          if (typeof window !== "undefined" && window.google?.maps?.places) {
-            const service = new window.google.maps.places.PlacesService(document.createElement("div"))
-            const request = {
-              query: location.name,
-              fields: ["geometry"],
+        setUserLocation((prev) =>
+          prev && prev.latitude === location.latitude && prev.longitude === location.longitude && prev.name === location.name
+            ? prev
+            : toMapLocation(location),
+        )
+
+        // Get city bounds using Google Places API
+        if (typeof window !== "undefined" && window.google?.maps?.places) {
+          const service = new window.google.maps.places.PlacesService(document.createElement("div"))
+          service.textSearch({ query: location.name, fields: ["geometry"] } as any, (results: any, status: any) => {
+            if (cancelled) return
+            if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]?.geometry?.viewport) {
+              setUserLocation((prev) => (prev ? { ...prev, cityBounds: results[0].geometry.viewport } : null))
             }
-
-            service.textSearch(request, (results: any, status: any) => {
-              if (status === window.google.maps.places.PlacesServiceStatus.OK && results?.[0]?.geometry?.viewport) {
-                setUserLocation((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        cityBounds: results[0].geometry.viewport,
-                      }
-                    : null,
-                )
-              }
-            })
-          }
-        }
-      } catch (error: any) {
-        console.error("Error getting user location:", error)
-        
-        // Handle different types of location errors
-        let errorMessage = "Could not get your location"
-        if (error && error.code !== undefined) {
-          switch (error.code) {
-            case 1: // PERMISSION_DENIED
-              errorMessage = "Location permission denied. Please enable location access in your browser settings to see nearby posts."
-              break
-            case 2: // POSITION_UNAVAILABLE
-              errorMessage = "Location unavailable. Please check your device's location settings."
-              break
-            case 3: // TIMEOUT
-              errorMessage = "Location request timed out. Please try again."
-              break
-            default:
-              errorMessage = "Location access failed. The map will show all posts without location filtering."
-          }
-        }
-        
-        setLocationError(errorMessage)
-      }
-
-      // Then fetch posts
-      try {
-        if (supabase) {
-          const { data, error } = await supabase
-            .from("posts")
-            .select(`
-              *,
-              group:group_id(
-                id,
-                name,
-                description
-              ),
-              assigned_to_user:assigned_to(
-                id,
-                name
-              )
-            `)
-            .eq("fixed", false)
-            .neq("under_review", true)
-            .is("deleted_at", null)
-            .order("created_at", { ascending: false })
-          if (error) {
-            console.error("Error fetching posts:", error)
-            setPosts([])
-          } else {
-            setPosts(data || [])
-          }
-        } else {
-          setPosts([])
+          })
         }
       } catch (error) {
-        console.error("Error in fetchPosts:", error)
-        setPosts([])
-      } finally {
-        setIsLoading(false)
-        initialDataLoaded.current = true
+        // No location (denied / unavailable / timeout): the map still works,
+        // it just isn't centred on the user.
+        console.error("Error getting user location:", error)
       }
     }
 
-    initializeMapData()
-  }, [supabase])
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <LoadingSpinner />
-      </div>
-    )
-  }
+    resolveLocation()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <MapView
-      posts={posts}
+      posts={NO_POSTS}
       onClose={() => window.history.back()}
       userLocation={userLocation}
       cityName={userLocation?.name || null}
