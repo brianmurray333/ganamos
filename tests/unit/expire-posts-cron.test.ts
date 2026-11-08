@@ -122,24 +122,46 @@ describe('POST Expiration Cron - Unit Tests', () => {
       expect(data.error).toBe('Unauthorized')
     })
 
-    it('should allow request with x-vercel-cron header', async () => {
+    // SECURITY: x-vercel-cron / x-vercel-id are spoofable (anyone can send the
+    // former; Vercel adds the latter to every request). Only the bearer secret counts.
+    it('should reject a spoofed x-vercel-cron header without the bearer secret', async () => {
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
         headers: { 'x-vercel-cron': '1' },
       })
 
       const response = await GET(request)
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
+      expect(createClient).not.toHaveBeenCalled()
     })
 
-    it('should allow request with x-vercel-id header', async () => {
+    it('should reject an x-vercel-id header without the bearer secret', async () => {
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
         headers: { 'x-vercel-id': 'cron_12345' },
       })
 
       const response = await GET(request)
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
+      expect(createClient).not.toHaveBeenCalled()
+    })
+
+    it('should fail closed when CRON_SECRET is not configured', async () => {
+      delete process.env.CRON_SECRET
+      for (const headers of [
+        {},
+        { authorization: 'Bearer undefined' },
+        { authorization: 'Bearer ' },
+        { 'x-vercel-cron': '1' },
+      ]) {
+        const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
+          method: 'GET',
+          headers,
+        })
+        const response = await GET(request)
+        expect(response.status).toBe(401)
+      }
+      expect(createClient).not.toHaveBeenCalled()
     })
 
     it('should allow request with valid Bearer token', async () => {
@@ -198,7 +220,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -239,7 +261,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       await GET(request)
@@ -276,7 +298,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -333,7 +355,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -417,7 +439,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       await GET(request)
@@ -467,7 +489,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       await GET(request)
@@ -492,7 +514,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -523,7 +545,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -559,7 +581,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -584,7 +606,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       await GET(request)
@@ -601,7 +623,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -616,7 +638,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -658,7 +680,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)
@@ -711,7 +733,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
 
       const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
-        headers: { 'x-vercel-cron': '1' },
+        headers: { authorization: 'Bearer test-cron-secret' },
       })
 
       const response = await GET(request)

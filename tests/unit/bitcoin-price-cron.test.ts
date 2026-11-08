@@ -56,7 +56,9 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
   })
 
   describe('Authentication & Authorization', () => {
-    it('should allow requests with x-vercel-cron header without Bearer token', async () => {
+    // SECURITY: Vercel headers are not proof of a cron invocation (x-vercel-cron
+    // can be sent by anyone; x-vercel-id is on every request). Only the bearer secret counts.
+    it('should reject a spoofed x-vercel-cron header without the bearer secret', async () => {
       mockDIAApiSuccess(50000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
       mockCleanupSuccess(mockSupabaseClient)
@@ -64,13 +66,14 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
       const request = createMockRequestWithVercelHeaders('x-vercel-cron')
       const response = await GET(request)
 
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(401)
       const data = await response.json()
-      expect(data.success).toBe(true)
-      expect(data.price).toBe(50000)
+      expect(data.error).toBe('Unauthorized')
+      expect(global.fetch).not.toHaveBeenCalled()
+      expect(mockSupabaseClient.from).not.toHaveBeenCalled()
     })
 
-    it('should allow requests with x-vercel-id header without Bearer token', async () => {
+    it('should reject an x-vercel-id header without the bearer secret', async () => {
       mockDIAApiSuccess(51000)
       mockDatabaseInsertSuccess(mockSupabaseClient)
       mockCleanupSuccess(mockSupabaseClient)
@@ -78,10 +81,9 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
       const request = createMockRequestWithVercelHeaders('x-vercel-id')
       const response = await GET(request)
 
-      expect(response.status).toBe(200)
-      const data = await response.json()
-      expect(data.success).toBe(true)
-      expect(data.price).toBe(51000)
+      expect(response.status).toBe(401)
+      expect(global.fetch).not.toHaveBeenCalled()
+      expect(mockSupabaseClient.from).not.toHaveBeenCalled()
     })
 
     it('should return 401 when request has neither Vercel headers nor valid Bearer token', async () => {
@@ -135,6 +137,19 @@ describe('Bitcoin Price Cron Endpoint Integration Tests', () => {
 
       expect(response.status).toBe(401)
       expect(data.error).toBe('Unauthorized')
+    })
+
+    it('should fail closed when CRON_SECRET is unset, even for "Bearer undefined" or Vercel headers', async () => {
+      delete process.env.CRON_SECRET
+      for (const request of [
+        createMockRequestWithAuth('undefined'),
+        createMockRequestWithAuth(''),
+        createMockRequestWithVercelHeaders('x-vercel-cron'),
+      ]) {
+        const response = await GET(request)
+        expect(response.status).toBe(401)
+      }
+      expect(mockSupabaseClient.from).not.toHaveBeenCalled()
     })
   })
 

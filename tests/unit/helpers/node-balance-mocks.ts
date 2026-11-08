@@ -59,10 +59,19 @@ export function createMockLndErrorResponse(error: string, details?: any) {
 /**
  * Create mock GET request for /api/admin/node-balance
  */
-export function createNodeBalanceRequest(): NextRequest {
+/** CRON_SECRET used by setupLightningEnvironment(); requests must send it as a Bearer token. */
+export const TEST_CRON_SECRET = 'test-cron-secret'
+
+/**
+ * Create mock GET request for /api/admin/node-balance.
+ * Authorized (Bearer CRON_SECRET) by default; pass `headers` to override.
+ */
+export function createNodeBalanceRequest(
+  headers: Record<string, string> = { authorization: `Bearer ${TEST_CRON_SECRET}` }
+): NextRequest {
   return {
     method: 'GET',
-    headers: new Headers(),
+    headers: new Headers(headers),
     url: 'http://localhost:3457/api/admin/node-balance',
   } as any
 }
@@ -236,6 +245,7 @@ export function expectLndRequestCalled(
  * Setup environment variables for Lightning configuration
  */
 export function setupLightningEnvironment() {
+  process.env.CRON_SECRET = TEST_CRON_SECRET
   process.env.LND_REST_URL = 'https://test-lnd-node.voltage.cloud'
   process.env.LND_ADMIN_MACAROON = '0201036c6e640224030a10deadbeefdeadbeefdeadbeefdeadbeef1201301a0c0a04696e666f12047265616400022974696d65203c2032303234313233313232333035392026262072657175657374732e6d6574686f64203d3d2022474554220000062093b3e1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab'
 }
