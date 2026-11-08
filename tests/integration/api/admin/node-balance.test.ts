@@ -31,7 +31,7 @@ describe('GET /api/admin/node-balance (Integration)', () => {
 
   describe('Authorization', () => {
     it('should reject requests without the Bearer secret and not query LND', async () => {
-      for (const headers of [{}, { 'x-vercel-cron': '1' }, { 'x-vercel-id': 'iad1::abc' }, { authorization: 'Bearer wrong' }]) {
+      for (const headers of [{}, { 'x-vercel-cron': '1' }, { 'x-vercel-id': 'iad1::abc' }, { authorization: 'Bearer wrong' }] as Record<string, string>[]) {
         const response = await GET(new NextRequest('http://test/api/admin/node-balance', { headers }))
         expect(response.status).toBe(401)
       }

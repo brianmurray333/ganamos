@@ -17,6 +17,7 @@
  * Run: npm run test:security
  */
 
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // Configuration

@@ -862,9 +862,25 @@ describe('createFundedAnonymousPostAction funding verification', () => {
     expect(inserts).toHaveLength(0)
   })
 
-  // (Zero rewards are deliberately not asserted here: they currently get the same rejection,
-  // which breaks zero-reward posts from /api/posts — see the it.fails in
-  // tests/integration/posts-api.test.ts.)
+  it('allows a zero-reward post (e.g. /api/posts paying only the API fee) once the invoice is settled', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '10', state: 'SETTLED' } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 0, funding_r_hash: R_HASH }))
+
+    expect(result.success).toBe(true)
+    expect(checkInvoice).toHaveBeenCalledWith(R_HASH)
+    expect(inserts).toEqual([expect.objectContaining({ reward: 0 })])
+  })
+
+  it('still rejects a zero-reward post whose invoice is unsettled', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: false, amountPaid: '0', state: 'OPEN' } as any)
+    const { inserts } = setupPostsTable()
+
+    expect((await createFundedAnonymousPostAction(createMockPostData({ reward: 0, funding_r_hash: R_HASH }))).success).toBe(false)
+    expect(inserts).toHaveLength(0)
+  })
+
   it.each([
     ['missing funding hash', { funding_r_hash: '' }],
     ['negative reward', { reward: -100 }],

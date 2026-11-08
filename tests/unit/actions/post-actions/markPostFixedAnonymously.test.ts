@@ -346,8 +346,8 @@ describe('markPostFixedAnonymouslyAction', () => {
     })
 
     it('accepts an owner post funded by the owner\'s balance deduction', async () => {
-      setup({ user_id: 'owner-1', funding_status: null, funding_r_hash: null }, {
-        transactions: [{ id: 'f', user_id: 'owner-1', type: 'internal', status: 'completed', amount: -5000, memo: `Posted ${POST_ID.substring(0, 8)}` }],
+      setup({ user_id: 'owner-1', funding_status: null, funding_r_hash: null, funding_transaction_id: 'f' }, {
+        transactions: [{ id: 'f', user_id: 'owner-1', type: 'internal', status: 'completed', amount: -5000, memo: 'Post reward for: Fix pothole' }],
       })
 
       expect((await mark()).success).toBe(true)

@@ -19,7 +19,7 @@ vi.mock('@/lib/transaction-emails', () => ({
   sendPostExpiredFixerEmail: vi.fn(),
 }))
 // Any DB access means the request got past auth; make it observable and harmless.
-const createClientSpy = vi.fn(() => {
+const createClientSpy = vi.fn((..._args: any[]) => {
   throw new Error('DB reached: request was not rejected by auth')
 })
 vi.mock('@supabase/supabase-js', () => ({ createClient: (...args: any[]) => createClientSpy(...args) }))

@@ -579,7 +579,7 @@ describe('checkDepositStatus', () => {
   /** No direct writes to balances or transaction status: only the atomic RPC may do that. */
   const expectNoDirectBalanceOrStatusWrites = () => {
     const writes = vi.mocked(mockAdminSupabaseClient.update).mock.calls.filter(
-      call => call[0].balance !== undefined || call[0].pet_coins !== undefined || call[0].status !== undefined
+      (call: any[]) => call[0].balance !== undefined || call[0].pet_coins !== undefined || call[0].status !== undefined
     )
     expect(writes).toHaveLength(0)
   }
@@ -1041,7 +1041,7 @@ describe('checkDepositStatus', () => {
       await checkDepositStatus(VALID_R_HASH_HEX)
 
       const balanceUpdates = vi.mocked(mockAdminSupabaseClient.update).mock.calls.filter(
-        call => call[0].balance !== undefined
+        (call: any[]) => call[0].balance !== undefined
       )
 
       expect(balanceUpdates).toHaveLength(0)

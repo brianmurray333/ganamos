@@ -106,7 +106,7 @@ describe('GET /api/admin/check-env', () => {
     it('should fail closed when CRON_SECRET is not set (no headers, Vercel headers, or "Bearer undefined")', async () => {
       delete process.env.CRON_SECRET
 
-      for (const headers of [{}, { 'x-vercel-cron': 'true' }, { Authorization: 'Bearer undefined' }, { Authorization: 'Bearer ' }]) {
+      for (const headers of [{}, { 'x-vercel-cron': 'true' }, { Authorization: 'Bearer undefined' }, { Authorization: 'Bearer ' }] as Record<string, string>[]) {
         const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
           method: 'GET',
           headers,
@@ -352,7 +352,7 @@ describe('GET /api/admin/check-env', () => {
 
     it('should handle an otherwise empty environment', async () => {
       // Clear all environment variables except the secret needed to call the endpoint
-      process.env = { CRON_SECRET: 'test-cron-secret' }
+      process.env = { CRON_SECRET: 'test-cron-secret' } as unknown as NodeJS.ProcessEnv
 
       const request = new NextRequest('http://localhost:3000/api/admin/check-env', {
         method: 'GET',

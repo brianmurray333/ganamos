@@ -612,7 +612,7 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
         { authorization: 'Bearer ' },
         { authorization: 'Bearer test-cron-secret' },
         { 'x-vercel-cron': '1' },
-      ]) {
+      ] as Record<string, string>[]) {
         const response = await GET(withHeaders(headers))
         expect(response.status).toBe(401)
       }

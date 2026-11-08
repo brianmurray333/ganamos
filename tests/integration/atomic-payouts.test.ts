@@ -164,12 +164,9 @@ describe('pay_fix_reward', () => {
     expect(p.reward_paid_to).toBeNull()
   })
 
-  // REAL BUG? (minor) supabase/migrations/20261108000000_atomic_payouts.sql:75-76 sets
-  // posts.reward_paid_to = p_fixer_id BEFORE checking the fixer exists (L84-94), and
-  // reward_paid_to REFERENCES profiles(id), so an unknown fixer raises a foreign-key violation
-  // (23503) instead of the documented 'fixer_not_found'. Everything still rolls back, but
-  // lib/payouts.ts can't map it ("Failed to pay reward.", no code). Remove `.fails` once fixed.
-  it.fails('reports fixer_not_found for an unknown fixer', async () => {
+  // Fixed (was REAL BUG, minor): the fixer is now credited/checked before reward_paid_to
+  // (a FK to profiles) is written, so an unknown fixer reports 'fixer_not_found'.
+  it('reports fixer_not_found for an unknown fixer', async () => {
     const postId = await seedPost({ reward: 900 })
 
     const { error } = await getServiceClient().rpc('pay_fix_reward' as any, { p_post_id: postId, p_fixer_id: crypto.randomUUID(), p_memo: 'x' })
@@ -177,15 +174,9 @@ describe('pay_fix_reward', () => {
     expect(error?.message).toContain('fixer_not_found')
   })
 
-  // REAL BUG? supabase/seed.sql:619 (`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO anon,
-  // authenticated, service_role`) runs AFTER the migrations on `supabase db reset` (local and CI),
-  // undoing the migration's REVOKE: in a DB built from this repo any signed-in user (or anon)
-  // can call pay_fix_reward / credit_deposit and credit themselves. Verified locally: proacl
-  // includes anon=X and authenticated=X, and this test's attacker was paid. Production (no seed)
-  // should be checked with `SELECT proacl FROM pg_proc WHERE proname IN ('pay_fix_reward',
-  // 'credit_deposit')`; tests/security/hacker-script.test.ts (Attack 9) checks it there.
-  // Remove `.fails` once the seed no longer re-grants these functions.
-  it.fails('cannot be called from a user session or anonymously', async () => {
+  // Fixed (was REAL BUG): supabase/seed.sql's blanket GRANT EXECUTE ON ALL FUNCTIONS used to
+  // undo the migration's REVOKE locally/CI; the seed now re-revokes these two functions.
+  it('cannot be called from a user session or anonymously', async () => {
     const attacker = await seedUser({ balance: 0 })
     const postId = await seedPost({ reward: 5000 })
 
@@ -214,33 +205,55 @@ describe('lib/payouts payFixReward / isPostRewardFunded (real PostgREST)', () =>
     expect((await profile(fixer.id)).balance).toBe(260)
   })
 
-  it('maps post_deleted, and reports failure for an unknown fixer', async () => {
+  it('maps post_deleted and fixer_not_found', async () => {
     const admin = getServiceClient() as any
     const deleted = await seedPost({ deleted_at: new Date().toISOString() })
     const live = await seedPost({ reward: 10 })
 
     expect(await payFixReward(admin, { postId: deleted, fixerId: crypto.randomUUID(), memo: 'm' })).toMatchObject({ success: false, code: 'post_deleted' })
-    // (code is not 'fixer_not_found' today; see the it.fails above)
-    expect(await payFixReward(admin, { postId: live, fixerId: crypto.randomUUID(), memo: 'm' })).toMatchObject({ success: false })
+    expect(await payFixReward(admin, { postId: live, fixerId: crypto.randomUUID(), memo: 'm' })).toEqual({
+      success: false,
+      error: 'Fixer profile not found.',
+      code: 'fixer_not_found',
+    })
     expect((await post(live)).reward_paid_at).toBeNull()
   })
 
-  it('treats a post as funded only with a matching funding transaction or verified invoice', async () => {
+  it('treats a post as funded only via its funding link, the legacy fallback, or a verified invoice', async () => {
     const owner = await seedUser({ balance: 0 })
     const admin = getServiceClient() as any
-    const unfundedId = await seedPost({ user_id: owner.id, reward: 600 })
-    const fundedId = await seedPost({ user_id: owner.id, reward: 600 })
-    await queryDB(
-      `INSERT INTO transactions (user_id, type, amount, status, memo) VALUES ($1, 'internal', -600, 'completed', $2)`,
-      [owner.id, `Posted issue ${fundedId.substring(0, 8)}`]
-    )
+    const deduction = async (createdAt: string) =>
+      (await queryOne<{ id: string }>(
+        `INSERT INTO transactions (user_id, type, amount, status, memo, created_at)
+         VALUES ($1, 'internal', -600, 'completed', 'Post reward for: x', $2) RETURNING id`,
+        [owner.id, createdAt]
+      )).id
+
+    // Linked (create_post_atomic)
+    const linkedTx = await deduction(new Date().toISOString())
+    const linkedId = await seedPost({ user_id: owner.id, reward: 600, funding_transaction_id: linkedTx })
+    // New post without a link (e.g. inserted from the browser), even with a matching deduction nearby
+    await deduction(new Date().toISOString())
+    const unlinkedNewId = await seedPost({ user_id: owner.id, reward: 600 })
+    // Legacy post with an unlinked deduction at creation time
+    const legacyAt = '2026-10-01T12:00:00.000Z'
+    await deduction('2026-10-01T12:00:20.000Z')
+    const legacyId = await seedPost({ user_id: owner.id, reward: 600, created_at: legacyAt })
+    // Legacy post whose only candidate deduction already funds another post
+    const takenAt = '2026-09-01T12:00:00.000Z'
+    const takenTx = await deduction('2026-09-01T12:00:20.000Z')
+    await seedPost({ user_id: owner.id, reward: 600, created_at: takenAt, funding_transaction_id: takenTx })
+    const legacyTakenId = await seedPost({ user_id: owner.id, reward: 600, created_at: takenAt })
+    // Ownerless
     const anonPaidId = await seedPost({ user_id: null, reward: 600, funding_status: 'paid', funding_r_hash: crypto.randomUUID() })
     const anonNoHashId = await seedPost({ user_id: null, reward: 600, funding_status: 'paid' })
 
-    expect(await isPostRewardFunded(admin, { id: unfundedId, user_id: owner.id, reward: 600 })).toBe(false)
-    expect(await isPostRewardFunded(admin, { id: fundedId, user_id: owner.id, reward: 600 })).toBe(true)
-    expect(await isPostRewardFunded(admin, await post(anonPaidId) as any)).toBe(true)
-    expect(await isPostRewardFunded(admin, await post(anonNoHashId) as any)).toBe(false)
+    expect(await isPostRewardFunded(admin, { id: linkedId })).toBe(true)
+    expect(await isPostRewardFunded(admin, { id: unlinkedNewId })).toBe(false)
+    expect(await isPostRewardFunded(admin, { id: legacyId })).toBe(true)
+    expect(await isPostRewardFunded(admin, { id: legacyTakenId })).toBe(false)
+    expect(await isPostRewardFunded(admin, { id: anonPaidId })).toBe(true)
+    expect(await isPostRewardFunded(admin, { id: anonNoHashId })).toBe(false)
   })
 })
 
@@ -297,8 +310,8 @@ describe('credit_deposit', () => {
     expect((await profile(user.id)).balance).toBe(1000)
   })
 
-  // REAL BUG? same seed.sql:619 re-grant as for pay_fix_reward above. Remove `.fails` once fixed.
-  it.fails('cannot be called from a user session', async () => {
+  // Fixed (was REAL BUG): see the seed.sql note for pay_fix_reward above.
+  it('cannot be called from a user session', async () => {
     const user = await seedUser({ balance: 0 })
     const txId = await seedDeposit(user.id, 100000)
 
@@ -383,5 +396,143 @@ describe('funding_r_hash uniqueness', () => {
 
     expect(error?.code).toBe('23505')
     expect((await queryDB('SELECT id FROM posts WHERE funding_r_hash = $1', [hash])).length).toBe(1)
+  })
+})
+
+// ============================================================================
+describe('create_post_atomic funding link', () => {
+  const createPost = (userId: string, postId: string, reward: number) =>
+    getAuthenticatedClient(userId).rpc('create_post_atomic' as any, {
+      p_post_id: postId,
+      p_user_id: userId,
+      p_title: 'Atomic post',
+      p_description: 'Atomic post description',
+      p_reward: reward,
+    })
+
+  it("links the post to the owner's reward deduction, and that post counts as funded", async () => {
+    const user = await seedUser({ balance: 2000 })
+    const postId = crypto.randomUUID()
+
+    const { data, error } = await createPost(user.id, postId, 700)
+
+    expect(error).toBeNull()
+    const txId = (data as any).transaction_id
+    expect(txId).toBeTruthy()
+    const p = await post(postId)
+    expect(p.funding_transaction_id).toBe(txId)
+    expect(await queryOne('SELECT user_id, type, status, amount FROM transactions WHERE id = $1', [txId])).toEqual({
+      user_id: user.id, type: 'internal', status: 'completed', amount: -700,
+    })
+    expect((await profile(user.id)).balance).toBe(1300)
+    expect(await isPostRewardFunded(getServiceClient() as any, { id: postId })).toBe(true)
+  })
+
+  it('does not create a funding link for a zero-reward post', async () => {
+    const user = await seedUser({ balance: 0 })
+    const postId = crypto.randomUUID()
+
+    const { error } = await createPost(user.id, postId, 0)
+
+    expect(error).toBeNull()
+    expect((await post(postId)).funding_transaction_id).toBeNull()
+  })
+
+  it('end to end: a create_post_atomic post can be paid out once to the fixer', async () => {
+    const owner = await seedUser({ balance: 1000 })
+    const fixer = await seedUser({ balance: 0 })
+    const postId = crypto.randomUUID()
+    await createPost(owner.id, postId, 400)
+
+    const admin = getServiceClient() as any
+    expect(await isPostRewardFunded(admin, { id: postId })).toBe(true)
+    expect(await payFixReward(admin, { postId, fixerId: fixer.id, memo: 'm' })).toMatchObject({ success: true, amount: 400 })
+    expect((await payFixReward(admin, { postId, fixerId: fixer.id, memo: 'm' })).success).toBe(false)
+    expect((await profile(fixer.id)).balance).toBe(400)
+  })
+})
+
+// ============================================================================
+describe('protect_post_insert_fields (browser-session inserts)', () => {
+  it('strips forged funding, payout, fixed and timestamp fields from an authenticated insert', async () => {
+    const attacker = await seedUser({ balance: 0 })
+    const otherTx = (await queryOne<{ id: string }>(
+      `INSERT INTO transactions (user_id, type, amount, status, memo) VALUES ($1, 'internal', -50000, 'completed', 'x') RETURNING id`,
+      [attacker.id]
+    )).id
+    const postId = crypto.randomUUID()
+
+    const { error } = await getAuthenticatedClient(attacker.id)
+      .from('posts')
+      .insert({
+        id: postId,
+        user_id: attacker.id,
+        title: 'Forged',
+        description: 'Forged',
+        reward: 50000,
+        created_at: '2026-01-01T00:00:00Z', // backdated (legacy funding window)
+        fixed: true,
+        fixed_by: attacker.id,
+        fixed_at: '2026-01-02T00:00:00Z',
+        deleted_at: null,
+        funding_transaction_id: otherTx,
+        funding_status: 'paid',
+        funding_r_hash: 'forged-hash',
+        funding_payment_request: 'lnbcforged',
+        reward_paid_at: '2026-01-03T00:00:00Z',
+        reward_paid_to: attacker.id,
+        anonymous_claim_token_hash: 'f'.repeat(64),
+        anonymous_reward_paid_at: '2026-01-03T00:00:00Z',
+        anonymous_reward_payment_hash: 'forged',
+        anonymous_reward_payment_lock: 'forged-lock',
+      } as any)
+    createdPostIds.push(postId)
+
+    expect(error).toBeNull()
+    const p = await post(postId)
+    expect(new Date(p.created_at).getTime()).toBeGreaterThan(Date.now() - 60_000)
+    expect(p).toMatchObject({
+      fixed: false,
+      fixed_by: null,
+      fixed_at: null,
+      funding_transaction_id: null,
+      funding_status: null,
+      funding_r_hash: null,
+      funding_payment_request: null,
+      reward_paid_at: null,
+      reward_paid_to: null,
+      anonymous_claim_token_hash: null,
+      anonymous_reward_paid_at: null,
+      anonymous_reward_payment_hash: null,
+      anonymous_reward_payment_lock: null,
+    })
+    // ...so the forged reward can be neither paid out nor refunded
+    expect(await isPostRewardFunded(getServiceClient() as any, { id: postId })).toBe(false)
+  })
+
+  it('does not let an authenticated update set funding_transaction_id', async () => {
+    const owner = await seedUser({ balance: 0 })
+    const tx = (await queryOne<{ id: string }>(
+      `INSERT INTO transactions (user_id, type, amount, status, memo) VALUES ($1, 'internal', -1000, 'completed', 'x') RETURNING id`,
+      [owner.id]
+    )).id
+    const postId = await seedPost({ user_id: owner.id, reward: 1000 })
+
+    await getAuthenticatedClient(owner.id).from('posts').update({ funding_transaction_id: tx } as any).eq('id', postId)
+
+    expect((await post(postId)).funding_transaction_id).toBeNull()
+  })
+
+  it('does not restrict service-role inserts', async () => {
+    const postId = crypto.randomUUID()
+    const hash = `svc-${crypto.randomUUID()}`
+
+    const { error } = await getServiceClient()
+      .from('posts')
+      .insert({ id: postId, title: 'svc', description: 'svc', reward: 10, funding_status: 'paid', funding_r_hash: hash } as any)
+    createdPostIds.push(postId)
+
+    expect(error).toBeNull()
+    expect(await post(postId)).toMatchObject({ funding_status: 'paid', funding_r_hash: hash })
   })
 })

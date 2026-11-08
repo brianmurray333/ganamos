@@ -74,11 +74,14 @@ function world(post: Record<string, any> = {}, extra: Record<string, any[]> = {}
         deleted_at: null,
         reward_paid_at: null,
         anonymous_reward_paid_at: null,
+        created_at: '2026-11-08T12:00:00.000Z',
+        // Set by create_post_atomic: the owner's deduction that reserved the reward
+        funding_transaction_id: 'funding-tx',
         ...post,
       },
     ],
     transactions: [
-      { id: 'funding-tx', user_id: post.user_id ?? OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, memo: `Posted issue ${POST_ID.substring(0, 8)}` },
+      { id: 'funding-tx', user_id: post.user_id ?? OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, memo: `Post reward for: ${TITLE}`, created_at: '2026-11-08T12:00:00.000Z' },
     ],
     connected_accounts: [{ id: 'conn-1', primary_user_id: OWNER_ID, connected_user_id: CHILD_ID }],
     group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'admin', status: 'approved' }],
@@ -440,20 +443,62 @@ describe('deletePostAction', () => {
     })
   })
 
-  // REAL BUG? (pre-existing, not introduced here) deletePostAction refunds post.reward
-  // (app/actions/post-actions.ts:2540-2581) without checking the reward was ever funded
-  // (isPostRewardFunded), unlike closeIssueAction / createFixRewardAction. The posts INSERT
-  // policy lets a signed-in user insert their own post with any reward straight from the
-  // browser (protect_post_financial_fields only runs on UPDATE; verified on local Supabase),
-  // so "insert post with reward 100000, then delete it" credits 100000 unbacked sats.
-  // app/api/cron/expire-posts refunds expired posts the same way. Remove `.fails` once fixed.
-  it.fails('does not refund a reward that was never funded', async () => {
-    setup({}, { transactions: [] }) // no funding deduction for this post
+  // Fixed (was REAL BUG): deletePostAction refunded post.reward without checking it was ever
+  // funded, and a signed-in user could INSERT their own post with any reward from the browser,
+  // so "insert, then delete" minted sats. Refunds now require isPostRewardFunded.
+  describe('refund only for funded rewards', () => {
+    it('soft-deletes but does not refund a post with no funding link (e.g. inserted from the browser)', async () => {
+      setup({ funding_transaction_id: null, reward: 100_000 })
 
-    await del()
+      expect(await del()).toEqual({ success: true })
+      expect(post().deleted_at).toBeTruthy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+    })
 
-    expect(balance(OWNER_ID)).toBe(OWNER_START)
-    expect(refundTxs()).toHaveLength(0)
+    it('does not refund when the linked funding transaction is missing', async () => {
+      setup({}, { transactions: [] })
+
+      await del()
+
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+    })
+
+    it.each([
+      ['belongs to another user', { user_id: OTHER_ID }],
+      ['is a credit, not a deduction', { amount: REWARD }],
+      ['is still pending', { status: 'pending' }],
+      ['is a deposit', { type: 'deposit' }],
+    ])('does not refund when the linked transaction %s', async (_label, txOverrides) => {
+      setup({}, {
+        transactions: [{ id: 'funding-tx', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, ...txOverrides }],
+      })
+
+      await del()
+
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+    })
+
+    it('does not refund a post created after the cutoff via the legacy (unlinked) fallback', async () => {
+      setup({ funding_transaction_id: null, created_at: '2026-11-09T00:00:00.000Z' }, {
+        transactions: [{ id: 'legacy-tx', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, created_at: '2026-11-09T00:00:30.000Z' }],
+      })
+
+      await del()
+
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+    })
+
+    it('refunds a legacy post funded by an unlinked deduction made when it was created', async () => {
+      setup({ funding_transaction_id: null, created_at: '2026-10-01T12:00:00.000Z' }, {
+        transactions: [{ id: 'legacy-tx', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, created_at: '2026-10-01T12:00:05.000Z' }],
+      })
+
+      expect(await del()).toEqual({ success: true })
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+    })
   })
 
   describe('authorization', () => {

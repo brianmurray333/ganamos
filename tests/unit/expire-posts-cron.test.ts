@@ -3,6 +3,7 @@ import { GET } from '@/app/api/cron/expire-posts/route'
 import { NextRequest } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import * as transactionEmails from '@/lib/transaction-emails'
+import { createFakeSupabase, type FakeSupabase } from '@/tests/unit/helpers/fake-supabase-db'
 
 // Mock Supabase
 vi.mock('@supabase/supabase-js', () => ({
@@ -153,7 +154,7 @@ describe('POST Expiration Cron - Unit Tests', () => {
         { authorization: 'Bearer undefined' },
         { authorization: 'Bearer ' },
         { 'x-vercel-cron': '1' },
-      ]) {
+      ] as Record<string, string>[]) {
         const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
           method: 'GET',
           headers,
@@ -314,148 +315,6 @@ describe('POST Expiration Cron - Unit Tests', () => {
   })
 
   describe('Post Expiration Flow', () => {
-    it('should expire post and refund balance', async () => {
-      const expiredPost = {
-        id: 'post-1',
-        user_id: 'user-1',
-        title: 'Expired Post',
-        reward: 1000,
-        assigned_to: null,
-      }
-
-      const profile = {
-        balance: 5000,
-        email: 'user@example.com',
-        name: 'Test User',
-      }
-
-      // Mock warning posts (none)
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-      
-      // Mock expired posts query
-      mockSupabase.not.mockResolvedValueOnce({ data: [expiredPost], error: null })
-      
-      // Mock soft-delete update
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock activity insert
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock profile query
-      mockSupabase.single.mockResolvedValueOnce({ data: profile, error: null })
-      
-      // Mock balance update
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock transaction insert
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock skipped posts (none)
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-
-      const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
-        method: 'GET',
-        headers: { authorization: 'Bearer test-cron-secret' },
-      })
-
-      const response = await GET(request)
-      const data = await response.json()
-
-      expect(response.status).toBe(200)
-      expect(data.success).toBe(true)
-      expect(data.expired).toBe(1)
-
-      // Verify update was called for soft-delete
-      expect(mockSupabase.update).toHaveBeenCalledWith(
-        expect.objectContaining({ deleted_at: expect.any(String) })
-      )
-
-      // Verify balance update
-      expect(mockSupabase.update).toHaveBeenCalledWith(
-        expect.objectContaining({ balance: 6000 })
-      )
-
-      // Verify transaction insert
-      expect(mockSupabase.insert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          user_id: 'user-1',
-          type: 'internal',
-          amount: 1000,
-          status: 'completed',
-        })
-      )
-
-      // Verify confirmation email
-      expect(transactionEmails.sendPostExpiredConfirmationEmail).toHaveBeenCalledWith({
-        toEmail: 'user@example.com',
-        userName: 'Test User',
-        postTitle: 'Expired Post',
-        refundAmountSats: 1000,
-        postId: 'post-1',
-      })
-    })
-
-    it('should clear assigned_to and notify fixer', async () => {
-      const expiredPost = {
-        id: 'post-1',
-        user_id: 'user-1',
-        title: 'Expired Post',
-        reward: 1000,
-        assigned_to: 'fixer-1',
-      }
-
-      const ownerProfile = {
-        balance: 5000,
-        email: 'user@example.com',
-        name: 'Test User',
-      }
-
-      const fixerProfile = {
-        email: 'fixer@example.com',
-        name: 'Fixer User',
-      }
-
-      // Mock warning posts (none)
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-      
-      // Mock expired posts query
-      mockSupabase.not.mockResolvedValueOnce({ data: [expiredPost], error: null })
-      
-      // Mock soft-delete, activity, owner profile, balance update, transaction
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.single.mockResolvedValueOnce({ data: ownerProfile, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock fixer profile query
-      mockSupabase.single.mockResolvedValueOnce({ data: fixerProfile, error: null })
-      
-      // Mock clear assignment
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      
-      // Mock skipped posts (none)
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-
-      const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
-        method: 'GET',
-        headers: { authorization: 'Bearer test-cron-secret' },
-      })
-
-      await GET(request)
-
-      // Verify assigned_to cleared
-      expect(mockSupabase.update).toHaveBeenCalledWith({ assigned_to: null })
-
-      // Verify fixer email sent
-      expect(transactionEmails.sendPostExpiredFixerEmail).toHaveBeenCalledWith({
-        toEmail: 'fixer@example.com',
-        fixerName: 'Fixer User',
-        postTitle: 'Expired Post',
-        postId: 'post-1',
-      })
-    })
-
     it('should NOT send fixer email to @ganamos.app addresses', async () => {
       const expiredPost = {
         id: 'post-1',
@@ -648,103 +507,162 @@ describe('POST Expiration Cron - Unit Tests', () => {
       expect(data.error).toBe('Database configuration missing')
     })
 
-    it('should handle confirmation email errors gracefully', async () => {
-      const expiredPost = {
-        id: 'post-1',
-        user_id: 'user-1',
-        title: 'Test Post',
-        reward: 1000,
-        assigned_to: null,
-      }
+  })
 
-      const profile = {
-        balance: 5000,
-        email: 'user@example.com',
-        name: 'Test User',
-      }
+  // --------------------------------------------------------------------------
+  // Expiration refunds against the stateful fake DB: assertions on balances,
+  // refund transactions and post state, not on call order.
+  // --------------------------------------------------------------------------
+  describe('Expiration refunds (stateful)', () => {
+    const OWNER = 'user-1'
+    const FIXER = 'fixer-1'
+    const PAST = '2026-01-01T00:00:00.000Z'
+    let db: FakeSupabase
 
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-      mockSupabase.not.mockResolvedValueOnce({ data: [expiredPost], error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.single.mockResolvedValueOnce({ data: profile, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-
-      vi.mocked(transactionEmails.sendPostExpiredConfirmationEmail).mockRejectedValueOnce(
-        new Error('Email failed')
-      )
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
+    function setupDb(post: Record<string, any> = {}, extra: Record<string, any[]> = {}) {
+      db = createFakeSupabase({
+        posts: [{
+          id: 'post-1', user_id: OWNER, title: 'Expired Post', reward: 1000, assigned_to: null,
+          expires_at: PAST, deleted_at: null, fixed: false, under_review: false,
+          created_at: '2026-11-08T12:00:00.000Z', funding_transaction_id: 'funding-tx', ...post,
+        }],
+        profiles: [
+          { id: OWNER, balance: 5000, email: 'user@example.com', name: 'Test User' },
+          { id: FIXER, balance: 0, email: 'fixer@example.com', name: 'Fixer User' },
+        ],
+        transactions: [{ id: 'funding-tx', user_id: OWNER, type: 'internal', status: 'completed', amount: -1000 }],
+        activities: [],
+        ...extra,
+      })
+      vi.mocked(createClient).mockReturnValue(db.adminClient as any)
+      return db
+    }
+    const run = () =>
+      GET(new NextRequest('http://localhost:3000/api/cron/expire-posts', {
         method: 'GET',
         headers: { authorization: 'Bearer test-cron-secret' },
-      })
+      }))
+    const balance = (id: string) => db.row('profiles', id)!.balance
+    const refunds = () => db.rows('transactions', t => t.amount > 0)
 
-      const response = await GET(request)
-
-      expect(response.status).toBe(200)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Confirmation email failed for post post-1'),
-        expect.any(Error)
-      )
-
-      consoleErrorSpy.mockRestore()
+    beforeEach(() => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(console, 'log').mockImplementation(() => {})
     })
 
-    it('should handle fixer email errors gracefully', async () => {
-      const expiredPost = {
-        id: 'post-1',
-        user_id: 'user-1',
-        title: 'Test Post',
-        reward: 1000,
-        assigned_to: 'fixer-1',
-      }
+    it('expires the post, refunds the funded reward once and emails the owner', async () => {
+      setupDb()
 
-      const ownerProfile = {
-        balance: 5000,
-        email: 'user@example.com',
-        name: 'Test User',
-      }
-
-      const fixerProfile = {
-        email: 'fixer@example.com',
-        name: 'Fixer User',
-      }
-
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-      mockSupabase.not.mockResolvedValueOnce({ data: [expiredPost], error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.single.mockResolvedValueOnce({ data: ownerProfile, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.single.mockResolvedValueOnce({ data: fixerProfile, error: null })
-      mockSupabase.eq.mockResolvedValueOnce({ data: null, error: null })
-      mockSupabase.not.mockResolvedValueOnce({ data: [], error: null })
-
-      vi.mocked(transactionEmails.sendPostExpiredFixerEmail).mockRejectedValueOnce(
-        new Error('Email failed')
-      )
-
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      const request = new NextRequest('http://localhost:3000/api/cron/expire-posts', {
-        method: 'GET',
-        headers: { authorization: 'Bearer test-cron-secret' },
-      })
-
-      const response = await GET(request)
+      const response = await run()
+      const data = await response.json()
 
       expect(response.status).toBe(200)
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Fixer email failed for post post-1'),
-        expect.any(Error)
-      )
+      expect(data).toMatchObject({ success: true, expired: 1 })
+      expect(db.row('posts', 'post-1')!.deleted_at).toBeTruthy()
+      expect(balance(OWNER)).toBe(6000)
+      expect(refunds()).toEqual([
+        expect.objectContaining({ user_id: OWNER, type: 'internal', amount: 1000, status: 'completed', memo: 'Refund for expired post: Expired Post' }),
+      ])
+      expect(db.rows('activities', a => a.type === 'post_expired')).toHaveLength(1)
+      expect(transactionEmails.sendPostExpiredConfirmationEmail).toHaveBeenCalledWith({
+        toEmail: 'user@example.com',
+        userName: 'Test User',
+        postTitle: 'Expired Post',
+        refundAmountSats: 1000,
+        postId: 'post-1',
+      })
+    })
 
-      consoleErrorSpy.mockRestore()
+    it('running the cron twice refunds once', async () => {
+      setupDb()
+
+      await run()
+      await run()
+
+      expect(balance(OWNER)).toBe(6000)
+      expect(refunds()).toHaveLength(1)
+    })
+
+    it('two overlapping runs refund once (conditional soft delete)', async () => {
+      setupDb()
+      db.latency = db.barrier(op => op.table === 'posts' && op.op === 'update' && 'deleted_at' in (op.payload || {}))
+
+      await Promise.all([run(), run()])
+
+      expect(balance(OWNER)).toBe(6000)
+      expect(refunds()).toHaveLength(1)
+      expect(db.rows('activities', a => a.type === 'post_expired')).toHaveLength(1)
+    })
+
+    it('skips the refund when the owner deleted the post concurrently', async () => {
+      setupDb()
+      db.beforeOp = op => {
+        if (op.table === 'posts' && op.op === 'update' && 'deleted_at' in (op.payload || {})) {
+          db.row('posts', 'post-1')!.deleted_at = '2026-11-08T13:00:00.000Z'
+        }
+      }
+
+      await run()
+
+      expect(balance(OWNER)).toBe(5000)
+      expect(refunds()).toHaveLength(0)
+    })
+
+    it('expires but does not refund an unfunded reward (no funding link)', async () => {
+      setupDb({ funding_transaction_id: null, reward: 100_000 })
+
+      const response = await run()
+
+      expect(response.status).toBe(200)
+      expect(db.row('posts', 'post-1')!.deleted_at).toBeTruthy()
+      expect(balance(OWNER)).toBe(5000)
+      expect(refunds()).toHaveLength(0)
+      expect(transactionEmails.sendPostExpiredConfirmationEmail).not.toHaveBeenCalled()
+    })
+
+    it('does not refund when the linked funding transaction is not a completed deduction by the owner', async () => {
+      setupDb({}, { transactions: [{ id: 'funding-tx', user_id: FIXER, type: 'internal', status: 'completed', amount: -1000 }] })
+
+      await run()
+
+      expect(balance(OWNER)).toBe(5000)
+      expect(refunds()).toHaveLength(0)
+    })
+
+    it('clears the assignment and notifies the assigned fixer', async () => {
+      setupDb({ assigned_to: FIXER })
+
+      await run()
+
+      expect(db.row('posts', 'post-1')!.assigned_to).toBeNull()
+      expect(transactionEmails.sendPostExpiredFixerEmail).toHaveBeenCalledWith({
+        toEmail: 'fixer@example.com',
+        fixerName: 'Fixer User',
+        postTitle: 'Expired Post',
+        postId: 'post-1',
+      })
+    })
+
+    it('still succeeds (refund done) when the confirmation email fails', async () => {
+      setupDb()
+      vi.mocked(transactionEmails.sendPostExpiredConfirmationEmail).mockRejectedValueOnce(new Error('Email failed'))
+
+      const response = await run()
+
+      expect(response.status).toBe(200)
+      expect(balance(OWNER)).toBe(6000)
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Confirmation email failed for post post-1'), expect.any(Error))
+    })
+
+    it('still succeeds when the fixer email fails', async () => {
+      setupDb({ assigned_to: FIXER })
+      vi.mocked(transactionEmails.sendPostExpiredFixerEmail).mockRejectedValueOnce(new Error('Email failed'))
+
+      const response = await run()
+
+      expect(response.status).toBe(200)
+      expect(db.row('posts', 'post-1')!.assigned_to).toBeNull()
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Fixer email failed for post post-1'), expect.any(Error))
     })
   })
 })

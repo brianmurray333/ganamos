@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/posts/route'
 import { getServiceClient } from './helpers/db-client'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -120,7 +121,7 @@ describe('POST /api/posts - Integration Tests', () => {
         longitude: -97.7431,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -185,7 +186,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -217,11 +218,8 @@ describe('POST /api/posts - Integration Tests', () => {
       expect(dbPost.location).toBeNull()
     })
 
-    // REAL BUG? createFundedAnonymousPostAction (app/actions/post-actions.ts:717) now rejects
-    // reward <= 0 with "Invalid funding details.", but /api/posts (MIN_JOB_REWARD = 0) creates
-    // zero-reward posts through it, so agents paying only the 10-sat API fee get a 500.
-    // A zero-reward post needs no funding check. Remove `.fails` once zero rewards are allowed.
-    it.fails('should create post with zero reward', async () => {
+    // Fixed (was REAL BUG): zero-reward API posts were rejected as "Invalid funding details."
+    it('should create post with zero reward', async () => {
       const postData = {
         description: 'Zero reward post',
         reward: 0,
@@ -242,7 +240,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -273,7 +271,7 @@ describe('POST /api/posts - Integration Tests', () => {
     it('should not create a post when the node reports the payment as unsettled', async () => {
       vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: false, amountPaid: '0', state: 'OPEN' } as any)
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'L402 mock-token:mock-macaroon' },
         body: JSON.stringify({ description: 'Unpaid post', reward: 1000 }),
@@ -293,7 +291,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -315,7 +313,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: -100,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -344,7 +342,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -382,7 +380,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -410,7 +408,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request1 = new Request('http://localhost:3000/api/posts', {
+      const request1 = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -432,7 +430,7 @@ describe('POST /api/posts - Integration Tests', () => {
         reward: 1000,
       }
 
-      const request2 = new Request('http://localhost:3000/api/posts', {
+      const request2 = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -489,7 +487,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -540,7 +538,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -589,7 +587,7 @@ describe('POST /api/posts - Integration Tests', () => {
         },
       })
 
-      const request = new Request('http://localhost:3000/api/posts', {
+      const request = new NextRequest('http://localhost:3000/api/posts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

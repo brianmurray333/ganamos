@@ -111,6 +111,7 @@ function basePost(overrides: Record<string, any> = {}) {
     anonymous_reward_paid_at: null,
     anonymous_reward_payment_lock: null,
     anonymous_claim_token_hash: TOKEN_HASH,
+    funding_transaction_id: 'funding',
     ...overrides,
   }
 }
@@ -121,7 +122,7 @@ const underReview = (o: Record<string, any> = {}) => basePost({ under_review: tr
 
 function setup(postRow: Record<string, any>, signedInAs: string | null = null) {
   db = createFakeSupabase({
-    posts: [postRow, basePost({ id: OTHER_POST_ID, anonymous_claim_token_hash: OTHER_TOKEN_HASH, fixed: true, fixed_by_is_anonymous: true })],
+    posts: [postRow, basePost({ id: OTHER_POST_ID, funding_transaction_id: null, anonymous_claim_token_hash: OTHER_TOKEN_HASH, fixed: true, fixed_by_is_anonymous: true })],
     profiles: [
       { id: OWNER_ID, name: 'Owner', email: 'owner@example.com', balance: 100, pet_coins: 0 },
       { id: NEW_USER_ID, name: 'New', email: 'new@example.com', balance: 0, pet_coins: 0, fixed_issues_count: 0 },
@@ -129,7 +130,7 @@ function setup(postRow: Record<string, any>, signedInAs: string | null = null) {
       { id: GROUP_ADMIN_ID, name: 'Admin', email: 'admin@example.com', balance: 0, pet_coins: 0 },
     ],
     transactions: [
-      { id: 'funding', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, memo: `Posted ${POST_ID.substring(0, 8)}` },
+      { id: 'funding', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -REWARD, memo: 'Post reward for: Graffiti on wall' },
     ],
     group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'admin', status: 'approved' }],
     activities: [],
@@ -565,18 +566,26 @@ describe('payAnonymousFixLightningAddressAction (owner approves an anonymous fix
     expect(payInvoice).toHaveBeenCalledWith(`lnbc_${REWARD}_from_lnurl`)
   })
 
-  // REAL BUG? app/actions/post-actions.ts:230-236 — when the Lightning-address lookup throws
-  // (network error, bad JSON), the catch returns without calling releaseLock(), so the post
-  // keeps anonymous_reward_payment_lock forever: every later approval (and the fixer's
-  // claimAnonymousRewardAction, which requires the lock to be null) is refused, and the reward
-  // is stuck until someone clears the lock by hand. (The outer catch at ~L339 has the same gap.)
-  // No sats are lost, but "releases lock on failure" doesn't hold. Remove `.fails` once fixed.
-  it.fails('releases the lock when the Lightning address lookup throws', async () => {
+  // Fixed (was REAL BUG): the lock used to stay set forever when the Lightning-address
+  // lookup threw, so the reward could never be paid or claimed.
+  it('releases the lock when the Lightning address lookup throws', async () => {
     setup(withAddress({ submitted_fix_lightning_address: 'fixer@wallet.example' }), OWNER_ID)
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')))
 
     expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
     expect(payInvoice).not.toHaveBeenCalled()
     expect(post().anonymous_reward_payment_lock).toBeNull()
+  })
+
+  it('keeps the lock if the payment call itself throws (the payment may have gone out)', async () => {
+    setup(withAddress(), OWNER_ID)
+    vi.mocked(payInvoice).mockRejectedValueOnce(new Error('socket hang up'))
+
+    expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
+    expect(post().anonymous_reward_payment_lock).toBeTruthy()
+
+    // A retry can't pay a second time
+    expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
+    expect(payInvoice).toHaveBeenCalledTimes(1)
   })
 })

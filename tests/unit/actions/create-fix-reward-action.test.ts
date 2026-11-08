@@ -86,12 +86,15 @@ function world(post: Record<string, any> = {}, extra: Record<string, any[]> = {}
         reward_paid_at: null,
         anonymous_reward_paid_at: null,
         submitted_fix_by_id: null,
+        created_at: '2026-11-08T12:00:00.000Z',
+        // Set by create_post_atomic: the owner's deduction that reserved the reward
+        funding_transaction_id: 'funding-tx',
         ...post,
       },
     ],
-    // The owner's balance deduction that funded the reward (memo mentions the post)
+    // The owner's balance deduction that funded the reward (linked by posts.funding_transaction_id)
     transactions: [
-      { id: 'funding-tx', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -POST_REWARD, memo: `Posted issue ${POST_ID.substring(0, 8)}` },
+      { id: 'funding-tx', user_id: OWNER_ID, type: 'internal', status: 'completed', amount: -POST_REWARD, memo: `Post reward for: ${POST_TITLE}`, created_at: '2026-11-08T12:00:00.000Z' },
     ],
     connected_accounts: [{ id: 'conn-1', primary_user_id: FIXER_ID, connected_user_id: CHILD_ID }],
     group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'admin', status: 'approved' }],
