@@ -645,3 +645,9 @@ CREATE POLICY "Users can view group members of their groups" ON public.group_mem
     user_id = auth.uid()
     OR public.is_approved_group_member(group_id, auth.uid())
   );
+
+
+-- Payout functions are service_role only (see 20261108000000_atomic_payouts);
+-- undo the blanket GRANT above for them so local/CI match production.
+REVOKE ALL ON FUNCTION pay_fix_reward(UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION credit_deposit(UUID, UUID, INTEGER) FROM PUBLIC, anon, authenticated;

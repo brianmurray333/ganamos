@@ -102,6 +102,8 @@ export async function payAnonymousFixLightningAddressAction(
 
   const supabase = createAdminClient()
   let lockId: string | null = null
+  // Once we've tried to pay, never release the lock (a retry could pay twice)
+  let paymentAttempted = false
   const releaseLock = async () => {
     if (!lockId) return
     await supabase
@@ -229,6 +231,7 @@ export async function payAnonymousFixLightningAddressAction(
         invoiceToPay = invoiceData.pr
       } catch (error) {
         console.error("Error converting Lightning address to invoice:", error)
+        await releaseLock()
         return {
           success: false,
           error: "Failed to convert Lightning address to invoice. Please provide a Lightning invoice instead.",
@@ -255,6 +258,7 @@ export async function payAnonymousFixLightningAddressAction(
 
     // Pay the invoice
     const { payInvoice } = await import("@/lib/lightning")
+    paymentAttempted = true
     const paymentResult = await payInvoice(invoiceToPay)
 
     if (!paymentResult.success) {
@@ -337,6 +341,7 @@ export async function payAnonymousFixLightningAddressAction(
       paymentHash: paymentResult.paymentHash || paymentResult.paymentPreimage,
     }
   } catch (error) {
+    if (!paymentAttempted) await releaseLock()
     console.error("Unexpected error in payAnonymousFixLightningAddressAction:", error)
     return {
       success: false,
@@ -714,7 +719,7 @@ export async function createFundedAnonymousPostAction(postDetails: {
 
     // SECURITY: the funding invoice must actually be paid, for at least the
     // reward, and may fund only one post.
-    if (!postDetails.funding_r_hash || !Number.isFinite(postDetails.reward) || postDetails.reward <= 0) {
+    if (!postDetails.funding_r_hash || !Number.isFinite(postDetails.reward) || postDetails.reward < 0) {
       return { success: false, error: "Invalid funding details." }
     }
     const fundingCheck = await checkInvoice(postDetails.funding_r_hash)
@@ -2289,7 +2294,7 @@ export async function closeIssueAction(
     // Without this, an attacker can create a post with any reward amount, skip the balance
     // deduction, then approve the fix to mint sats from nothing.
     const admin = createAdminClient()
-    if (!(await isPostRewardFunded(admin, { id: postId, user_id: post.user_id, reward: post.reward }))) {
+    if (!(await isPostRewardFunded(admin, { id: postId }))) {
       console.error('SECURITY: Attempted to close unfunded reward post', {
         postId,
         postOwnerId: post.user_id,
@@ -2536,8 +2541,13 @@ export async function deletePostAction(
       },
     })
 
-    // Refund the reward back to the poster's balance
-    if (post.reward && post.reward > 0) {
+    // Refund the reward back to the poster's balance, only if it was funded
+    // (a post inserted directly with an unfunded reward must not mint sats)
+    const rewardFunded = !!post.reward && post.reward > 0 && (await isPostRewardFunded(adminSupabase, { id: postId }))
+    if (post.reward && post.reward > 0 && !rewardFunded) {
+      console.error('SECURITY: Skipping refund for unfunded post reward', { postId, userId: effectiveUserId, reward: post.reward })
+    }
+    if (rewardFunded) {
       const { data: profile, error: profileError } = await adminSupabase
         .from('profiles')
         .select('balance')

@@ -1,4 +1,5 @@
 import { isAuthorizedCronRequest } from "@/lib/cron-auth"
+import { isPostRewardFunded } from "@/lib/payouts"
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
@@ -88,11 +89,17 @@ export async function GET(request: NextRequest) {
     for (const post of expiredPosts ?? []) {
       const nowIso = new Date().toISOString()
 
-      // Soft-delete the post
-      await adminSupabase
+      // Soft-delete the post atomically: only the run that actually expires
+      // it continues (no double refund from overlapping runs or a concurrent
+      // owner delete).
+      const { data: expiredRows } = await adminSupabase
         .from('posts')
         .update({ deleted_at: nowIso })
         .eq('id', post.id)
+        .is('deleted_at', null)
+        .eq('fixed', false)
+        .select('id')
+      if (!expiredRows?.length) continue
 
       // Log activity
       await adminSupabase.from('activities').insert({
@@ -109,7 +116,13 @@ export async function GET(request: NextRequest) {
       })
 
       // Refund sats if post has a reward and an authenticated user
-      if (post.user_id && post.reward && post.reward > 0) {
+      // Only refund rewards that were actually funded
+      if (
+        post.user_id &&
+        post.reward &&
+        post.reward > 0 &&
+        (await isPostRewardFunded(adminSupabase as any, { id: post.id }))
+      ) {
         const { data: profile } = await adminSupabase
           .from('profiles')
           .select('balance, email, name')

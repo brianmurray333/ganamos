@@ -18,52 +18,66 @@ export function createAdminClient(): SupabaseClient {
   return createServerSupabaseClient({ supabaseKey: process.env.SUPABASE_SECRET_API_KEY })
 }
 
+/** Posts created before this used a different funding record (see below). */
+const FUNDING_LINK_CUTOFF = "2026-11-08T00:00:00Z"
+
 /**
- * Was this post's reward actually funded? Posts by registered users are funded
- * by a negative internal transaction from the owner whose memo mentions the
- * post; anonymous web posts by a verified funding invoice; L402/API posts by a
- * completed deposit at least the reward size.
+ * Was this post's reward actually funded? Always re-reads the post's funding
+ * fields from the database (callers' copies aren't trusted).
+ *
+ * - Registered users' posts: posts.funding_transaction_id, set by
+ *   create_post_atomic in the same transaction that deducted the reward,
+ *   must point to the owner's completed internal deduction.
+ * - Older posts without that link: an unlinked deduction of exactly the
+ *   reward by the owner within 2 minutes of the post's creation.
+ * - Anonymous web/API posts: funding_status 'paid' with a funding invoice,
+ *   verified as settled when the post was created.
+ * Browser sessions can't set any of these fields (DB triggers).
  */
 export async function isPostRewardFunded(
   admin: SupabaseClient,
-  post: {
-    id: string
-    user_id: string | null
-    reward: number | null
-    funding_status?: string | null
-    funding_r_hash?: string | null
-  }
+  postRef: { id: string }
 ): Promise<boolean> {
+  const { data: post } = await admin
+    .from("posts")
+    .select("id, user_id, reward, original_reward, created_at, funding_transaction_id, funding_status, funding_r_hash")
+    .eq("id", postRef.id)
+    .single()
+  if (!post) return false
   if (!post.reward || post.reward <= 0) return true // nothing to fund
 
-  // Anonymous web posts: funded by a Lightning invoice that the server
-  // verified as settled when creating the post (createFundedAnonymousPostAction).
-  // funding_status can't be changed by browser sessions (DB trigger).
-  if (!post.user_id && post.funding_status === "paid" && post.funding_r_hash) return true
-  const memoMatch = `%${post.id.substring(0, 8)}%`
-
-  if (post.user_id) {
-    const { data: fundingTx } = await admin
-      .from("transactions")
-      .select("id")
-      .eq("user_id", post.user_id)
-      .eq("type", "internal")
-      .eq("status", "completed")
-      .lt("amount", 0)
-      .ilike("memo", memoMatch)
-      .limit(1)
-    if (fundingTx && fundingTx.length > 0) return true
+  if (!post.user_id) {
+    return post.funding_status === "paid" && !!post.funding_r_hash
   }
 
-  const { data: l402Tx } = await admin
+  if (post.funding_transaction_id) {
+    const { data: tx } = await admin
+      .from("transactions")
+      .select("id, user_id, type, status, amount")
+      .eq("id", post.funding_transaction_id)
+      .single()
+    return !!tx && tx.user_id === post.user_id && tx.type === "internal" && tx.status === "completed" && tx.amount < 0
+  }
+
+  // Legacy posts (no funding link)
+  if (!post.created_at || new Date(post.created_at) >= new Date(FUNDING_LINK_CUTOFF)) return false
+  const created = new Date(post.created_at).getTime()
+  const amounts = Array.from(new Set([post.reward, post.original_reward].filter((a): a is number => !!a && a > 0)))
+  const { data: candidates } = await admin
     .from("transactions")
     .select("id")
-    .eq("type", "deposit")
+    .eq("user_id", post.user_id)
+    .eq("type", "internal")
     .eq("status", "completed")
-    .gte("amount", post.reward)
-    .ilike("memo", memoMatch)
-    .limit(1)
-  return !!(l402Tx && l402Tx.length > 0)
+    .in("amount", amounts.map((a) => -a))
+    .gte("created_at", new Date(created - 2 * 60_000).toISOString())
+    .lte("created_at", new Date(created + 2 * 60_000).toISOString())
+    .limit(5)
+  for (const c of candidates ?? []) {
+    const { data: linked } = await admin.from("posts").select("id").eq("funding_transaction_id", c.id).limit(1)
+    if (!linked || linked.length === 0) return true
+  }
+  return false
 }
 
 export type PayFixRewardResult =
