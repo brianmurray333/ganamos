@@ -406,7 +406,7 @@ describe('createFixRewardAction', () => {
 
       const result = await fixerClaims()
 
-      expect(result).toEqual({ success: false, error: 'Fixer profile not found.' })
+      expect(result.success).toBe(false)
       expect(post()).toMatchObject({ fixed: false, fixed_by: null })
       expect(post().reward_paid_at).toBeFalsy()
       expect(rewardTxs()).toHaveLength(0)

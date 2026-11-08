@@ -244,7 +244,9 @@ export function createFakeSupabase(initial: Tables = {}) {
     if (post.reward_paid_at || post.anonymous_reward_paid_at) return raise('reward_already_paid')
     if (!post.reward || post.reward <= 0) return raise('no_reward')
     const fixer = (tables.profiles ||= []).find(p => p.id === args.p_fixer_id)
-    if (!fixer) return raise('fixer_not_found', 'P0002') // whole function rolls back
+    // The SQL sets posts.reward_paid_to (FK to profiles) before its fixer check, so an unknown
+    // fixer surfaces as a foreign-key violation, not 'fixer_not_found'. Whole function rolls back.
+    if (!fixer) return raise('insert or update on table "posts" violates foreign key constraint "posts_reward_paid_to_fkey"', '23503')
     post.reward_paid_at = new Date().toISOString()
     post.reward_paid_to = args.p_fixer_id
     fixer.balance = (fixer.balance || 0) + post.reward

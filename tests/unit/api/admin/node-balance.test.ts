@@ -548,6 +548,8 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
     afterEach(() => {
       if (savedSecret === undefined) delete process.env.CRON_SECRET
       else process.env.CRON_SECRET = savedSecret
+      // Rejected requests never consume the queued LND responses; don't leak them
+      vi.mocked(lndRequest).mockReset()
     })
 
     it('should return 401 and not query LND when the Bearer secret is missing', async () => {

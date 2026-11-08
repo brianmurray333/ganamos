@@ -440,6 +440,22 @@ describe('deletePostAction', () => {
     })
   })
 
+  // REAL BUG? (pre-existing, not introduced here) deletePostAction refunds post.reward
+  // (app/actions/post-actions.ts:2540-2581) without checking the reward was ever funded
+  // (isPostRewardFunded), unlike closeIssueAction / createFixRewardAction. The posts INSERT
+  // policy lets a signed-in user insert their own post with any reward straight from the
+  // browser (protect_post_financial_fields only runs on UPDATE; verified on local Supabase),
+  // so "insert post with reward 100000, then delete it" credits 100000 unbacked sats.
+  // app/api/cron/expire-posts refunds expired posts the same way. Remove `.fails` once fixed.
+  it.fails('does not refund a reward that was never funded', async () => {
+    setup({}, { transactions: [] }) // no funding deduction for this post
+
+    await del()
+
+    expect(balance(OWNER_ID)).toBe(OWNER_START)
+    expect(refundTxs()).toHaveLength(0)
+  })
+
   describe('authorization', () => {
     it('rejects when not authenticated', async () => {
       setup({}, {}, null)
