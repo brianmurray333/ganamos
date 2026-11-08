@@ -4,6 +4,27 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import * as nodeCrypto from 'crypto';
+
+// Partial mock: real crypto everywhere, but the sampling-rate tests below feed
+// shouldRandomSample an evenly spaced sequence instead of real randomness, so
+// they check the exact tier rate rather than a flaky statistical window.
+vi.mock('crypto', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('crypto')>();
+  return { ...actual, randomBytes: vi.fn(actual.randomBytes) };
+});
+
+/** Make randomBytes(4) yield (k + 0.5)/n for k = 0..n-1 (evenly spread over [0, 1), never on a tier boundary). */
+async function useEvenlySpacedRandomness(n: number) {
+  const actual = await vi.importActual<typeof import('crypto')>('crypto');
+  let k = 0;
+  vi.mocked(nodeCrypto.randomBytes).mockImplementation(((size: number) => {
+    if (size !== 4) return actual.randomBytes(size);
+    const buf = Buffer.alloc(4);
+    buf.writeUInt32BE(Math.floor((((k++ % n) + 0.5) / n) * 0x100000000));
+    return buf;
+  }) as any);
+}
 import {
   extractFullExifMetadata,
   verifyExifAuthenticity,
@@ -444,38 +465,37 @@ describe('Fraud Sampling Logic', () => {
       expect(result).toBe(true);
     });
 
-    it('should sample at baseline rate for normal submissions', () => {
-      // Run multiple times to test randomness
+    it('should sample at baseline rate for normal submissions', async () => {
+      await useEvenlySpacedRandomness(1000);
       const samples = Array.from({ length: 1000 }, () =>
         shouldRandomSample(8, 5000)
       );
       const sampleRate = samples.filter(Boolean).length / samples.length;
 
-      // Should be approximately 10% (with some variance)
-      expect(sampleRate).toBeGreaterThan(0.05);
-      expect(sampleRate).toBeLessThan(0.15);
+      expect(sampleRate).toBeCloseTo(0.10, 10);
+      vi.mocked(nodeCrypto.randomBytes).mockRestore?.();
     });
 
-    it('should sample at 25% for medium rewards', () => {
+    it('should sample at 25% for medium rewards', async () => {
+      await useEvenlySpacedRandomness(1000);
       const samples = Array.from({ length: 1000 }, () =>
         shouldRandomSample(8, 15000)
       );
       const sampleRate = samples.filter(Boolean).length / samples.length;
 
-      // Should be approximately 25%
-      expect(sampleRate).toBeGreaterThan(0.20);
-      expect(sampleRate).toBeLessThan(0.30);
+      expect(sampleRate).toBeCloseTo(0.25, 10);
+      vi.mocked(nodeCrypto.randomBytes).mockRestore?.();
     });
 
-    it('should sample at 50% for high rewards', () => {
+    it('should sample at 50% for high rewards', async () => {
+      await useEvenlySpacedRandomness(1000);
       const samples = Array.from({ length: 1000 }, () =>
         shouldRandomSample(8, 60000)
       );
       const sampleRate = samples.filter(Boolean).length / samples.length;
 
-      // Should be approximately 50%
-      expect(sampleRate).toBeGreaterThan(0.45);
-      expect(sampleRate).toBeLessThan(0.55);
+      expect(sampleRate).toBeCloseTo(0.50, 10);
+      vi.mocked(nodeCrypto.randomBytes).mockRestore?.();
     });
   });
 

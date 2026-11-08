@@ -14,6 +14,7 @@ import { Plus, X, Filter, User, SlidersHorizontal, ChevronDown, ArrowUpDown } fr
 import dynamic from "next/dynamic"
 import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { DonationModal } from "@/components/donation-modal"
+import { MapCanvasPlaceholder } from "@/components/map-placeholder"
 import { useDonationModal } from "@/components/donation-modal-provider"
 
 // Supabase auth-helpers keep the session in an `sb-<project>-auth-token`
@@ -26,15 +27,38 @@ function hasStoredAuthSession() {
 
 const MapView = dynamic(
   () => import("@/components/map-view").then((mod) => mod.MapView),
-  { 
+  {
     ssr: false,
     loading: () => (
-      <div className="w-full h-full bg-gray-100 dark:bg-gray-800 animate-pulse rounded-xl flex items-center justify-center">
-        <span className="text-gray-400">Loading map...</span>
+      <div className="relative w-full h-full">
+        <MapCanvasPlaceholder />
       </div>
     )
   }
 )
+
+const DEFAULT_FILTERS_KEY = JSON.stringify(["proximity", "any", [0, 10000], "", ""])
+
+// Comparable identity of a filter set (what the posts query depends on).
+function filtersKey(f: { sortBy?: string; dateFilter?: string; rewardRange?: [number, number]; location?: string; searchQuery?: string } | null | undefined) {
+  if (!f) return DEFAULT_FILTERS_KEY
+  return JSON.stringify([
+    f.sortBy || "proximity",
+    f.dateFilter ?? "any",
+    f.rewardRange ?? [0, 10000],
+    f.location ?? "",
+    f.searchQuery ?? "",
+  ])
+}
+
+function storedFiltersKey() {
+  try {
+    const json = localStorage.getItem("activeFilters")
+    return json ? filtersKey(JSON.parse(json)) : DEFAULT_FILTERS_KEY
+  } catch {
+    return null
+  }
+}
 import type { Post } from "@/lib/types"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import {
@@ -74,7 +98,9 @@ export default function DashboardPage() {
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
   const [currentLocation, setCurrentLocation] = useState(getCurrentLocation())
   const [posts, setPosts] = useState<Post[]>(cache.posts)
-  const [isLoading, setIsLoading] = useState(true)
+  // Returning to Home with fresh cached posts: render them immediately (no
+  // skeleton, and the header doesn't drop back to its placeholder pill).
+  const [isLoading, setIsLoading] = useState(() => !(cache.posts.length > 0 && isCacheFresh()))
   const supabase = createBrowserSupabaseClient()
 
   const [currentPage, setCurrentPage] = useState(cache.currentPage)
@@ -171,8 +197,22 @@ export default function DashboardPage() {
     }
   }, [filterCleared])
 
+  // On mount, skip the refetch when the cached feed is fresh and was fetched
+  // with the filters currently saved. Switching tabs back to Home used to
+  // refetch page 1 every time (a network round trip, during which the header
+  // dropped back to its placeholder pill).
+  const skipMountFetch = useRef<boolean | null>(null)
+  if (skipMountFetch.current === null) {
+    skipMountFetch.current =
+      cache.posts.length > 0 && isCacheFresh() && storedFiltersKey() === filtersKey(cache.activeFilters)
+  }
+
   useEffect(() => {
     if (activeFilters && typeof activeFilters.sortBy === 'string') {
+      if (skipMountFetch.current) {
+        skipMountFetch.current = false
+        return
+      }
       fetchPosts(1, activeFilters)
     }
   }, [activeFilters?.sortBy])

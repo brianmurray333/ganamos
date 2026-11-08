@@ -6,40 +6,82 @@ import { Home, User, Map, Wallet, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import { AuthPromptModal } from "@/components/auth-prompt-modal"
-import { useEffect, useState } from "react"
+import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import { useEffect, useState, type MouseEvent } from "react"
+
+// Tabs that middleware never redirects (only /wallet and /profile are
+// auth-protected), so prefetching them can't cache a stale login redirect.
+export const PUBLIC_TAB_ROUTES = ["/", "/map"] as const
+
+/** Which tab is highlighted for a given path. */
+export function isTabActive(path: string, activePath: string) {
+  if (path === "/") return activePath === "/"
+  return activePath === path || activePath.startsWith(`${path}/`)
+}
+
+function isPlainLeftClick(e: MouseEvent) {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.defaultPrevented
+}
+
+const tabClass =
+  "flex items-center justify-center w-12 h-12 -mx-2.5 rounded-2xl transition-[transform,background-color] duration-150 active:scale-90 active:bg-gray-500/10 dark:active:bg-white/10 touch-manipulation select-none [-webkit-tap-highlight-color:transparent]"
+
+function TabIcon({ icon: Icon, active }: { icon: typeof Home; active: boolean }) {
+  return (
+    <Icon
+      aria-hidden="true"
+      className={cn(
+        "w-7 h-7 transition-colors duration-100",
+        active ? "text-primary dark:text-primary" : "text-gray-500 dark:text-gray-400",
+      )}
+    />
+  )
+}
 
 export function BottomNav() {
   const pathname = usePathname()
   const router = useRouter()
   // NotificationsProvider removed - pending requests feature disabled
   const hasPendingRequests = false
-  const { user, loading, session, sessionLoaded } = useAuth()
+  const { user, session, sessionLoaded } = useAuth()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authFeature, setAuthFeature] = useState<'wallet' | 'profile'>('wallet')
 
-  // Warm up the new-post flow so tapping "+" responds immediately instead of
-  // waiting on the route payload, page JS and camera JS to download.
-  // /post/new isn't auth-gated (anonymous posting is allowed), so unlike the
-  // other nav links it's safe to prefetch before the session is known.
+  // Optimistic highlight: the tapped tab lights up on the same frame as the
+  // tap, instead of only once the destination route has rendered.
+  const [pendingHref, setPendingHref] = useState<string | null>(null)
+  useEffect(() => {
+    setPendingHref(null)
+  }, [pathname])
+  const activePath = pendingHref ?? pathname
+
+  // Warm up the routes behind the tabs so a tap responds immediately instead
+  // of waiting on the route payload and page JS:
+  // - /post/new, / and /map aren't auth-gated, so it's safe to prefetch them
+  //   before the session is known (see PUBLIC_TAB_ROUTES).
+  // - The map component's JS is fetched when the browser is idle.
   useEffect(() => {
     router.prefetch("/post/new")
-    const warmCamera = () => {
+    PUBLIC_TAB_ROUTES.forEach((route) => router.prefetch(route))
+    const warm = () => {
       import("@/components/camera-capture").catch(() => {})
+      import("@/components/map-view").catch(() => {})
     }
     const w = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
       cancelIdleCallback?: (id: number) => void
     }
     if (w.requestIdleCallback) {
-      const id = w.requestIdleCallback(warmCamera, { timeout: 4000 })
+      const id = w.requestIdleCallback(warm, { timeout: 4000 })
       return () => w.cancelIdleCallback?.(id)
     }
-    const t = setTimeout(warmCamera, 2000)
+    const t = setTimeout(warm, 2000)
     return () => clearTimeout(t)
   }, [router])
 
   // Only enable prefetch after session is confirmed to prevent caching stale auth redirects
   // Before session is established, prefetch could cache a "redirect to login" response
+  // (applies to the protected tabs: /wallet and /profile)
   const canPrefetch = sessionLoaded && !!session
 
   const isDocsDomain = typeof window !== 'undefined' &&
@@ -50,21 +92,26 @@ export function BottomNav() {
     return null
   }
 
-  const isActive = (path: string) => {
-    if (path === "/" && pathname === "/") return true
-    if (path !== "/" && pathname.startsWith(path)) return true
-    return false
+  const isActive = (path: string) => isTabActive(path, activePath)
+
+  const onTabClick = (href: string) => (e: MouseEvent) => {
+    // A tap on the current tab clears any pending highlight (e.g. Map tapped,
+    // then Home before the Map navigation committed).
+    if (isPlainLeftClick(e)) setPendingHref(href !== pathname ? href : null)
   }
 
-  const handleMapClick = () => {
-    router.push("/map")
+  // Start fetching the Google Maps script as soon as a finger lands on the
+  // Map tab (~100ms before the click fires).
+  const warmMap = () => {
+    loadGoogleMaps().catch(() => {})
   }
 
   return (
     <>
       {/* Docked bottom navigation bar */}
-    <div 
-      id="bottom-nav" 
+    <nav
+      id="bottom-nav"
+      aria-label="Main"
         className="fixed bottom-0 left-0 z-50 w-full h-[82px] bg-white/80 backdrop-blur-md dark:bg-gray-900/80 pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
         <div className="relative w-full max-w-md mx-auto h-full">
@@ -72,37 +119,27 @@ export function BottomNav() {
         {/* Home icon */}
         <Link
           href="/"
-          prefetch={canPrefetch}
           data-testid="nav-dashboard-link"
-          className={cn(
-                "flex items-center justify-center rounded-xl transition-colors",
-                isActive("/") && "text-primary dark:text-primary",
-          )}
+          aria-label="Home"
+          aria-current={isActive("/") ? "page" : undefined}
+          onClick={onTabClick("/")}
+          className={tabClass}
         >
-          <Home
-            className={cn(
-                  "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors",
-                  isActive("/") && "text-primary dark:text-primary",
-            )}
-          />
+          <TabIcon icon={Home} active={isActive("/")} />
         </Link>
 
         {/* Map icon */}
-        <button
-          onClick={handleMapClick}
+        <Link
+          href="/map"
           data-testid="nav-map-button"
-          className={cn(
-                "flex items-center justify-center rounded-xl transition-colors",
-                pathname === "/map" && "text-primary dark:text-primary"
-          )}
+          aria-label="Map"
+          aria-current={isActive("/map") ? "page" : undefined}
+          onClick={onTabClick("/map")}
+          onPointerDown={warmMap}
+          className={tabClass}
         >
-          <Map
-            className={cn(
-                  "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors",
-                  pathname === "/map" && "text-primary dark:text-primary",
-            )}
-          />
-        </button>
+          <TabIcon icon={Map} active={isActive("/map")} />
+        </Link>
 
             {/* New Post button - Center */}
             <div className="flex items-center justify-center">
@@ -125,17 +162,12 @@ export function BottomNav() {
             href="/wallet"
             prefetch={canPrefetch}
             data-testid="nav-wallet-link"
-            className={cn(
-                  "flex items-center justify-center rounded-xl transition-colors",
-                  isActive("/wallet") && "text-primary dark:text-primary"
-            )}
+            aria-label="Wallet"
+            aria-current={isActive("/wallet") ? "page" : undefined}
+            onClick={onTabClick("/wallet")}
+            className={tabClass}
           >
-            <Wallet
-              className={cn(
-                    "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors",
-                    isActive("/wallet") && "text-primary dark:text-primary",
-              )}
-            />
+            <TabIcon icon={Wallet} active={isActive("/wallet")} />
           </Link>
         ) : (
           <button
@@ -144,9 +176,10 @@ export function BottomNav() {
               setShowAuthModal(true)
             }}
             data-testid="nav-wallet-button"
-                className="flex items-center justify-center rounded-xl transition-colors"
-              >
-                <Wallet className="w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors" />
+            aria-label="Wallet"
+            className={tabClass}
+          >
+            <TabIcon icon={Wallet} active={false} />
           </button>
         )}
 
@@ -156,17 +189,12 @@ export function BottomNav() {
             href="/profile"
             prefetch={canPrefetch}
             data-testid="nav-profile-link"
-            className={cn(
-                  "flex items-center justify-center relative rounded-xl transition-colors",
-                  isActive("/profile") && "text-primary dark:text-primary",
-            )}
+            aria-label="Profile"
+            aria-current={isActive("/profile") ? "page" : undefined}
+            onClick={onTabClick("/profile")}
+            className={cn(tabClass, "relative")}
           >
-            <User
-              className={cn(
-                    "w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors",
-                    isActive("/profile") && "text-primary dark:text-primary",
-                  )}
-                />
+            <TabIcon icon={User} active={isActive("/profile")} />
                 {hasPendingRequests && <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>}
           </Link>
         ) : (
@@ -176,15 +204,16 @@ export function BottomNav() {
               setShowAuthModal(true)
             }}
             data-testid="nav-profile-button"
-                className="flex items-center justify-center relative rounded-xl transition-colors"
-              >
-                <User className="w-7 h-7 text-gray-500 dark:text-gray-400 transition-colors" />
+            aria-label="Profile"
+            className={cn(tabClass, "relative")}
+          >
+            <TabIcon icon={User} active={false} />
           </button>
         )}
           </div>
         </div>
-      </div>
-      
+      </nav>
+
       <AuthPromptModal
         open={showAuthModal}
         onOpenChange={setShowAuthModal}

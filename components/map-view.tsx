@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { X, RefreshCw, AlertCircle, Heart, Plus, Clock, Gift, Earth, Map, Timer } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,15 @@ import type { Post } from "@/lib/types"
 import { formatSatsValue, formatTimeAgo } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
+import {
+  MapCanvasPlaceholder,
+  MAP_CANVAS_LIGHT,
+  MAP_FAB_CLASS,
+  MAP_FAB_STACK_CLASS,
+  MAP_SEARCH_INPUT_CLASS,
+  MAP_SEARCH_TOP,
+  MAP_SEARCH_WRAPPER_CLASS,
+} from "@/components/map-placeholder"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { DonationModal } from "@/components/donation-modal"
 import { getCurrentLocationWithName } from "@/lib/geocoding"
@@ -39,6 +48,36 @@ const defaultCenter = {
 }
 
 const defaultZoom = 13
+
+/**
+ * The full-screen /map page keeps a single google.maps.Map alive for the whole
+ * session instead of constructing a new one (and re-downloading tiles) every
+ * time the user switches back to the Map tab. Its DOM node is moved into the
+ * new container on remount and detached on unmount. Embedded/modal maps
+ * (desktop dashboard, donation flow) are not shared.
+ * This also follows Google's guidance to reuse map instances (each new Map is
+ * a billed map load).
+ */
+interface PersistentMap {
+  map: google.maps.Map
+  el: HTMLDivElement
+  tilesLoaded: boolean
+  centeredKey: string | null
+}
+let persistentMap: PersistentMap | null = null
+// Last posts shown on /map, so markers appear immediately on a revisit while
+// the fresh query runs.
+let lastMapPosts: Post[] | null = null
+
+function isGoogleMapsReady() {
+  return typeof window !== "undefined" && !!(window.google?.maps?.Map && window.google?.maps?.LatLng)
+}
+
+/** @internal test hook */
+export function __resetPersistentMapForTests() {
+  persistentMap = null
+  lastMapPosts = null
+}
 
 // Update the MapViewProps interface to include userLocation
 interface MapViewProps {
@@ -108,6 +147,9 @@ function MapViewComponent({
   const markersRef = useRef<{ [key: string]: any }>({})
   const PostMarkerClassRef = useRef<any>(null)
   const userLocationMarkerRef = useRef<google.maps.Marker | null>(null)
+  // The pulsing overlay drawn under the user marker (must be detached too,
+  // since the Google Map instance persists across visits)
+  const userPulseOverlayRef = useRef<google.maps.OverlayView | null>(null)
   const isUnmountedRef = useRef(false) // Track if component is unmounting to abort operations
   const bitcoinLogoLoadedRef = useRef(false) // Track if Bitcoin logo image is preloaded
 
@@ -123,7 +165,14 @@ function MapViewComponent({
   const { user } = useAuth()
   const supabase = createBrowserSupabaseClient()
   const googleMapRef = useRef<google.maps.Map | null>(null)
-  const [allPosts, setAllPosts] = useState<Post[]>(posts)
+  const [allPosts, setAllPosts] = useState<Post[]>(() =>
+    posts.length === 0 && !isModal && lastMapPosts ? lastMapPosts : posts,
+  )
+  // Revisit of /map with the persistent map already showing tiles: skip the fade-in.
+  const [instantReveal, setInstantReveal] = useState(false)
+  const mapListenersRef = useRef<Array<{ remove: () => void } | null | undefined>>([])
+  const attachedMapElRef = useRef<HTMLDivElement | null>(null)
+  const localCenteredKeyRef = useRef<string | null>(null)
   const [isDonationModalOpen, setIsDonationModalOpen] = useState(false)
   const [userCleared, setUserCleared] = useState(false)
   const [viewMode, setViewMode] = useState<"flat" | "globe">("flat")
@@ -231,6 +280,7 @@ function MapViewComponent({
           setAllPosts([])
         } else {
           setAllPosts(data || [])
+          if (!isModal) lastMapPosts = (data || []) as Post[]
         }
       } else {
         setAllPosts([])
@@ -241,7 +291,7 @@ function MapViewComponent({
     } finally {
       setIsLoading(false)
     }
-  }, [supabase])
+  }, [supabase, isModal])
 
   useEffect(() => {
     fetchPosts()
@@ -249,6 +299,17 @@ function MapViewComponent({
 
   useEffect(() => {
     if (mapInstance && effectiveUserLocation) {
+      // Only recentre when the location actually changed since this map was
+      // last centred, so returning to /map keeps the view where the user left it.
+      const key = `${effectiveUserLocation.latitude},${effectiveUserLocation.longitude}|${
+        cityBounds ? `${cityBounds.north},${cityBounds.south},${cityBounds.east},${cityBounds.west}` : ""
+      }`
+      const shared = !isModal && persistentMap && persistentMap.map === mapInstance ? persistentMap : null
+      const lastKey = shared ? shared.centeredKey : localCenteredKeyRef.current
+      if (lastKey === key) return
+      if (shared) shared.centeredKey = key
+      else localCenteredKeyRef.current = key
+
       // If we have city bounds, fit the map to those bounds
       if (cityBounds) {
         const bounds: any = new (window as any).google.maps.LatLngBounds(
@@ -296,7 +357,7 @@ function MapViewComponent({
   // Re-add markers when posts arrive AFTER map is already loaded
   // This fixes the race condition where tilesloaded fires before fetchPosts completes
   useEffect(() => {
-    if (mapInstance && mapLoaded && postsWithLocation.length > 0) {
+    if (mapInstance && mapLoaded) {
       addPostMarkers(mapInstance)
     }
   }, [mapInstance, mapLoaded, postsWithLocation])
@@ -323,13 +384,21 @@ function MapViewComponent({
     return `expires ${Math.floor(diff / 604800)}w`
   }
 
-  // Initialize map when component mounts
-  useEffect(() => {
+  // Initialize map when component mounts. A layout effect so that, when the
+  // persistent /map instance can be reused, it is attached before the first
+  // paint (no placeholder flash on revisits).
+  useLayoutEffect(() => {
     if (mapInitialized) return
 
-    setIsLoading(true)
     setLocationError(null)
 
+    if (!isModal && persistentMap && isGoogleMapsReady()) {
+      PostMarkerClassRef.current = PostMarkerClassRef.current || createPostMarkerClass()
+      initializeMap()
+      return
+    }
+
+    setIsLoading(true)
     loadGoogleMapsLocal()
   }, [mapInitialized])
 
@@ -658,8 +727,22 @@ function MapViewComponent({
         defaultCenter = { lat: Number(firstPost.latitude), lng: Number(firstPost.longitude) }
       }
 
+      const reusable = !isModal ? persistentMap : null
+      const reused = !!reusable
+      let map: google.maps.Map
+      if (reusable) {
+        mapRef.current.appendChild(reusable.el)
+        attachedMapElRef.current = reusable.el
+        map = reusable.map
+      } else {
+      const mapEl = document.createElement("div")
+      mapEl.style.width = "100%"
+      mapEl.style.height = "100%"
+      mapRef.current.appendChild(mapEl)
+      attachedMapElRef.current = mapEl
       // Create map instance with all controls disabled
-      const map = new window.google.maps.Map(mapRef.current, {
+      map = new window.google.maps.Map(mapEl, {
+        backgroundColor: MAP_CANVAS_LIGHT,
         center: defaultCenter,
         zoom: 3,
         minZoom: 3,
@@ -684,7 +767,14 @@ function MapViewComponent({
           strictBounds: true,
         },
       })
-
+        if (!isModal) {
+          const entry: PersistentMap = { map, el: mapEl, tilesLoaded: false, centeredKey: null }
+          persistentMap = entry
+          window.google.maps.event.addListenerOnce(map, "tilesloaded", () => {
+            entry.tilesLoaded = true
+          })
+        }
+      }
 
       setMapInstance(map)
       setMapInitialized(true)
@@ -695,9 +785,17 @@ function MapViewComponent({
       setAutocompleteService(autoService)
       setPlacesService(placeService)
 
+      if (reusable?.tilesLoaded) {
+        // Tiles are already on screen: show the map immediately. Post markers
+        // are (re)added by the effect that watches mapLoaded + posts.
+        addUserLocationMarker(map)
+        setInstantReveal(true)
+        setMapLoaded(true)
+      } else {
       // Set mapLoaded to true when map tiles are ready, then add markers
       // This ensures markers appear AFTER the map is visible (prevents circle-before-map issue)
-      window.google.maps.event.addListenerOnce(map, 'tilesloaded', () => {
+      mapListenersRef.current.push(window.google.maps.event.addListenerOnce(map, 'tilesloaded', () => {
+        if (isUnmountedRef.current) return
         // Add post markers only after tiles are loaded
         addPostMarkers(map)
         
@@ -705,16 +803,23 @@ function MapViewComponent({
         addUserLocationMarker(map)
         
         setTimeout(() => {
-          setMapLoaded(true)
+          if (!isUnmountedRef.current) setMapLoaded(true)
         }, 100) // Small delay to ensure map is visually rendered
-      })
+      }))
+      }
 
       // Add click listener to map to deselect markers (only if not in modal)
       if (!isModal) {
-        map.addListener("click", () => {
+        mapListenersRef.current.push(map.addListener("click", () => {
           setSelectedPost(null)
           setShowResults(false)
-        })
+        }))
+      }
+
+      // A reused map keeps the viewport the user left it at.
+      if (reused) {
+        setIsLoading(false)
+        return
       }
 
       // If bounds are provided, fit the map to those bounds
@@ -772,9 +877,13 @@ function MapViewComponent({
       return
     }
 
-    // Remove existing user location marker
+    // Remove existing user location marker and its pulsing overlay
     if (userLocationMarkerRef.current) {
       userLocationMarkerRef.current.setMap(null)
+    }
+    if (userPulseOverlayRef.current) {
+      userPulseOverlayRef.current.setMap(null)
+      userPulseOverlayRef.current = null
     }
 
     // Create custom pulsing dot icon
@@ -876,6 +985,7 @@ function MapViewComponent({
       new window.google.maps.LatLng(effectiveUserLocation.latitude, effectiveUserLocation.longitude)
     )
     pulsingDot.setMap(map)
+    userPulseOverlayRef.current = pulsingDot
 
     userLocationMarkerRef.current = userMarker
 
@@ -900,17 +1010,19 @@ function MapViewComponent({
       }
     }
 
-    if (postsWithLocation.length === 0) {
-      return
-    }
-
-    // Clear existing markers
+    // Clear existing markers first, so a refresh that returns no posts (e.g.
+    // every cached issue was fixed) doesn't leave stale markers on the
+    // persistent map.
     Object.values(markersRef.current).forEach((marker) => {
       if (marker && typeof marker.setMap === "function") {
         marker.setMap(null)
       }
     })
     markersRef.current = {}
+
+    if (postsWithLocation.length === 0) {
+      return
+    }
 
     // Determine if markers should be clickable (explicitly disabled for donation flow)
     const markersClickable = !disableMarkerClicks
@@ -1092,12 +1204,26 @@ function MapViewComponent({
       })
       markersRef.current = {}
       
-      // Clean up user location marker
+      // Clean up user location marker and its pulsing overlay
       if (userLocationMarkerRef.current) {
         userLocationMarkerRef.current.setMap(null)
         userLocationMarkerRef.current = null
       }
+      if (userPulseOverlayRef.current) {
+        userPulseOverlayRef.current.setMap(null)
+        userPulseOverlayRef.current = null
+      }
       
+      // Drop this mount's map listeners (the persistent map outlives us)
+      mapListenersRef.current.forEach((listener) => listener?.remove())
+      mapListenersRef.current = []
+
+      // Detach the persistent map's DOM node; it is re-attached on the next visit
+      if (!isModal && persistentMap && attachedMapElRef.current === persistentMap.el) {
+        persistentMap.el.remove()
+      }
+      attachedMapElRef.current = null
+
       // Clear map instance reference
       if (googleMapRef.current) {
         googleMapRef.current = null
@@ -1105,7 +1231,6 @@ function MapViewComponent({
     }
   }, [])
 
-  const showLoading = isLoading || externalLoading
 
   // Set container classes based on whether it's in a modal or not
   // For non-modal (full-screen map page), use fixed positioning to extend behind status bar
@@ -1126,8 +1251,8 @@ function MapViewComponent({
       {/* Search Bar - Centered */}
       {!hideSearchOverlay && (
       <div
-        className={`absolute left-1/2 transform -translate-x-1/2 z-50 w-72 max-w-[calc(100%-2rem)] transition-opacity duration-300 ${(mapLoaded || viewMode === 'globe') ? 'opacity-100' : 'opacity-0'}`}
-        style={{ top: isModal ? '8px' : 'calc(env(safe-area-inset-top, 0px) + 16px)' }}
+        className={MAP_SEARCH_WRAPPER_CLASS}
+        style={{ top: isModal ? '8px' : MAP_SEARCH_TOP }}
       >
         <div className="relative">
           <input
@@ -1136,7 +1261,7 @@ function MapViewComponent({
             value={searchQuery}
             onChange={(e) => handleSearchInput(e.target.value)}
             onFocus={() => searchResults.length > 0 && setShowResults(true)}
-            className="w-full px-4 py-3 pr-10 rounded-full shadow-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors bg-white dark:bg-gray-900/90 dark:backdrop-blur-md border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 caret-gray-900 dark:caret-white"
+            className={`${MAP_SEARCH_INPUT_CLASS} focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors caret-gray-900 dark:caret-white`}
           />
 
           {/* Clear button */}
@@ -1181,27 +1306,6 @@ function MapViewComponent({
       </div>
       )}
 
-      {showLoading && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/80 z-40">
-          {/* Replicate LoadingSpinner structure */}
-          <div className="mb-4">
-            <svg
-              className="animate-spin h-10 w-10 text-primary"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-          </div>
-        </div>
-      )}
-
       {locationError && (
         <div className="absolute top-4 left-4 z-50 bg-white/90 dark:bg-gray-800/90 p-3 rounded-lg shadow-md max-w-xs">
           <div className="flex items-start gap-2">
@@ -1216,13 +1320,20 @@ function MapViewComponent({
         </div>
       )}
 
-      {/* Flat Map View - Always render but hide when in globe mode to preserve Google Maps instance */}
-      <div 
-        ref={mapRef} 
-        className="absolute inset-0 z-0" 
-        style={{ 
-          visibility: viewMode === "flat" ? "visible" : "hidden"
-        }} 
+      {/* Neutral canvas until the tiles are ready (no spinner, no text) */}
+      {!mapLoaded && viewMode === "flat" && <MapCanvasPlaceholder className="z-0" />}
+
+      {/* Flat Map View - Always render but hide when in globe mode to preserve Google Maps instance.
+          Fades in once tiles have loaded; instant on revisits and with reduced motion. */}
+      <div
+        ref={mapRef}
+        data-testid="map-canvas"
+        aria-busy={!mapLoaded}
+        className={`absolute inset-0 z-0 ${instantReveal ? "" : "transition-opacity duration-300 ease-out motion-reduce:transition-none"}`}
+        style={{
+          visibility: viewMode === "flat" ? "visible" : "hidden",
+          opacity: mapLoaded ? 1 : 0,
+        }}
       />
 
       {/* Airbnb-style Preview Card - Only show in flat mode if showPreviewCard is true and post is selected */}
@@ -1303,13 +1414,13 @@ function MapViewComponent({
           On mobile (non-modal): sits just above bottom nav (no floating + button on mobile)
           On desktop (non-modal): sits above the floating + button
           On modal (desktop side panel): sits above the floating + button */}
-      <div 
-        className={`absolute z-20 flex flex-col gap-3 right-6 ${isModal ? 'bottom-[100px]' : 'bottom-[100px] lg:bottom-[176px]'}`}
+      <div
+        className={`${MAP_FAB_STACK_CLASS} ${isModal ? 'bottom-[100px]' : 'bottom-[100px] lg:bottom-[176px]'}`}
       >
         {/* Donate Button */}
         <button
           onClick={() => router.push('/donate')}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-white dark:bg-gray-900/80 dark:backdrop-blur-sm shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 transform hover:scale-105"
+          className={`${MAP_FAB_CLASS} hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all duration-200 hover:scale-105`}
           aria-label="Donate"
         >
           <Gift className="w-6 h-6 text-gray-500 dark:text-gray-400" />
@@ -1318,7 +1429,7 @@ function MapViewComponent({
         {/* View Mode Toggle Button */}
         <button
           onClick={() => setViewMode(viewMode === "flat" ? "globe" : "flat")}
-          className="flex items-center justify-center w-12 h-12 rounded-full bg-white dark:bg-gray-900/80 dark:backdrop-blur-sm shadow-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 transform hover:scale-105"
+          className={`${MAP_FAB_CLASS} hover:bg-gray-100 dark:hover:bg-gray-800 active:scale-95 transition-all duration-200 hover:scale-105`}
           aria-label={viewMode === "flat" ? "Switch to 3D Globe" : "Switch to Flat Map"}
         >
           {viewMode === "flat" ? (

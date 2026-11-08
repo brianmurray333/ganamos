@@ -41,12 +41,74 @@ import {
   Squirrel, 
   Turtle,
   X,
-  Shield
+  Shield,
+  LogOut,
+  type LucideIcon,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { OwlIcon } from "@/components/icons/owl-icon";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import QRCode from "@/components/qr-code";
+
+const PROFILE_CARD_CLASS =
+  "mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card";
+
+type ProfileMenuRowProps = {
+  icon: LucideIcon;
+  label: string;
+  destructive?: boolean;
+} & ({ href: string; onClick?: never } | { href?: never; onClick: () => void });
+
+/**
+ * One row of the profile menu: 56px tall (well above the 44px touch target),
+ * icon in a fixed 36px tile, 16px medium label, muted chevron, inset divider
+ * that starts at the label (iOS grouped-list style) and a pressed state.
+ */
+function ProfileMenuRow({ icon: Icon, label, destructive, ...action }: ProfileMenuRowProps) {
+  const content = (
+    <>
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
+          destructive
+            ? "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400"
+            : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200",
+        )}
+      >
+        <Icon className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+      </span>
+      <span className="flex min-h-[56px] flex-1 items-center justify-between gap-3 self-stretch border-b border-gray-100 pr-4 group-last:border-b-0 dark:border-gray-800">
+        <span
+          className={cn(
+            "text-base font-medium leading-tight",
+            destructive ? "text-red-600 dark:text-red-400" : "text-gray-900 dark:text-white",
+          )}
+        >
+          {label}
+        </span>
+        {!destructive && (
+          <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 dark:text-gray-600" aria-hidden="true" />
+        )}
+      </span>
+    </>
+  );
+  const rowClass =
+    "group flex w-full items-center gap-3.5 pl-4 text-left transition-colors duration-100 active:bg-gray-100 dark:active:bg-white/[0.06] focus-visible:outline-none focus-visible:bg-gray-50 dark:focus-visible:bg-white/[0.04] [-webkit-tap-highlight-color:transparent]";
+
+  if ("href" in action && action.href) {
+    return (
+      <Link href={action.href} className={rowClass}>
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={action.onClick} className={rowClass}>
+      {content}
+    </button>
+  );
+}
 
 export default function ProfilePage() {
   const {
@@ -430,11 +492,11 @@ export default function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-background">
-      <div className="container px-4 pt-6 mx-auto max-w-md pb-24">
+      <div className="container px-4 pt-6 mx-auto max-w-md pb-[calc(82px+env(safe-area-inset-bottom)+1.5rem)] lg:pb-8">
         
         {/* Profile Card - Airbnb Style */}
-        <Card className="mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.12),0_8px_16px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_20px_rgba(255,255,255,0.05),0_2px_6px_rgba(255,255,255,0.08)] transition-shadow rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card overflow-hidden">
-          <CardContent className="px-5 py-8">
+        <Card className={cn(PROFILE_CARD_CLASS, "overflow-hidden")}>
+          <CardContent className="px-5 py-6">
             <div className="flex items-center gap-3">
               {/* Left side: Avatar + Name */}
               <div className="flex-[0.85] flex flex-col items-center">
@@ -666,7 +728,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Family Section Card */}
-        <Card className="mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.12),0_8px_16px_rgba(0,0,0,0.08)] dark:hover:shadow-[0_8px_20px_rgba(255,255,255,0.05),0_2px_6px_rgba(255,255,255,0.08)] transition-shadow rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card">
+        <Card className={PROFILE_CARD_CLASS}>
           <CardContent className="p-4">
           <FamilySection 
             onAddAccount={() => setShowAddAccountDialog(true)} 
@@ -677,84 +739,21 @@ export default function ProfilePage() {
         </CardContent>
       </Card>
 
-        {/* Menu List - Airbnb Style (no card, no dividers) */}
-        <div className="mt-4 space-y-1 max-w-[360px] mx-auto">
-          {/* Account Settings */}
-          <Link href="/profile/settings">
-            <div className="flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg">
-              <div className="flex items-center gap-4">
-                <Settings className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                <span className="text-[15px] text-gray-900 dark:text-white">Account settings</span>
-                      </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-                          </div>
-          </Link>
-
-          {/* Groups */}
-          <Link href="/profile/groups">
-            <div className="flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg">
-              <div className="flex items-center gap-4">
-                <Users className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                <span className="text-[15px] text-gray-900 dark:text-white">Groups</span>
-                        </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-                      </div>
-          </Link>
-
-          {/* Activity */}
-          <Link href="/profile/activity">
-            <div className="flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg">
-              <div className="flex items-center gap-4">
-                <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
-                        </svg>
-                <span className="text-[15px] text-gray-900 dark:text-white">Activity</span>
-                      </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-                </div>
-          </Link>
-
-          {/* Posts */}
-          <Link href="/profile/posts">
-            <div className="flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg">
-              <div className="flex items-center gap-4">
-                <Camera className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                <span className="text-[15px] text-gray-900 dark:text-white">Posts</span>
-            </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </Link>
-
+        {/* Menu - iOS-style grouped list, same width and surface as the cards above */}
+        <nav aria-label="Account" className={cn(PROFILE_CARD_CLASS, "overflow-hidden")}>
+          <ProfileMenuRow href="/profile/settings" icon={Settings} label="Account settings" />
+          <ProfileMenuRow href="/profile/groups" icon={Users} label="Groups" />
+          <ProfileMenuRow href="/profile/activity" icon={Activity} label="Activity" />
+          <ProfileMenuRow href="/profile/posts" icon={Camera} label="Posts" />
           {/* Admin (only for admin user) */}
           {user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL && (
-            <Link href="/admin">
-              <div className="flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg">
-                <div className="flex items-center gap-4">
-                  <Shield className="w-6 h-6 text-gray-600 dark:text-gray-400" />
-                  <span className="text-[15px] text-gray-900 dark:text-white">Admin</span>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
-              </div>
-            </Link>
+            <ProfileMenuRow href="/admin" icon={Shield} label="Admin" />
           )}
+        </nav>
 
-          {/* Log out */}
-          <button
-            onClick={() => signOut()}
-            className="w-full flex items-center justify-between py-4 px-1 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer rounded-lg"
-          >
-            <div className="flex items-center gap-4">
-              <svg className="w-6 h-6 text-gray-600 dark:text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              <span className="text-[15px] text-gray-900 dark:text-white">Log out</span>
-          </div>
-          </button>
-          
-          {/* Spacer for bottom nav */}
-          <div className="h-16" />
+        {/* Log out - separate group, like iOS Settings' destructive actions */}
+        <div className={cn(PROFILE_CARD_CLASS, "mb-0 overflow-hidden")}>
+          <ProfileMenuRow onClick={() => signOut()} icon={LogOut} label="Log out" destructive />
         </div>
 
         {/* Dialogs */}

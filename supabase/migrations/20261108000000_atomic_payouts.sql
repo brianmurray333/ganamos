@@ -31,6 +31,7 @@ COMMENT ON COLUMN posts.anonymous_claim_token_hash IS 'SHA-256 (hex) of the secr
 UPDATE posts
 SET reward_paid_at = COALESCE(fixed_at, NOW())
 WHERE fixed = TRUE
+  AND deleted_at IS NULL -- deleted posts can't be paid; some environments reject updates to them
   AND reward_paid_at IS NULL
   AND NOT (COALESCE(fixed_by_is_anonymous, FALSE) AND anonymous_reward_paid_at IS NULL);
 
@@ -425,6 +426,7 @@ WITH candidates AS (
   JOIN transactions t
     ON t.id = (a.metadata->>'transaction_id')::uuid
   WHERE p.funding_transaction_id IS NULL
+    AND p.deleted_at IS NULL -- deleted posts can't be paid or refunded
     AND p.user_id IS NOT NULL
     AND t.user_id = p.user_id
     AND t.type = 'internal'
