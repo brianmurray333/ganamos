@@ -533,28 +533,68 @@ describe('GET /api/admin/node-balance - Integration Tests', () => {
   })
 
   describe('Authorization and Security', () => {
-    // NOTE: This test documents current behavior where NO authentication exists
-    // This is a SECURITY VULNERABILITY that should be fixed in a separate PR
-    // The endpoint currently allows unauthenticated access to sensitive financial data
-    it('should allow unauthenticated requests (SECURITY GAP - NO AUTH CURRENTLY)', async () => {
+    // The route (app/api/admin/node-balance/route.ts) now checks CRON_SECRET, but skips the
+    // check when an `x-vercel-id` or `x-vercel-cron` header is present, and when CRON_SECRET
+    // is unset.
+    const withHeaders = (headers: Record<string, string>) =>
+      ({ ...createNodeBalanceRequest(), headers: new Headers(headers) }) as any
+    let savedSecret: string | undefined
+
+    beforeEach(() => {
+      savedSecret = process.env.CRON_SECRET
+      process.env.CRON_SECRET = 'test-cron-secret'
       mockLndFullBalanceSuccess(vi.mocked(lndRequest))
-
-      // Create request without any authorization headers
-      const request = createNodeBalanceRequest()
-
-      const response = await GET(request)
-      const data = await response.json()
-
-      // Currently returns 200 because NO auth checks exist
-      expect(response.status).toBe(200)
-      expect(data.success).toBe(true)
-      expect(data.balances).toBeDefined()
     })
 
-    // TODO: Add test for admin authorization when it's implemented
-    // it('should return 401 when admin authorization is missing', async () => { ... })
-    // TODO: Add test for CRON_SECRET verification when it's implemented
-    // it('should verify CRON_SECRET for scheduled access', async () => { ... })
+    afterEach(() => {
+      if (savedSecret === undefined) delete process.env.CRON_SECRET
+      else process.env.CRON_SECRET = savedSecret
+    })
+
+    it('should return 401 and not query LND when the Bearer secret is missing', async () => {
+      const response = await GET(createNodeBalanceRequest())
+
+      expect(response.status).toBe(401)
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
+
+    it('should return 401 when the Bearer secret is wrong', async () => {
+      const response = await GET(withHeaders({ authorization: 'Bearer wrong-secret' }))
+
+      expect(response.status).toBe(401)
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
+
+    it('should return balances with the correct Bearer secret', async () => {
+      const response = await GET(withHeaders({ authorization: 'Bearer test-cron-secret' }))
+      const data = await response.json()
+
+      expect(response.status).toBe(200)
+      expect(data.success).toBe(true)
+    })
+
+    // REAL BUG? `x-vercel-cron` / `x-vercel-id` are ordinary request headers: any client can
+    // send `x-vercel-cron: 1`, and Vercel adds `x-vercel-id` to every request it serves, so on
+    // Vercel the CRON_SECRET check is skipped for everyone. Same pattern in
+    // app/api/admin/check-env, app/api/admin/daily-summary, app/api/cron/expire-posts and
+    // app/api/cron/update-bitcoin-price. Remove `.fails` once only the secret authorizes.
+    it.fails('should not let a spoofed x-vercel-cron header bypass CRON_SECRET', async () => {
+      const response = await GET(withHeaders({ 'x-vercel-cron': '1' }))
+
+      expect(response.status).toBe(401)
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
+
+    // REAL BUG? Fails open: with CRON_SECRET unset the endpoint serves node balances to anyone.
+    // (Previously asserted here as "SECURITY GAP - NO AUTH CURRENTLY" returning 200.)
+    it.fails('should reject unauthenticated requests even when CRON_SECRET is not configured', async () => {
+      delete process.env.CRON_SECRET
+
+      const response = await GET(createNodeBalanceRequest())
+
+      expect(response.status).toBe(401)
+      expect(lndRequest).not.toHaveBeenCalled()
+    })
   })
 
   describe('Performance and Reliability', () => {
