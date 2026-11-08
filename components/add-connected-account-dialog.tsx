@@ -85,74 +85,9 @@ export function AddConnectedAccountDialog({ open, onOpenChange, onAccountAdded }
     }
   }
 
-  const handleEmailConnect = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!user) return
-
-    setIsLoading(true)
-    try {
-      // Get the user profile for the email (no password verification for now)
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("email", email)
-        .single()
-
-      if (profileError || !profileData) {
-        toast.error("Account Not Found", {
-          description: "No profile found for this email address.",
-        })
-        setIsLoading(false)
-        return
-      }
-
-      // Check if this account is already connected
-      const { data: existingConnection } = await supabase
-        .from("connected_accounts")
-        .select("id")
-        .eq("primary_user_id", user.id)
-        .eq("connected_user_id", profileData.id)
-        .single()
-
-      if (existingConnection) {
-        toast("Already Connected", {
-          description: "This account is already connected to your profile.",
-        })
-        setIsLoading(false)
-        return
-      }
-
-      // Create the connection
-      const { error: connectionError } = await supabase.from("connected_accounts").insert({
-        primary_user_id: user.id,
-        connected_user_id: profileData.id,
-      })
-
-      if (connectionError) {
-        throw connectionError
-      }
-
-      toast.success("Account Connected", {
-        description: `Successfully connected ${profileData.name}'s account.`,
-      })
-
-      // Reset form and close dialog
-      setEmail("")
-      setPassword("")
-      setShowEmailForm(false)
-      onOpenChange(false)
-      
-      // Refresh connected accounts without changing current session
-      onAccountAdded()
-    } catch (error) {
-      console.error("Error connecting account:", error)
-      toast.error("Connection Failed", {
-        description: "Failed to connect the account. Please try again.",
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  // Linking an existing account (switch into it / act as it) is created only
+  // server-side for child accounts (/api/child-account). There is deliberately
+  // no client path to connect another existing user's account.
 
   const handleQRScan = async (scannedData: string) => {
     if (!user) return
@@ -698,49 +633,6 @@ export function AddConnectedAccountDialog({ open, onOpenChange, onAccountAdded }
                 Back
               </Button>
             </div>
-          ) : showEmailForm ? (
-            <form onSubmit={handleEmailConnect} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="connect-email">Email</Label>
-                <Input
-                  id="connect-email"
-                  type="email"
-                  placeholder="their@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="connect-password">Password</Label>
-                <Input
-                  id="connect-password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowEmailForm(false)}
-                  disabled={isLoading}
-                  className="flex-1"
-                >
-                  Back
-                </Button>
-                <Button type="submit" disabled={isLoading} className="flex-1">
-                  {isLoading ? "Connecting..." : "Connect Account"}
-                </Button>
-              </div>
-            </form>
           ) : (
             <div className="space-y-4">
               <Button

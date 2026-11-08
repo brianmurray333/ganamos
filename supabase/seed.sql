@@ -651,3 +651,7 @@ CREATE POLICY "Users can view group members of their groups" ON public.group_mem
 -- undo the blanket GRANT above for them so local/CI match production.
 REVOKE ALL ON FUNCTION pay_fix_reward(UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION credit_deposit(UUID, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
+
+-- connected_accounts is written only by the server (see 20261108010000);
+-- undo the blanket GRANT above for it so local/CI match production.
+REVOKE INSERT, UPDATE ON connected_accounts FROM anon, authenticated;
