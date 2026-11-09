@@ -22,6 +22,9 @@ export function StaticMapWidget({
 }: StaticMapWidgetProps) {
   const [mapUrl, setMapUrl] = useState<string | null>(null)
   const [error, setError] = useState<boolean>(false)
+  // The location pill and "Open in Maps" button appear together with the map
+  // image, not before it.
+  const [imageLoaded, setImageLoaded] = useState(false)
 
   // Fetch static map URL from helper API
   useEffect(() => {
@@ -72,8 +75,7 @@ export function StaticMapWidget({
     window.open(getDirectionsUrl(), "_blank", "noopener,noreferrer")
   }
 
-  // Loading or error state
-  if (!mapUrl || error) {
+  if (error) {
     return (
       <div className={`relative w-full rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 ${className}`} style={{ height: `${height}px` }}>
         <button
@@ -82,47 +84,50 @@ export function StaticMapWidget({
           aria-label="Open in maps app"
         >
           <MapPin className="w-8 h-8 mb-2" />
-          <p className="text-sm">{error ? "Map unavailable" : "Loading map..."}</p>
-          {error && <p className="text-xs mt-1">Tap to open in Maps</p>}
+          <p className="text-sm">Map unavailable</p>
+          <p className="text-xs mt-1">Tap to open in Maps</p>
         </button>
       </div>
     )
   }
 
   return (
-    <div className={`relative w-full rounded-lg overflow-hidden ${className}`}>
-      <button
-        onClick={handleMapClick}
-        className="relative w-full h-full group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg overflow-hidden"
-        style={{ height: `${height}px` }}
-        aria-label="Open in maps app"
-      >
-        <img
-          src={mapUrl}
-          alt={`Map showing ${title}`}
-          className="w-full h-full object-cover transition-transform group-hover:scale-105"
-          loading="lazy"
-        />
-        
-        {/* Overlay gradient for better button visibility */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-        
-        {/* "Open in Maps" button overlay */}
-        <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <div className="bg-white text-gray-900 px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2">
-            <MapPin className="w-4 h-4" />
-            Open in Maps
-          </div>
-        </div>
+    <div
+      className={`relative w-full rounded-lg overflow-hidden bg-muted ${imageLoaded ? "" : "animate-pulse"} ${className}`}
+      style={{ height: `${height}px` }}
+    >
+      {mapUrl && (
+        <button
+          onClick={handleMapClick}
+          className={`relative w-full h-full group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg overflow-hidden transition-opacity duration-500 ease-out ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+          aria-label="Open in maps app"
+          data-no-fade
+        >
+          <img
+            src={mapUrl}
+            alt={`Map showing ${title}`}
+            className="w-full h-full object-cover transition-transform group-hover:scale-105"
+            onLoad={() => setImageLoaded(true)}
+            onError={() => setError(true)}
+          />
 
-        {/* Location indicator (always visible) - max 50% width, truncates on overflow */}
-        <div className="absolute top-3 left-3 max-w-[50%] bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md">
-          <div className="flex items-center gap-1.5 text-xs font-medium min-w-0">
-            <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse flex-shrink-0" />
-            <span className="text-gray-900 dark:text-gray-100 truncate">{locationLabel}</span>
+          {/* "Open in Maps" button: always shown on touch screens, on hover with a mouse */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+            <div className="bg-white text-gray-900 px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 whitespace-nowrap">
+              <MapPin className="w-4 h-4" />
+              Open in Maps
+            </div>
           </div>
-        </div>
-      </button>
+
+          {/* Location label - max 60% width, truncates on overflow */}
+          <div className="absolute top-3 left-3 max-w-[60%] bg-white/90 dark:bg-gray-900/85 backdrop-blur-sm px-3 py-1.5 rounded-full shadow-md">
+            <div className="flex items-center gap-1.5 text-xs font-medium min-w-0">
+              <div className="w-2 h-2 bg-orange-500 rounded-full flex-shrink-0" />
+              <span className="text-gray-900 dark:text-gray-100 truncate">{locationLabel}</span>
+            </div>
+          </div>
+        </button>
+      )}
     </div>
   )
 }
