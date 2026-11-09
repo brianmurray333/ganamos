@@ -8,7 +8,8 @@ import { useEffect } from "react"
  * Any <img> that isn't loaded yet when it appears (or when its src changes)
  * is marked data-fade="pending" (transparent) and switched to "in" on load,
  * so the CSS in globals.css transitions its opacity. Images that are already
- * loaded (e.g. cached) are left alone and show immediately. Opt out with
+ * loaded (cached) get data-fade="cached", a quick fade-in, so they don't snap
+ * in either. Images present when the app starts are left alone. Opt out with
  * data-no-fade on the image or an ancestor; map tiles are skipped.
  */
 export function ImageFadeIn() {
@@ -21,14 +22,31 @@ export function ImageFadeIn() {
       if (img.dataset.fade === "pending") img.dataset.fade = "in"
     }
 
-    const track = (img: HTMLImageElement) => {
+    /**
+     * initial: image was already in the page when we started (it may have
+     * been visible for a while, so don't hide it). Otherwise it was just
+     * added, or its src just changed.
+     */
+    const track = (img: HTMLImageElement, initial = false) => {
       if (skip(img)) return
-      // Nothing painted yet: hide until it loads. Already-loaded images stay as they are.
-      if (!img.complete && img.naturalWidth === 0) {
-        img.dataset.fade = "pending"
-        // The load event may have fired between the checks above
-        if (img.complete) reveal(img)
+      const loaded = img.complete && img.naturalWidth > 0
+      if (loaded) {
+        // Cached: still ease it in (a quick fade) unless it was already showing
+        if (!initial) {
+          img.dataset.fade = "cached"
+          // Restart the animation if this element faded before (src change)
+          img.style.animation = "none"
+          void img.offsetWidth
+          img.style.animation = ""
+        }
+        return
       }
+      if (initial && img.naturalWidth > 0) return // partly painted already
+      img.dataset.fade = "pending"
+      // The load event may have fired between the checks above
+      if (img.complete && img.naturalWidth > 0) reveal(img)
+      // Never leave an image hidden (e.g. a lazy image that never loads)
+      window.setTimeout(() => reveal(img), 4000)
     }
 
     const onLoadOrError = (e: Event) => {
@@ -39,7 +57,7 @@ export function ImageFadeIn() {
     document.addEventListener("load", onLoadOrError, true)
     document.addEventListener("error", onLoadOrError, true)
 
-    document.querySelectorAll("img").forEach((img) => track(img))
+    document.querySelectorAll("img").forEach((img) => track(img, true))
 
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {

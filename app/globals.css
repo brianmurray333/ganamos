@@ -331,11 +331,12 @@ img[data-fade="pending"] {
   from { opacity: 0; }
   to { opacity: 1; }
 }
-.animate-image-in {
+.animate-image-in,
+img[data-fade="cached"] {
   animation: image-in 300ms ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
   img[data-fade] { transition: none; }
-  .animate-image-in { animation: none; }
+  .animate-image-in, img[data-fade="cached"] { animation: none; }
   .image-frame:has(> img[data-fade="pending"]) { animation: none; }
 }
