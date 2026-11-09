@@ -131,7 +131,18 @@ export default function ProfilePage() {
   const router = useRouter();
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
-  const [postedIssuesCount, setPostedIssuesCount] = useState<number>(0);
+  // Post count isn't on the profile row (fixes are), so it's fetched; keep the
+  // last value per user so it shows instantly like Fixes instead of 0 → N.
+  const [postedIssuesCount, setPostedIssuesCount] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const userId = localStorage.getItem('ganamos_active_user_id');
+      const cached = userId ? localStorage.getItem(`ganamos_post_count_${userId}`) : null;
+      return cached !== null && !Number.isNaN(Number(cached)) ? Number(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [fixedIssuesCount, setFixedIssuesCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(() => {
@@ -329,27 +340,26 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchPostsCount = async () => {
       if (!profile?.id) return;
+      const countKey = `ganamos_post_count_${profile.id}`;
+      // Switching accounts: show this account's last known count right away
+      try {
+        const cached = localStorage.getItem(countKey);
+        setPostedIssuesCount(cached !== null && !Number.isNaN(Number(cached)) ? Number(cached) : null);
+      } catch {}
       
       try {
-        // Fetch posts created by user
-        const { data: posted, error: postedError } = await supabase
-          .from("posts")
-          .select("id")
-          .eq("user_id", profile.id)
-          .is("deleted_at", null);
+        // Count posts created / fixed by the user (counts only, no rows)
+        const [{ count: postedCount, error: postedError }, { count: fixedCount, error: fixedError }] = await Promise.all([
+          supabase.from("posts").select("id", { count: "exact", head: true }).eq("user_id", profile.id).is("deleted_at", null),
+          supabase.from("posts").select("id", { count: "exact", head: true }).eq("fixed_by", profile.id).is("deleted_at", null),
+        ]);
         
-        // Fetch posts fixed by user  
-        const { data: fixed, error: fixedError } = await supabase
-          .from("posts")
-          .select("id")
-          .eq("fixed_by", profile.id)
-          .is("deleted_at", null);
-        
-        if (!postedError && posted) {
-          setPostedIssuesCount(posted.length);
+        if (!postedError && typeof postedCount === "number") {
+          setPostedIssuesCount(postedCount);
+          try { localStorage.setItem(countKey, String(postedCount)); } catch {}
         }
-        if (!fixedError && fixed) {
-          setFixedIssuesCount(fixed.length);
+        if (!fixedError && typeof fixedCount === "number") {
+          setFixedIssuesCount(fixedCount);
         }
       } catch (error) {
         console.error("Failed to fetch posts count:", error);
@@ -698,7 +708,11 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <p className="text-[22px] font-bold text-gray-900 dark:text-white leading-none">
-                      {postedIssuesCount}
+                      {postedIssuesCount === null ? (
+                        <span className="inline-block h-[22px] w-6 rounded-md bg-muted animate-pulse align-top" aria-label="Loading" />
+                      ) : (
+                        postedIssuesCount
+                      )}
                     </p>
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Posts</p>
                   </div>
