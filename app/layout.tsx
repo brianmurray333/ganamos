@@ -11,6 +11,7 @@ import { AuthProvider } from "@/components/auth-provider"
 import { DonationModalProvider } from "@/components/donation-modal-provider"
 import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
+import { ImageFadeIn } from "@/components/image-fade-in"
 
 const inter = Inter({ subsets: ["latin"] })
 // Self-hosted (was a render-blocking Google Fonts stylesheet that delayed the
@@ -93,6 +94,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <AuthProvider>
           <GlobalLoadingOverlay />
+          <ImageFadeIn />
           <DashboardCacheProvider>
             <DonationModalProvider>
               <ConditionalThemeProvider
