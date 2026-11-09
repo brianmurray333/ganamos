@@ -12,6 +12,8 @@ import { useEffect } from "react"
  * in either. Images present when the app starts are left alone. Opt out with
  * data-no-fade on the image or an ancestor; map tiles are skipped.
  */
+const REVEAL_FALLBACK_MS = 4000
+
 export function ImageFadeIn() {
   useEffect(() => {
     if (typeof window === "undefined" || typeof MutationObserver === "undefined") return
@@ -21,6 +23,18 @@ export function ImageFadeIn() {
     const reveal = (img: HTMLImageElement) => {
       if (img.dataset.fade === "pending") img.dataset.fade = "in"
     }
+
+    const visibility =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue
+              const img = entry.target as HTMLImageElement
+              visibility?.unobserve(img)
+              window.setTimeout(() => reveal(img), REVEAL_FALLBACK_MS)
+            }
+          })
 
     /**
      * initial: image was already in the page when we started (it may have
@@ -45,8 +59,11 @@ export function ImageFadeIn() {
       img.dataset.fade = "pending"
       // The load event may have fired between the checks above
       if (img.complete && img.naturalWidth > 0) reveal(img)
-      // Never leave an image hidden (e.g. a lazy image that never loads)
-      window.setTimeout(() => reveal(img), 4000)
+      // Never leave an image hidden if its request stalls. Lazy images are
+      // deferred on purpose until they're near the viewport, so start their
+      // clock only once they're on screen.
+      if (img.loading === "lazy" && visibility) visibility.observe(img)
+      else window.setTimeout(() => reveal(img), REVEAL_FALLBACK_MS)
     }
 
     const onLoadOrError = (e: Event) => {
@@ -75,6 +92,7 @@ export function ImageFadeIn() {
 
     return () => {
       observer.disconnect()
+      visibility?.disconnect()
       document.removeEventListener("load", onLoadOrError, true)
       document.removeEventListener("error", onLoadOrError, true)
     }
