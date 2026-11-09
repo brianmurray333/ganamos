@@ -219,21 +219,12 @@ export function WalletConnectionModal({
                 </p>
               </div>
 
-              <div className="flex gap-2">
-                <Button
-                  size="xl"
-                  variant="outline"
-                  onClick={() => setStep("intro")}
-                  disabled={isConnecting}
-                  className="flex-1"
-                >
-                  Back
-                </Button>
+              <div className="flex flex-col gap-3">
                 <Button
                   size="xl"
                   onClick={handleConnect}
                   disabled={isConnecting || !connectionString.trim()}
-                  className="flex-1"
+                  className="w-full"
                 >
                   {isConnecting ? (
                     <>
@@ -243,6 +234,15 @@ export function WalletConnectionModal({
                   ) : (
                     "Connect"
                   )}
+                </Button>
+                <Button
+                  size="xl"
+                  variant="outline"
+                  onClick={() => setStep("intro")}
+                  disabled={isConnecting}
+                  className="w-full"
+                >
+                  Back
                 </Button>
               </div>
 

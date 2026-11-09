@@ -2504,8 +2504,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </div>
                 </CardContent>
               </Card>
-              <div className="flex space-x-3">
-                <Button size="xl" onClick={handleApproveFix} disabled={isReviewing} className="flex-1 w-full">
+              <div className="flex flex-col gap-3">
+                <Button size="xl" onClick={handleApproveFix} disabled={isReviewing} className="w-full">
                   {isReviewing ? (
                     <div className="flex items-center">
                       <svg
@@ -2534,7 +2534,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     "Approve & Pay Reward"
                   )}
                 </Button>
-                <Button size="xl" onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="flex-1">
+                <Button size="xl" onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="w-full">
                   Reject Fix
                 </Button>
               </div>
@@ -2922,23 +2922,23 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <p className="text-sm text-muted-foreground">
                 This will remove the post. Your {formatSatsValue(post?.reward || 0)} reward will be refunded to your wallet.
               </p>
-              <div className="flex gap-3">
-                <Button
-                  size="xl"
-                  variant="outline"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1"
-                  disabled={isDeletingPost}
-                >
-                  Cancel
-                </Button>
+              <div className="flex flex-col gap-3">
                 <Button
                   size="xl"
                   onClick={handleDeletePost}
                   disabled={isDeletingPost}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                  className="w-full bg-red-600 hover:bg-red-700 text-white"
                 >
                   {isDeletingPost ? "Deleting..." : "Delete Post"}
+                </Button>
+                <Button
+                  size="xl"
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="w-full"
+                  disabled={isDeletingPost}
+                >
+                  Cancel
                 </Button>
               </div>
             </div>

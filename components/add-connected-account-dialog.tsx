@@ -489,24 +489,24 @@ export function AddConnectedAccountDialog({ open, onOpenChange, onAccountAdded }
                 )}
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-3">
+                <Button
+                  size="xl"
+                  type="submit"
+                  disabled={isLoading || !selectedAvatar || !childUsername.trim()}
+                  className="w-full"
+                >
+                  {isLoading ? "Creating..." : "Create Account"}
+                </Button>
                 <Button
                   size="xl"
                   type="button"
                   variant="outline"
                   onClick={() => setShowChildAccountForm(false)}
                   disabled={isLoading}
-                  className="flex-1"
+                  className="w-full"
                 >
                   Back
-                </Button>
-                <Button
-                  size="xl"
-                  type="submit"
-                  disabled={isLoading || !selectedAvatar || !childUsername.trim()}
-                  className="flex-1"
-                >
-                  {isLoading ? "Creating..." : "Create Account"}
                 </Button>
               </div>
             </form>
