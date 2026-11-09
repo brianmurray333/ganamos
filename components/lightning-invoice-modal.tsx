@@ -163,10 +163,10 @@ export function LightningInvoiceModal({
             )}
 
             <div className="flex space-x-3">
-              <Button variant="outline" onClick={handleClose} className="flex-1">
+              <Button size="xl" variant="outline" onClick={handleClose} className="flex-1">
                 Cancel
               </Button>
-              <Button onClick={handleSubmit} disabled={!invoice.trim() || isProcessing || paymentComplete} className="flex-1 bg-green-600 hover:bg-green-700">
+              <Button size="xl" onClick={handleSubmit} disabled={!invoice.trim() || isProcessing || paymentComplete} className="flex-1 bg-green-600 hover:bg-green-700">
                 Withdraw {formatSatsValue(rewardAmount)}
               </Button>
             </div>

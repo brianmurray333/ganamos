@@ -1911,6 +1911,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {/* Action Buttons */}
           <div className="space-y-2 pt-2">
             <Button
+              size="xl"
               onClick={async () => {
                 setIsClosingIssue(true)
                 try {
@@ -2504,7 +2505,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 </CardContent>
               </Card>
               <div className="flex space-x-3">
-                <Button onClick={handleApproveFix} disabled={isReviewing} className="flex-1 w-full">
+                <Button size="xl" onClick={handleApproveFix} disabled={isReviewing} className="flex-1 w-full">
                   {isReviewing ? (
                     <div className="flex items-center">
                       <svg
@@ -2533,7 +2534,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     "Approve & Pay Reward"
                   )}
                 </Button>
-                <Button onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="flex-1">
+                <Button size="xl" onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="flex-1">
                   Reject Fix
                 </Button>
               </div>
@@ -2567,10 +2568,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </p>
                   
                   <div className="space-y-3">
-                    <Button className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
+                    <Button size="xl" className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
                       Withdraw {formatSatsValue(post.reward)}
                     </Button>
                     <Button
+                      size="xl"
                       variant="outline"
                       className="w-full"
                       onClick={() => {
@@ -2869,6 +2871,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               {/* Action buttons */}
               <div className="space-y-2 pt-2">
                 <Button
+                  size="xl"
                   onClick={handleCloseIssue}
                   disabled={!selectedFixerUsername || isClosingIssue}
                   className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -2921,6 +2924,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               </p>
               <div className="flex gap-3">
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => setShowDeleteConfirm(false)}
                   className="flex-1"
@@ -2929,6 +2933,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   Cancel
                 </Button>
                 <Button
+                  size="xl"
                   onClick={handleDeletePost}
                   disabled={isDeletingPost}
                   className="flex-1 bg-red-600 hover:bg-red-700 text-white"

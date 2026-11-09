@@ -168,7 +168,7 @@ export function WalletConnectionModal({
                 </div>
               </div>
 
-              <Button onClick={() => setStep("connect")} className="w-full">
+              <Button size="xl" onClick={() => setStep("connect")} className="w-full">
                 <Link2 className="h-4 w-4 mr-2" />
                 Connect Wallet
               </Button>
@@ -221,6 +221,7 @@ export function WalletConnectionModal({
 
               <div className="flex gap-2">
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => setStep("intro")}
                   disabled={isConnecting}
@@ -229,6 +230,7 @@ export function WalletConnectionModal({
                   Back
                 </Button>
                 <Button
+                  size="xl"
                   onClick={handleConnect}
                   disabled={isConnecting || !connectionString.trim()}
                   className="flex-1"
@@ -289,7 +291,7 @@ export function WalletConnectionModal({
                 </ul>
               </div>
 
-              <Button onClick={handleClose} className="w-full">
+              <Button size="xl" onClick={handleClose} className="w-full">
                 Done
               </Button>
             </div>
