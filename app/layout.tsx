@@ -12,6 +12,7 @@ import { DonationModalProvider } from "@/components/donation-modal-provider"
 import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 import { ImageFadeIn } from "@/components/image-fade-in"
+import { LaunchSplash, LAUNCH_SPLASH_CSS } from "@/components/launch-splash"
 
 const inter = Inter({ subsets: ["latin"] })
 // Self-hosted (was a render-blocking Google Fonts stylesheet that delayed the
@@ -55,6 +56,8 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/favicon.png" type="image/png" sizes="48x48" />
         <link rel="apple-touch-icon" href="/icon-512x512.png" />
+        <style dangerouslySetInnerHTML={{ __html: LAUNCH_SPLASH_CSS }} />
+        <link rel="preload" href="/splash/launch-icon.png" as="image" />
         {/* iOS launch splash: shown instead of a black screen while the app loads */}
         {SPLASH_SCREENS.map(([w, h, dpr]) => (
           <link
@@ -92,6 +95,7 @@ export default function RootLayout({
         />
       </head>
       <body className={inter.className}>
+        <LaunchSplash />
         <AuthProvider>
           <GlobalLoadingOverlay />
           <ImageFadeIn />
