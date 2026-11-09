@@ -167,3 +167,29 @@ describe('isPostFundingInvoiceMemo', () => {
     expect(isPostFundingInvoiceMemo('')).toBe(false)
   })
 })
+
+describe('isPostRewardFunded: post_funding_overrides', () => {
+  const owned = (extra: Record<string, any> = {}) => new FakeDb({
+    posts: [{ id: POST_ID, user_id: 'owner-1', reward: 1000, created_at: '2026-11-08T12:00:00Z', funding_transaction_id: null, ...extra }],
+    transactions: [],
+  })
+
+  it('counts a server-side override that covers the reward', async () => {
+    const { isPostRewardFunded } = await import('@/lib/payouts')
+    const db = owned()
+    db.table('post_funding_overrides').push({ post_id: POST_ID, amount: 1000 })
+    expect(await isPostRewardFunded(db.client(), { id: POST_ID })).toBe(true)
+  })
+
+  it('ignores an override smaller than the reward', async () => {
+    const { isPostRewardFunded } = await import('@/lib/payouts')
+    const db = owned()
+    db.table('post_funding_overrides').push({ post_id: POST_ID, amount: 999 })
+    expect(await isPostRewardFunded(db.client(), { id: POST_ID })).toBe(false)
+  })
+
+  it('is false with no override and no funding record', async () => {
+    const { isPostRewardFunded } = await import('@/lib/payouts')
+    expect(await isPostRewardFunded(owned().client(), { id: POST_ID })).toBe(false)
+  })
+})

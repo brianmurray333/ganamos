@@ -87,6 +87,22 @@ export async function POST(request: Request) {
       )
     }
 
+    // SECURITY: the caller was authorized for `groupId`, so the request must be
+    // for that group (otherwise an admin of any group could approve requests
+    // to other groups), and only pending requests can be reviewed.
+    if (memberRecord.group_id !== groupId) {
+      return NextResponse.json(
+        { success: false, error: "Member record not found" },
+        { status: 404 }
+      )
+    }
+    if (memberRecord.status !== "pending") {
+      return NextResponse.json(
+        { success: false, error: "This request has already been handled" },
+        { status: 409 }
+      )
+    }
+
     // Get group details
     const { data: group, error: groupError } = await adminSupabase
       .from("groups")

@@ -35,6 +35,8 @@ const FUNDING_LINK_CUTOFF = "2026-11-08T00:00:00Z"
  *   reward by the owner within 2 minutes of the post's creation.
  * - Anonymous web/API posts: funding_status 'paid' with a funding invoice,
  *   verified as settled when the post was created.
+ * - Any post with a post_funding_overrides row covering its reward
+ *   (funding verified out of band; server-only table).
  * Browser sessions can't set any of these fields (DB triggers).
  */
 export async function isPostRewardFunded(
@@ -48,6 +50,14 @@ export async function isPostRewardFunded(
     .single()
   if (!post) return false
   if (!post.reward || post.reward <= 0) return true // nothing to fund
+
+  // Funding verified out of band (server-only table, no browser access)
+  const { data: override } = await admin
+    .from("post_funding_overrides")
+    .select("amount")
+    .eq("post_id", post.id)
+    .maybeSingle()
+  if (override && Number(override.amount) >= post.reward) return true
 
   if (!post.user_id) {
     return post.funding_status === "paid" && !!post.funding_r_hash
