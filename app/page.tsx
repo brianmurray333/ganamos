@@ -16,6 +16,7 @@ import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { DonationModal } from "@/components/donation-modal"
 import { MapCanvasPlaceholder } from "@/components/map-placeholder"
 import { useDonationModal } from "@/components/donation-modal-provider"
+import { markAppReady } from "@/lib/app-ready"
 
 // Supabase auth-helpers keep the session in an `sb-<project>-auth-token`
 // cookie (possibly chunked as .0, .1). Its presence means a session will most
@@ -96,11 +97,15 @@ export default function DashboardPage() {
   const router = useRouter()
   const isDesktop = useIsDesktop()
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
+  // The saved feed may hold group-only/assigned posts, so only use it once the
+  // session is known and belongs to the same user it was fetched for.
+  const cacheOwner = session?.user?.id ?? null
+  const cacheIsMine = () => sessionLoaded && cache.ownerId !== undefined && cache.ownerId === cacheOwner
   const [currentLocation, setCurrentLocation] = useState(getCurrentLocation())
-  const [posts, setPosts] = useState<Post[]>(cache.posts)
+  const [posts, setPosts] = useState<Post[]>(() => (cacheIsMine() ? cache.posts : []))
   // Returning to Home with fresh cached posts: render them immediately (no
   // skeleton, and the header doesn't drop back to its placeholder pill).
-  const [isLoading, setIsLoading] = useState(() => !(cache.posts.length > 0 && isCacheFresh()))
+  const [isLoading, setIsLoading] = useState(() => !(cacheIsMine() && cache.posts.length > 0 && isCacheFresh()))
   const supabase = createBrowserSupabaseClient()
 
   const [currentPage, setCurrentPage] = useState(cache.currentPage)
@@ -126,7 +131,14 @@ export default function DashboardPage() {
 
   // Initialize from cache on mount
   useEffect(() => {
-    if (!cacheInitialized.current && cache.posts.length > 0 && isCacheFresh()) {
+    if (cacheInitialized.current || cache.posts.length === 0 || !sessionLoaded) return
+    if (!cacheIsMine()) {
+      // Saved for another (or no) account: never show it, and drop it
+      cacheInitialized.current = true
+      clearCache()
+      return
+    }
+    if (isCacheFresh()) {
       console.log("Using fresh cached data - skipping initial fetch")
       setPosts(cache.posts)
       setCurrentPage(cache.currentPage)
@@ -135,8 +147,48 @@ export default function DashboardPage() {
       setIsLoading(false)
       initialDataLoaded.current = true
       cacheInitialized.current = true
+      return
     }
-  }, [cache, isCacheFresh])
+    // Older feed saved from a previous launch: show it right away (no
+    // skeleton) while the normal fetch refreshes it, as long as it was fetched
+    // with the same filters and nothing newer has arrived yet.
+    cacheInitialized.current = true
+    if (storedFiltersKey() === filtersKey(cache.activeFilters)) {
+      setPosts(prev => (prev.length > 0 ? prev : cache.posts))
+      setHasMore(cache.hasMore)
+      setIsLoading(false)
+    }
+  }, [cache, isCacheFresh, sessionLoaded, cacheOwner])
+
+  // PWA launch: tell the launch splash the first screen is ready once the feed
+  // (cached or fetched) is rendered and the first card photos have loaded
+  // (capped), so it fades straight to the loaded feed instead of the skeleton.
+  const launchReadySent = useRef(false)
+  useEffect(() => {
+    if (launchReadySent.current || (isLoading && posts.length === 0)) return
+    launchReadySent.current = true
+    let cancelled = false
+    requestAnimationFrame(() => {
+      const photos = Array.from(
+        document.querySelectorAll<HTMLImageElement>("[data-launch-feed] .image-frame img")
+      ).slice(0, 2)
+      const loaded = photos.map(
+        (img) =>
+          new Promise<void>((resolve) => {
+            if (img.complete) return resolve()
+            img.addEventListener("load", () => resolve(), { once: true })
+            img.addEventListener("error", () => resolve(), { once: true })
+          })
+      )
+      const cap = new Promise<void>((resolve) => setTimeout(resolve, 800))
+      Promise.race([Promise.all(loaded), cap]).then(() => {
+        if (!cancelled) markAppReady()
+      })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [isLoading, posts.length])
 
   useEffect(() => {
     if (prevDeps.current.router !== router) {
@@ -204,7 +256,7 @@ export default function DashboardPage() {
   const skipMountFetch = useRef<boolean | null>(null)
   if (skipMountFetch.current === null) {
     skipMountFetch.current =
-      cache.posts.length > 0 && isCacheFresh() && storedFiltersKey() === filtersKey(cache.activeFilters)
+      cacheIsMine() && cache.posts.length > 0 && isCacheFresh() && storedFiltersKey() === filtersKey(cache.activeFilters)
   }
 
   useEffect(() => {
@@ -424,7 +476,7 @@ export default function DashboardPage() {
           setHasMore(hasMorePages)
           setIsLoading(false)
           
-          setCachedPosts(finalPosts, page, hasMorePages, filters)
+          setCachedPosts(finalPosts, page, hasMorePages, filters, cacheOwner)
           return
         }
       }
@@ -687,7 +739,7 @@ export default function DashboardPage() {
           <div className="hidden lg:block pt-4"></div>
 
           <div className="w-full flex justify-center lg:block">
-            <div className="relative w-full max-w-md lg:max-w-none pb-20 lg:pb-8 px-4">
+            <div className="relative w-full max-w-md lg:max-w-none pb-20 lg:pb-8 px-4" data-launch-feed>
               {/* Feed content */}
           {posts.length === 0 && isLoading ? (
             <div className="space-y-6">
