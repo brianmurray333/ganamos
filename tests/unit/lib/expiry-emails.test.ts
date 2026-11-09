@@ -90,8 +90,8 @@ describe('Post Expiration Email Functions', () => {
 
       const call = vi.mocked(email.sendEmail).mock.calls[0]
       const htmlContent = call[2] as string
-      expect(htmlContent).toContain('Hi John,')
-      expect(htmlContent).not.toContain('Hi John Doe,')
+      expect(htmlContent).toContain('Hello John,')
+      expect(htmlContent).not.toContain('Hello John Doe,')
     })
 
     it('should include post link in email', async () => {
@@ -232,8 +232,8 @@ describe('Post Expiration Email Functions', () => {
 
       const call = vi.mocked(email.sendEmail).mock.calls[0]
       const htmlContent = call[2] as string
-      expect(htmlContent).toContain('Hi Jane,')
-      expect(htmlContent).not.toContain('Hi Jane Smith,')
+      expect(htmlContent).toContain('Hello Jane,')
+      expect(htmlContent).not.toContain('Hello Jane Smith,')
     })
 
     it('should not throw when sendEmail fails', async () => {
@@ -321,8 +321,8 @@ describe('Post Expiration Email Functions', () => {
 
       const call = vi.mocked(email.sendEmail).mock.calls[0]
       const htmlContent = call[2] as string
-      expect(htmlContent).toContain('Hi Bob,')
-      expect(htmlContent).not.toContain('Hi Bob Johnson,')
+      expect(htmlContent).toContain('Hello Bob,')
+      expect(htmlContent).not.toContain('Hello Bob Johnson,')
     })
 
     it('should explain post removal in content', async () => {

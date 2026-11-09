@@ -30,6 +30,12 @@ const CALLOUTS = {
 export type EmailTheme = keyof typeof THEMES
 export type CalloutTone = keyof typeof CALLOUTS
 
+export interface EmailImage {
+  src: string
+  alt: string
+  label?: string
+}
+
 export interface EmailContent {
   /** Large heading under the logo, e.g. "Bitcoin Received" */
   title: string
@@ -43,8 +49,10 @@ export interface EmailContent {
   details?: Array<[label: string, value: string]>
   /** Highlighted box, e.g. a fixer's note or a warning */
   callout?: { tone?: CalloutTone; title?: string; html: string }
-  /** An image (e.g. the before/after photo) */
+  /** An image (e.g. the fix photo) */
   image?: { src: string; alt: string }
+  /** Two labeled images side by side, e.g. Before / After */
+  imagePair?: [EmailImage, EmailImage]
   /** Primary button */
   button?: { label: string; href: string }
   /** Paragraphs shown after the button */
@@ -107,6 +115,17 @@ export function renderEmail(content: EmailContent): string {
   if (content.image) {
     parts.push(
       `<img src="${content.image.src}" alt="${escapeHtml(content.image.alt)}" width="536" style="display:block;width:100%;max-width:536px;height:auto;border-radius:12px;margin:0 0 24px;border:0;">`
+    )
+  }
+
+  if (content.imagePair) {
+    const cell = (img: EmailImage, side: "left" | "right") => `
+      <td width="50%" style="vertical-align:top;padding-${side === "left" ? "right" : "left"}:6px;">
+        ${img.label ? `<div style="font-size:13px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px;">${img.label}</div>` : ""}
+        <img src="${img.src}" alt="${escapeHtml(img.alt)}" width="262" style="display:block;width:100%;height:auto;border-radius:10px;border:0;">
+      </td>`
+    parts.push(
+      `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>${cell(content.imagePair[0], "left")}${cell(content.imagePair[1], "right")}</tr></table>`
     )
   }
 
