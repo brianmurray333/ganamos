@@ -608,6 +608,9 @@ REVOKE ALL ON FUNCTION public.ganamos_is_group_admin(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.ganamos_is_group_creator(UUID) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.ganamos_is_group_admin(UUID) TO authenticated, service_role;
 
+-- Permissive policies are OR'ed: also drop the older self-insert policy that
+-- exists in production (not created by repo migrations) and allows any role.
+DROP POLICY IF EXISTS "Users can create their own group memberships" ON group_members;
 DROP POLICY IF EXISTS "Users can insert group membership" ON group_members;
 CREATE POLICY "Users can insert group membership" ON group_members
   FOR INSERT WITH CHECK (
