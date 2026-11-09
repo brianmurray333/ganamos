@@ -1045,6 +1045,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // Clear active user on sign out
       localStorage.removeItem(ACTIVE_USER_KEY)
+      // Don't show this account's cached feed to whoever signs in next
+      localStorage.removeItem("dashboard_cache_v2")
       setActiveUserId(null)
       setIsConnectedAccount(false)
       setConnectedAccounts([])
