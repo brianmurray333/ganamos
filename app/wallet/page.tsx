@@ -41,6 +41,9 @@ function TransactionHistory() {
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(cached ? cached.length === 10 : false)
   const [page, setPage] = useState(0)
+  // Infinite scroll stays off until page 0 has been (re)fetched, so a cached
+  // list can't trigger page 1 while the refresh is replacing it.
+  const [firstPageSettled, setFirstPageSettled] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
   const TRANSACTIONS_PER_PAGE = 10
 
@@ -80,6 +83,8 @@ function TransactionHistory() {
         setIsLoadingMore(false)
       } else {
         setLoading(false)
+        setPage(0)
+        setFirstPageSettled(true)
       }
     }
   }, [user, profile, activeUserId])
@@ -92,7 +97,7 @@ function TransactionHistory() {
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading) {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading && firstPageSettled) {
           setIsLoadingMore(true)
           const nextPage = page + 1
           setPage(nextPage)
@@ -112,7 +117,7 @@ function TransactionHistory() {
         observer.unobserve(currentTarget)
       }
     }
-  }, [hasMore, isLoadingMore, loading, page, fetchTransactions])
+  }, [hasMore, isLoadingMore, loading, page, fetchTransactions, firstPageSettled])
 
   if (loading) {
     return (
@@ -324,6 +329,11 @@ export default function WalletPage() {
   // Handle banner dismissal
   const handleBannerDismiss = () => {
     setShowBanner(false)
+    if (user?.id) {
+      const cached = nwcStatusCache.get(user.id)
+      if (cached) nwcStatusCache.set(user.id, { ...cached, promptDismissed: true })
+    }
+    setNwcStatus((prev) => (prev ? { ...prev, promptDismissed: true } : prev))
   }
 
   useEffect(() => {
