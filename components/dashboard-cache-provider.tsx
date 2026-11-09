@@ -19,11 +19,14 @@ interface DashboardCache {
   hasMore: boolean
   activeFilters: ActiveFilters | null
   lastFetched: number | null
+  /** Auth user the feed was fetched for (null = signed out). It can contain
+   *  group-only or assigned posts, so it's shown only to that same user. */
+  ownerId?: string | null
 }
 
 interface DashboardCacheContextType {
   cache: DashboardCache
-  setCachedPosts: (posts: Post[], page: number, hasMore: boolean, filters: ActiveFilters | null) => void
+  setCachedPosts: (posts: Post[], page: number, hasMore: boolean, filters: ActiveFilters | null, ownerId: string | null) => void
   clearCache: () => void
   isCacheFresh: () => boolean
 }
@@ -73,13 +76,14 @@ export function DashboardCacheProvider({ children }: { children: React.ReactNode
     }
   }, [cache])
 
-  const setCachedPosts = (posts: Post[], page: number, hasMore: boolean, filters: ActiveFilters | null) => {
+  const setCachedPosts = (posts: Post[], page: number, hasMore: boolean, filters: ActiveFilters | null, ownerId: string | null) => {
     setCache({
       posts,
       currentPage: page,
       hasMore,
       activeFilters: filters,
       lastFetched: Date.now(),
+      ownerId,
     })
   }
 

@@ -97,11 +97,15 @@ export default function DashboardPage() {
   const router = useRouter()
   const isDesktop = useIsDesktop()
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
+  // The saved feed may hold group-only/assigned posts, so only use it once the
+  // session is known and belongs to the same user it was fetched for.
+  const cacheOwner = session?.user?.id ?? null
+  const cacheIsMine = () => sessionLoaded && cache.ownerId !== undefined && cache.ownerId === cacheOwner
   const [currentLocation, setCurrentLocation] = useState(getCurrentLocation())
-  const [posts, setPosts] = useState<Post[]>(cache.posts)
+  const [posts, setPosts] = useState<Post[]>(() => (cacheIsMine() ? cache.posts : []))
   // Returning to Home with fresh cached posts: render them immediately (no
   // skeleton, and the header doesn't drop back to its placeholder pill).
-  const [isLoading, setIsLoading] = useState(() => !(cache.posts.length > 0 && isCacheFresh()))
+  const [isLoading, setIsLoading] = useState(() => !(cacheIsMine() && cache.posts.length > 0 && isCacheFresh()))
   const supabase = createBrowserSupabaseClient()
 
   const [currentPage, setCurrentPage] = useState(cache.currentPage)
@@ -127,7 +131,13 @@ export default function DashboardPage() {
 
   // Initialize from cache on mount
   useEffect(() => {
-    if (cacheInitialized.current || cache.posts.length === 0) return
+    if (cacheInitialized.current || cache.posts.length === 0 || !sessionLoaded) return
+    if (!cacheIsMine()) {
+      // Saved for another (or no) account: never show it, and drop it
+      cacheInitialized.current = true
+      clearCache()
+      return
+    }
     if (isCacheFresh()) {
       console.log("Using fresh cached data - skipping initial fetch")
       setPosts(cache.posts)
@@ -148,7 +158,7 @@ export default function DashboardPage() {
       setHasMore(cache.hasMore)
       setIsLoading(false)
     }
-  }, [cache, isCacheFresh])
+  }, [cache, isCacheFresh, sessionLoaded, cacheOwner])
 
   // PWA launch: tell the launch splash the first screen is ready once the feed
   // (cached or fetched) is rendered and the first card photos have loaded
@@ -246,7 +256,7 @@ export default function DashboardPage() {
   const skipMountFetch = useRef<boolean | null>(null)
   if (skipMountFetch.current === null) {
     skipMountFetch.current =
-      cache.posts.length > 0 && isCacheFresh() && storedFiltersKey() === filtersKey(cache.activeFilters)
+      cacheIsMine() && cache.posts.length > 0 && isCacheFresh() && storedFiltersKey() === filtersKey(cache.activeFilters)
   }
 
   useEffect(() => {
@@ -466,7 +476,7 @@ export default function DashboardPage() {
           setHasMore(hasMorePages)
           setIsLoading(false)
           
-          setCachedPosts(finalPosts, page, hasMorePages, filters)
+          setCachedPosts(finalPosts, page, hasMorePages, filters, cacheOwner)
           return
         }
       }
