@@ -65,7 +65,9 @@ export function LaunchSplash() {
  * above the page; the CSS below lifts the icon by that much.
  */
 export const LAUNCH_SPLASH_SCRIPT = `(function(){try{
-  if(!window.matchMedia('(display-mode: standalone)').matches)return;
+  // iOS home-screen app only (navigator.standalone is iOS-specific); desktop
+  // and Android installed apps have no launch image to line up with.
+  if(window.navigator.standalone!==true)return;
   var shift=(screen.height-window.innerHeight)/2;
   if(shift>0&&shift<60)document.documentElement.style.setProperty('--launch-shift',shift+'px');
 }catch(e){}})();`
