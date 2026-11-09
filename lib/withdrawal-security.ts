@@ -8,6 +8,7 @@
  * - Enhanced audit logging
  */
 
+import { renderEmail, escapeHtml, EMAIL_BASE_URL } from "./email-layout"
 import { SupabaseClient } from '@supabase/supabase-js'
 import { sendEmail } from './email'
 import { alertLargeWithdrawal, sendSmsAlert } from './sms-alerts'
@@ -333,43 +334,15 @@ export async function sendWithdrawalFailedEmail(
   const formattedAmount = formatSatsValue(amount)
   const firstName = userName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; background: #f5f5f5; }
-        .container { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .header { background: #dc2626; padding: 30px 20px; text-align: center; }
-        .header h1 { color: white; margin: 0; font-size: 24px; }
-        .content { padding: 30px 20px; }
-        .greeting { font-size: 16px; margin-bottom: 20px; }
-        .amount-box { background: #f9fafb; border-radius: 6px; padding: 20px; text-align: center; margin: 20px 0; }
-        .amount { font-size: 28px; font-weight: bold; color: #111827; }
-        .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
-        .footer a { color: #16a349; text-decoration: none; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Withdrawal Failed</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">Hello ${firstName},</div>
-          <p>Unfortunately, your withdrawal could not be processed. Your balance has not been affected.</p>
-          <div class="amount-box">
-            <div class="amount">${formattedAmount}</div>
-          </div>
-          <p>If you have questions, please contact support.</p>
-        </div>
-        <div class="footer">
-          <p>This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const html = renderEmail({
+    title: "Withdrawal Failed",
+    preheader: `Your ${formattedAmount} withdrawal could not be processed`,
+    greeting: escapeHtml(firstName),
+    paragraphs: ["Unfortunately, your withdrawal could not be processed. Your balance has not been affected."],
+    details: [["Amount", formattedAmount]],
+    button: { label: "View Wallet", href: `${EMAIL_BASE_URL}/wallet` },
+    afterParagraphs: ["If you have questions, please contact support."],
+  })
 
   await sendEmail(userEmail, `Withdrawal Failed - ${formattedAmount}`, html, {
     type: 'withdrawal_failed',

@@ -1,3 +1,4 @@
+import { renderEmail, escapeHtml } from "@/lib/email-layout"
 import { NextRequest, NextResponse } from 'next/server'
 import { validateAccessToken, extractBearerToken, getLinkedAccount } from '@/lib/alexa-auth'
 import { createServerSupabaseClient } from '@/lib/supabase'
@@ -416,45 +417,23 @@ async function sendVerificationEmail(
     from: process.env.RESEND_FROM_EMAIL || 'Ganamos <notifications@ganamos.earth>',
     to: email,
     subject: `🎉 ${fixerName} says they completed your job!`,
-    html: `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { text-align: center; padding: 20px 0; }
-            .content { background: #f9f9f9; padding: 30px; border-radius: 10px; }
-            .button { display: inline-block; background: #22c55e; color: white !important; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
-            .reward { font-size: 24px; font-weight: bold; color: #f59e0b; }
-            .footer { text-align: center; padding: 20px 0; color: #666; font-size: 14px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1 style="color: #1a1a1a !important;">🎉 Job Completion Request</h1>
-            </div>
-            <div class="content">
-              <p>Hi ${ownerName}!</p>
-              <p><strong>${fixerName}</strong> says they completed your job:</p>
-              <h3>"${jobTitle}"</h3>
-              <p>This request was submitted via Alexa.</p>
-              <p>If verified, ${fixerName} will receive:</p>
-              <p class="reward">⚡ ${reward.toLocaleString()} sats</p>
-              <p>Click below to verify the completion:</p>
-              <center>
-                <a href="${verifyUrl}" class="button">Verify & Approve</a>
-              </center>
-              <p style="color: #666; font-size: 14px;">If you didn't expect this, you can ignore this email.</p>
-            </div>
-            <div class="footer">
-              <p>Ganamos - Fix your community, earn Bitcoin ⚡</p>
-            </div>
-          </div>
-        </body>
-      </html>
-    `,
+    html: renderEmail({
+      title: "Job completion request",
+      preheader: `${fixerName} says they completed "${jobTitle}"`,
+      greeting: escapeHtml(ownerName),
+      paragraphs: [
+        `<strong>${escapeHtml(fixerName)}</strong> says they completed your job. This request was submitted via Alexa.`,
+      ],
+      details: [
+        ["Job", escapeHtml(jobTitle)],
+        ["Fixer", escapeHtml(fixerName)],
+        ["Reward", `${reward.toLocaleString()} sats`],
+      ],
+      button: { label: "Verify &amp; Approve", href: verifyUrl },
+      afterParagraphs: [
+        `<span style="color:#6b7280;font-size:14px;">If you didn't expect this, you can ignore this email.</span>`,
+      ],
+    }),
   })
   
   console.log(`[Alexa Complete] Verification email sent to ${email}`)
