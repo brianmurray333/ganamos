@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata, Viewport } from "next"
-import { Inter } from "next/font/google"
+import { Inter, Pacifico } from "next/font/google"
 import "./globals.css"
 import { ConditionalThemeProvider } from "@/components/conditional-theme-provider"
 import { Toaster } from "@/components/ui/toast"
@@ -13,6 +13,15 @@ import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 
 const inter = Inter({ subsets: ["latin"] })
+// Self-hosted (was a render-blocking Google Fonts stylesheet that delayed the
+// first paint on PWA launch). Used via var(--font-pacifico).
+const pacifico = Pacifico({ weight: "400", subsets: ["latin"], display: "swap", variable: "--font-pacifico" })
+
+// iPhone portrait screens [CSS width, CSS height, pixel ratio] with a splash in /public/splash
+const SPLASH_SCREENS: Array<[number, number, number]> = [
+  [440, 956, 3], [420, 912, 3], [402, 874, 3], [430, 932, 3], [393, 852, 3], [428, 926, 3],
+  [390, 844, 3], [414, 896, 3], [375, 812, 3], [414, 896, 2], [375, 667, 2],
+]
 
 export const metadata: Metadata = {
   title: "Ganamos! Bitcoin-Powered Job Marketplace",
@@ -41,20 +50,19 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={pacifico.variable} suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap"
-          rel="stylesheet"
-        />
         <link rel="icon" href="/favicon.png" type="image/png" sizes="48x48" />
         <link rel="apple-touch-icon" href="/icon-512x512.png" />
+        {/* iOS launch splash: shown instead of a black screen while the app loads */}
+        {SPLASH_SCREENS.map(([w, h, dpr]) => (
+          <link
+            key={`${w}x${h}@${dpr}`}
+            rel="apple-touch-startup-image"
+            href={`/splash/launch-${w * dpr}x${h * dpr}.png`}
+            media={`(device-width: ${w}px) and (device-height: ${h}px) and (-webkit-device-pixel-ratio: ${dpr}) and (orientation: portrait)`}
+          />
+        ))}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         {/* Theme color for iOS status bar - changes based on color scheme */}

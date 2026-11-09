@@ -2002,7 +2002,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         {post && (
           <>
             {/* Desktop: Side-by-side layout | Mobile: Single column */}
-            <div className="min-h-[100dvh] lg:min-h-0 lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-white dark:bg-gray-900">
+            <div className="min-h-[100dvh] lg:min-h-0 lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-background">
               {/* Left Panel - Post Details (scrollable) */}
               <div className="w-full lg:w-[380px] xl:w-[420px] lg:flex-shrink-0 lg:overflow-y-auto lg:border-r lg:border-gray-200 lg:dark:border-gray-800">
                 <div className="container px-4 pt-4 pb-6 lg:pt-4 lg:pb-8 mx-auto max-w-md lg:max-w-none">

@@ -86,11 +86,11 @@
 }
 
 .font-cursive {
-  font-family: "Pacifico", cursive;
+  font-family: var(--font-pacifico), "Pacifico", cursive;
 }
 
 .app-title {
-  font-family: "Pacifico", cursive;
+  font-family: var(--font-pacifico), "Pacifico", cursive;
   font-size: 4.5rem;
   color: white;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);

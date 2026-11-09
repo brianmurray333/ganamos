@@ -243,7 +243,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             >
               {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
             </Button>
-            <span className="font-['Pacifico'] text-xl text-white">Ganamos!</span>
+            <span className="font-cursive text-xl text-white">Ganamos!</span>
           </div>
         </div>
 
