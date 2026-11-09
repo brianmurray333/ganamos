@@ -55,7 +55,7 @@ export function LocationSelector({ isOpen, onOpenChange }: LocationSelectorProps
             ))}
           </RadioGroup>
         </div>
-        <Button onClick={handleSave} className="w-full">
+        <Button size="xl" onClick={handleSave} className="w-full">
           Save Location
         </Button>
       </DialogContent>

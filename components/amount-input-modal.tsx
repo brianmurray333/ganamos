@@ -186,6 +186,7 @@ export function AmountInputModal({
           {/* Action Buttons */}
           <div className="flex gap-2 justify-center">
             <Button
+              size="xl"
               variant="outline"
               onClick={handleClear}
               className="flex-1 max-w-32"
@@ -193,6 +194,7 @@ export function AmountInputModal({
               Clear
             </Button>
             <Button
+              size="xl"
               onClick={handleDone}
               disabled={!displayValue}
               className="flex-1 max-w-32 bg-primary text-white hover:bg-primary/90"

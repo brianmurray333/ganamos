@@ -252,7 +252,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                 placeholder="Search for a city, neighborhood, or region..."
               />
             </div>
-            <Button onClick={handleContinue} disabled={!locationName || !selectedLocation} className="w-full">
+            <Button size="xl" onClick={handleContinue} disabled={!locationName || !selectedLocation} className="w-full">
               Continue
             </Button>
           </div>

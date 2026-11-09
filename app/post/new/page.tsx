@@ -1502,6 +1502,7 @@ export default function NewPostPage() {
             )}
 
             <Button
+              size="xl"
               variant="outline"
               className="w-full mt-4"
               onClick={(e: React.MouseEvent) => {
@@ -1552,6 +1553,7 @@ export default function NewPostPage() {
             </p>
             <div className="space-y-3">
               <Button
+                size="xl"
                 onClick={(e: React.MouseEvent) => {
                   e.preventDefault()
                   router.push(`/auth/register?redirect=/post/${lastCreatedPostId}`)
@@ -1561,6 +1563,7 @@ export default function NewPostPage() {
                 Create Account
               </Button>
               <Button
+                size="xl"
                 variant="secondary"
                 onClick={(e: React.MouseEvent) => {
                   e.preventDefault()

@@ -48,10 +48,10 @@ describe('AuthPromptModal', () => {
         />
       )
 
-      expect(screen.getByText('Sign Up to Access Your Wallet')).toBeInTheDocument()
+      expect(screen.getByText('Sign up to use your wallet')).toBeInTheDocument()
     })
 
-    it('should render wallet-specific message', () => {
+    it('should render the description', () => {
       render(
         <AuthPromptModal
           open={true}
@@ -61,7 +61,7 @@ describe('AuthPromptModal', () => {
       )
 
       expect(
-        screen.getByText('Create an account to access your Bitcoin wallet and manage your earnings.')
+        screen.getByText('Earn sats for fixing things nearby.')
       ).toBeInTheDocument()
     })
 
@@ -108,10 +108,10 @@ describe('AuthPromptModal', () => {
         />
       )
 
-      expect(screen.getByText('Sign Up to Access Your Profile')).toBeInTheDocument()
+      expect(screen.getByText('Sign up to see your profile')).toBeInTheDocument()
     })
 
-    it('should render profile-specific message', () => {
+    it('should render the description', () => {
       render(
         <AuthPromptModal
           open={true}
@@ -121,7 +121,7 @@ describe('AuthPromptModal', () => {
       )
 
       expect(
-        screen.getByText('Create an account to access your profile and track your activity.')
+        screen.getByText('Earn sats for fixing things nearby.')
       ).toBeInTheDocument()
     })
 
@@ -168,7 +168,7 @@ describe('AuthPromptModal', () => {
         />
       )
 
-      expect(screen.queryByText('Sign Up to Access Your Wallet')).not.toBeInTheDocument()
+      expect(screen.queryByText('Sign up to use your wallet')).not.toBeInTheDocument()
     })
 
     it('should render when open is true', () => {
@@ -180,7 +180,7 @@ describe('AuthPromptModal', () => {
         />
       )
 
-      expect(screen.getByText('Sign Up to Access Your Wallet')).toBeInTheDocument()
+      expect(screen.getByText('Sign up to use your wallet')).toBeInTheDocument()
     })
 
     it('should call onOpenChange when modal is closed', () => {

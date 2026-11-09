@@ -625,7 +625,7 @@ export default function GroupPage({ params }: { params: { id: string } }) {
               <h2 className="text-xl font-bold mb-2">{group.name}</h2>
               {group.description && <p className="text-muted-foreground">{group.description}</p>}
             </div>
-            <Button className="w-full" onClick={handleJoinRequest}>
+            <Button size="xl" className="w-full" onClick={handleJoinRequest}>
               Request to Join Group
             </Button>
           </CardContent>
