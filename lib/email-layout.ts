@@ -157,9 +157,9 @@ export function renderEmail(content: EmailContent): string {
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;">
     <tr><td align="center" style="padding:24px 12px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;">
-        <tr><td align="center" style="background:${theme.band};padding:28px 24px;">
+        <tr><td align="center" style="background:${theme.band};padding:18px 24px 14px;">
           <a href="${EMAIL_BASE_URL}" style="text-decoration:none;">
-            <img src="${EMAIL_BASE_URL}/email/logo-white.png" alt="Ganamos!" width="180" height="40" style="display:block;width:180px;height:40px;border:0;">
+            <img src="${EMAIL_BASE_URL}/email/logo-wordmark.png" alt="Ganamos!" width="150" height="66" style="display:block;width:150px;height:66px;border:0;">
           </a>
         </td></tr>
         <tr><td style="padding:36px 32px 12px;font-family:${FONT};">
