@@ -12,7 +12,7 @@ import { DonationModalProvider } from "@/components/donation-modal-provider"
 import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 import { ImageFadeIn } from "@/components/image-fade-in"
-import { LaunchSplash, LAUNCH_SPLASH_CSS } from "@/components/launch-splash"
+import { LaunchSplash, LAUNCH_SPLASH_CSS, LAUNCH_SPLASH_SCRIPT } from "@/components/launch-splash"
 
 const inter = Inter({ subsets: ["latin"] })
 // Self-hosted (was a render-blocking Google Fonts stylesheet that delayed the
@@ -57,6 +57,7 @@ export default function RootLayout({
         <link rel="icon" href="/favicon.png" type="image/png" sizes="48x48" />
         <link rel="apple-touch-icon" href="/icon-512x512.png" />
         <style dangerouslySetInnerHTML={{ __html: LAUNCH_SPLASH_CSS }} />
+        <script dangerouslySetInnerHTML={{ __html: LAUNCH_SPLASH_SCRIPT }} />
         <link rel="preload" href="/splash/launch-icon.png" as="image" />
         {/* iOS launch splash: shown instead of a black screen while the app loads */}
         {SPLASH_SCREENS.map(([w, h, dpr]) => (
@@ -71,7 +72,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
         {/* Theme color for iOS status bar - changes based on color scheme */}
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#020617" media="(prefers-color-scheme: dark)" />
         <script src="https://hive.sphinx.chat/js/staktrak.js" async></script>
         {/* Blocking script to prevent theme FOUC (Flash of Unstyled Content) */}
         <script

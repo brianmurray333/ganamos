@@ -57,10 +57,25 @@ export function LaunchSplash() {
   )
 }
 
+/**
+ * The iOS launch image centres the icon on the whole screen, but with the
+ * default status bar style the page starts below the status bar, so a plain
+ * centred icon sat half a status bar lower and visibly jumped at the handover.
+ * This runs in <head> before first paint and records half the height hidden
+ * above the page; the CSS below lifts the icon by that much.
+ */
+export const LAUNCH_SPLASH_SCRIPT = `(function(){try{
+  // iOS home-screen app only (navigator.standalone is iOS-specific); desktop
+  // and Android installed apps have no launch image to line up with.
+  if(window.navigator.standalone!==true)return;
+  var shift=(screen.height-window.innerHeight)/2;
+  if(shift>0&&shift<60)document.documentElement.style.setProperty('--launch-shift',shift+'px');
+}catch(e){}})();`
+
 export const LAUNCH_SPLASH_CSS = `
 #launch-splash{display:none}
 @media (display-mode: standalone){
-  #launch-splash{display:flex;position:fixed;inset:0;z-index:2147483647;align-items:center;justify-content:center;background:#020617;transition:opacity .35s ease-out}
+  #launch-splash{display:flex;position:fixed;inset:0;z-index:2147483647;align-items:center;justify-content:center;background:#020617;transition:opacity .35s ease-out;padding-bottom:calc(var(--launch-shift,0px) * 2)}
 }
 #launch-splash.is-hiding{opacity:0;pointer-events:none}
 #launch-splash img{width:96px;height:96px;border-radius:22px;animation:launch-pulse 1.2s ease-in-out 1s infinite}
