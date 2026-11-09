@@ -51,6 +51,14 @@ import { LoadingSpinner } from "@/components/loading-spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import QRCode from "@/components/qr-code";
 
+// Whose per-user profile caches to read on mount: the connected account being
+// viewed, else the signed-in main account (activeUserId is unset for it, so
+// its id is remembered separately and cleared on sign-out).
+const MAIN_USER_CACHE_KEY = "ganamos_main_user_id"
+function getProfileCacheUserId(): string | null {
+  return localStorage.getItem("ganamos_active_user_id") || localStorage.getItem(MAIN_USER_CACHE_KEY)
+}
+
 const PROFILE_CARD_CLASS =
   "mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card";
 
@@ -136,7 +144,7 @@ export default function ProfilePage() {
   const [postedIssuesCount, setPostedIssuesCount] = useState<number | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       const cached = userId ? localStorage.getItem(`ganamos_post_count_${userId}`) : null;
       return cached !== null && !Number.isNaN(Number(cached)) ? Number(cached) : null;
     } catch {
@@ -205,7 +213,7 @@ export default function ProfilePage() {
   const [cachedBalance, setCachedBalance] = useState<number | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       const cached = localStorage.getItem(`${CACHE_KEYS.BALANCE}_${userId}`);
       if (cached) {
@@ -219,7 +227,7 @@ export default function ProfilePage() {
   const [cachedAvatar, setCachedAvatar] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       return localStorage.getItem(`${CACHE_KEYS.AVATAR}_${userId}`);
     } catch (e) {}
@@ -230,7 +238,7 @@ export default function ProfilePage() {
   const [petStatusKnown] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       return !!userId && localStorage.getItem(`ganamos_pet_${userId}`) !== null;
     } catch {
       return false;
@@ -239,7 +247,7 @@ export default function ProfilePage() {
   const [cachedPet, setCachedPet] = useState<any>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       const cached = localStorage.getItem(`${CACHE_KEYS.PET}_${userId}`);
       if (cached) {
@@ -253,7 +261,7 @@ export default function ProfilePage() {
   const [cachedHasConnectedAccounts, setCachedHasConnectedAccounts] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return false;
       return localStorage.getItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${userId}`) === 'true';
     } catch (e) {}
@@ -263,7 +271,7 @@ export default function ProfilePage() {
   const [cachedFamilyCount, setCachedFamilyCount] = useState(() => {
     if (typeof window === 'undefined') return 0;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return 0;
       const cached = localStorage.getItem(`${CACHE_KEYS.FAMILY_COUNT}_${userId}`);
       if (cached) {
@@ -382,19 +390,27 @@ export default function ProfilePage() {
     fetchPostsCount();
   }, [profile?.id, supabase]);
 
+  // Remember the main account's id so the caches below can be read on mount
+  useEffect(() => {
+    if (user?.id) {
+      try { localStorage.setItem(MAIN_USER_CACHE_KEY, user.id); } catch {}
+    }
+  }, [user?.id]);
+
   // Cache balance and avatar when profile changes
   useEffect(() => {
-    if (profile && activeUserId) {
+    const cacheUserId = activeUserId || profile?.id;
+    if (profile && cacheUserId) {
       // Cache balance
       localStorage.setItem(
-        `${CACHE_KEYS.BALANCE}_${activeUserId}`,
+        `${CACHE_KEYS.BALANCE}_${cacheUserId}`,
         JSON.stringify({ balance: profile.balance, timestamp: Date.now() })
       );
       setCachedBalance(profile.balance);
       
       // Cache avatar
       if (profile.avatar_url) {
-        localStorage.setItem(`${CACHE_KEYS.AVATAR}_${activeUserId}`, profile.avatar_url);
+        localStorage.setItem(`${CACHE_KEYS.AVATAR}_${cacheUserId}`, profile.avatar_url);
         setCachedAvatar(profile.avatar_url);
       }
     }
@@ -402,12 +418,13 @@ export default function ProfilePage() {
 
   // Cache connected accounts state
   useEffect(() => {
-    if (activeUserId) {
+    const cacheUserId = activeUserId || profile?.id;
+    if (cacheUserId) {
       const hasConnected = connectedAccounts.length > 0;
-      localStorage.setItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${activeUserId}`, hasConnected.toString());
+      localStorage.setItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${cacheUserId}`, hasConnected.toString());
       setCachedHasConnectedAccounts(hasConnected);
     }
-  }, [connectedAccounts, activeUserId, CACHE_KEYS.CONNECTED_ACCOUNTS]);
+  }, [connectedAccounts, activeUserId, profile?.id, CACHE_KEYS.CONNECTED_ACCOUNTS]);
 
   // Redirect if not authenticated
   useEffect(() => {
