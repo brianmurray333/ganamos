@@ -13,6 +13,7 @@ vi.mock('@/app/actions/post-actions', () => ({
 
 const mockInsert = vi.fn()
 const mockPostsUpdate = vi.fn()
+let postsUpdateResult: any = { data: [{ id: 'post' }], error: null }
 function chain(result: any): any {
   const c: any = {}
   for (const m of ['eq', 'is', 'neq']) c[m] = vi.fn(() => c)
@@ -30,7 +31,7 @@ vi.mock('@/lib/supabase', () => ({
         return {
           update: (values: any) => {
             mockPostsUpdate(values)
-            return chain({ data: [{ id: 'post' }], error: null })
+            return chain(postsUpdateResult)
           },
         }
       }
@@ -62,6 +63,7 @@ describe('POST /api/fixes - Replay Protection', () => {
     vi.clearAllMocks()
     process.env.NODE_ENV = 'production'
     mockInsert.mockResolvedValue({ error: null })
+    postsUpdateResult = { data: [{ id: 'post' }], error: null }
   })
 
   afterEach(() => {
@@ -178,5 +180,19 @@ describe('POST /api/fixes - Replay Protection', () => {
 
     expect(response.status).toBe(409)
     expect(data.error).toContain('already been used')
+  })
+
+  it('does not report success when the L402 token could not be linked to the fix', async () => {
+    vi.mocked(l402.parseL402Header).mockReturnValue({ macaroon: 'mock-mac', preimage: 'mock-pre' } as any)
+    vi.mocked(l402.verifyL402Token).mockResolvedValue({ success: true, paymentHash: 'hash-789', macaroon: {} as any })
+    vi.mocked(postActions.submitAnonymousFixForReviewAction).mockResolvedValue({ success: true } as any)
+    postsUpdateResult = { data: [], error: null }
+
+    const response = await POST(createMockRequest({ post_id: 'post-1', proof_text: 'done' }, 'L402 mock-mac:mock-pre'))
+    const data = await response.json()
+
+    expect(response.status).toBe(500)
+    expect(data).toMatchObject({ post_id: 'post-1', payment_hash: 'hash-789' })
+    expect(mockPostsUpdate).toHaveBeenCalledTimes(2) // retried once
   })
 })

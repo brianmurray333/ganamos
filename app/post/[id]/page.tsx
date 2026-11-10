@@ -1709,7 +1709,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 Verifying...
               </div>
             ) : (
-              "Claim Reward"
+              "Claim reward"
             )}
           </Button>
         </div>
@@ -1804,7 +1804,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 Submitting...
               </div>
             ) : (
-              "Claim Reward"
+              "Claim reward"
             )}
           </Button>
         </div>
@@ -1851,7 +1851,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </svg>
             <span className="sr-only">Back</span>
           </Button>
-          <h1 className="text-xl font-bold">Review Fix</h1>
+          <h1 className="text-xl font-bold">Review fix</h1>
         </div>
 
         <div className="space-y-4">
@@ -1908,6 +1908,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           {/* Action Buttons */}
           <div className="space-y-2 pt-2">
             <Button
+              size="xl"
               onClick={async () => {
                 setIsClosingIssue(true)
                 try {
@@ -1999,7 +2000,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         {post && (
           <>
             {/* Desktop: Side-by-side layout | Mobile: Single column */}
-            <div className="min-h-[100dvh] lg:min-h-0 lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-white dark:bg-gray-900">
+            <div className="min-h-[100dvh] lg:min-h-0 lg:flex lg:h-[calc(100vh-64px)] lg:overflow-hidden bg-background animate-in fade-in duration-300">
               {/* Left Panel - Post Details (scrollable) */}
               <div className="w-full lg:w-[380px] xl:w-[420px] lg:flex-shrink-0 lg:overflow-y-auto lg:border-r lg:border-gray-200 lg:dark:border-gray-800">
                 <div className="container px-4 pt-4 pb-6 lg:pt-4 lg:pb-8 mx-auto max-w-md lg:max-w-none">
@@ -2500,8 +2501,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </div>
                 </CardContent>
               </Card>
-              <div className="flex space-x-3">
-                <Button onClick={handleApproveFix} disabled={isReviewing} className="flex-1 w-full">
+              <div className="flex flex-col gap-3">
+                <Button size="xl" onClick={handleApproveFix} disabled={isReviewing} className="w-full">
                   {isReviewing ? (
                     <div className="flex items-center">
                       <svg
@@ -2530,7 +2531,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     "Approve & Pay Reward"
                   )}
                 </Button>
-                <Button onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="flex-1">
+                <Button size="xl" onClick={handleRejectFix} disabled={isReviewing} variant="outline" className="w-full">
                   Reject Fix
                 </Button>
               </div>
@@ -2564,10 +2565,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </p>
                   
                   <div className="space-y-3">
-                    <Button className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
+                    <Button size="xl" className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
                       Withdraw {formatSatsValue(post.reward)}
                     </Button>
                     <Button
+                      size="xl"
                       variant="outline"
                       className="w-full"
                       onClick={() => {
@@ -2702,7 +2704,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 setShowCloseIssueDialog(true)
               }}
             >
-              Mark Complete
+              Mark complete
             </Button>
           )}
 
@@ -2735,7 +2737,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           <div className="bg-background border rounded-lg p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Close Issue</h3>
+                <h3 className="text-lg font-semibold">Close issue</h3>
                 <button
                   onClick={() => setShowCloseIssueDialog(false)}
                   className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
@@ -2866,6 +2868,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               {/* Action buttons */}
               <div className="space-y-2 pt-2">
                 <Button
+                  size="xl"
                   onClick={handleCloseIssue}
                   disabled={!selectedFixerUsername || isClosingIssue}
                   className="w-full bg-green-600 hover:bg-green-700 text-white"
@@ -2916,21 +2919,23 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               <p className="text-sm text-muted-foreground">
                 This will remove the post. Your {formatSatsValue(post?.reward || 0)} reward will be refunded to your wallet.
               </p>
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3">
                 <Button
+                  size="xl"
+                  onClick={handleDeletePost}
+                  disabled={isDeletingPost}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white"
+                >
+                  {isDeletingPost ? "Deleting..." : "Delete post"}
+                </Button>
+                <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => setShowDeleteConfirm(false)}
-                  className="flex-1"
+                  className="w-full"
                   disabled={isDeletingPost}
                 >
                   Cancel
-                </Button>
-                <Button
-                  onClick={handleDeletePost}
-                  disabled={isDeletingPost}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white"
-                >
-                  {isDeletingPost ? "Deleting..." : "Delete Post"}
                 </Button>
               </div>
             </div>

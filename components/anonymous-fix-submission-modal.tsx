@@ -143,6 +143,7 @@ export function AnonymousFixSubmissionModal({
             )}
 
             <Button
+              size="xl"
               onClick={handleSubmitLightningAddress}
               disabled={!lightningAddress.trim() || isSubmitting}
               className="w-full bg-green-600 hover:bg-green-700"
@@ -161,6 +162,7 @@ export function AnonymousFixSubmissionModal({
           </div>
 
           <Button
+            size="xl"
             variant="outline"
             onClick={handleCreateAccount}
             className="w-full"

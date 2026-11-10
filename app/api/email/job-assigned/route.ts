@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
+import { renderEmail, escapeHtml } from "@/lib/email-layout"
 
 /**
  * Send email notification when a job is assigned to a specific person
@@ -128,52 +129,22 @@ export async function POST(request: Request) {
       from: process.env.RESEND_FROM_EMAIL || "Ganamos <notifications@ganamos.earth>",
       to: assignedProfile.email,
       subject: `🎯 ${assignerName} assigned you a job!`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-              .header { text-align: center; padding: 20px 0; }
-              .content { background: #f9f9f9; padding: 30px; border-radius: 10px; }
-              .job-card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin: 20px 0; }
-              .job-title { font-size: 18px; font-weight: bold; color: #333; margin-bottom: 10px; }
-              .job-description { color: #666; margin-bottom: 15px; }
-              .reward { display: inline-block; background: #fef3c7; color: #d97706; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 14px; }
-              .button { display: inline-block; background: #22c55e; color: white !important; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0; }
-              .footer { text-align: center; padding: 20px 0; color: #666; font-size: 14px; }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="header">
-                <h1 style="color: #ffffff !important;">🎯 New Job Assignment</h1>
-              </div>
-              <div class="content">
-                <p>Hi ${recipientName}!</p>
-                <p><strong>${assignerName}</strong> has assigned you a job:</p>
-                
-                <div class="job-card">
-                  <div class="job-title">${jobTitle}</div>
-                  ${jobDescription && jobDescription !== jobTitle ? `<div class="job-description">${jobDescription.substring(0, 200)}${jobDescription.length > 200 ? '...' : ''}</div>` : ''}
-                  <div class="reward">⚡ ${reward.toLocaleString()} sats reward</div>
-                </div>
-                
-                <p>Complete this job to earn the reward!</p>
-                
-                <div style="text-align: center;">
-                  <a href="${postUrl}" class="button">View Job Details</a>
-                </div>
-              </div>
-              <div class="footer">
-                <p>You received this email because someone assigned a job to you on Ganamos.</p>
-                <p><a href="https://ganamos.earth">ganamos.earth</a></p>
-              </div>
-            </div>
-          </body>
-        </html>
-      `,
+      html: renderEmail({
+        title: "New job assignment",
+        preheader: `${assignerName} assigned you a job: ${jobTitle}`,
+        greeting: escapeHtml(recipientName),
+        paragraphs: [`<strong>${escapeHtml(assignerName)}</strong> has assigned you a job.`],
+        details: [
+          ["Job", escapeHtml(jobTitle)],
+          ...(jobDescription && jobDescription !== jobTitle
+            ? [["Details", escapeHtml(jobDescription.substring(0, 200) + (jobDescription.length > 200 ? "..." : ""))] as [string, string]]
+            : []),
+          ["Reward", `${reward.toLocaleString()} sats`],
+        ],
+        button: { label: "View Job Details", href: postUrl },
+        afterParagraphs: ["Complete this job to earn the reward!"],
+        footer: `You received this email because someone assigned a job to you on <a href="https://www.ganamos.earth" style="color:#16a34a;text-decoration:none;">Ganamos</a>.`,
+      }),
     })
 
     console.log(`[Job Assigned Email] Sent to ${assignedProfile.email} for job ${postId}`)

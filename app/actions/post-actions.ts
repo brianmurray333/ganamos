@@ -4,11 +4,10 @@ import { createInvoice, checkInvoice } from "@/lib/lightning"
 import { v4 as uuidv4 } from "uuid" // Ensure uuid is imported if used, e.g. in createFundedAnonymousPostAction
 import { createServerSupabaseClient } from "@/lib/supabase" // For createFundedAnonymousPostAction
 import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning-validation"
-import { sendRewardOnHoldAlert } from "@/lib/security-alerts"
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
 import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
-import { AUTO_APPROVE_CONFIDENCE, createAdminClient, generateClaimToken, isPostFundingInvoiceMemo, isPostRewardFunded, payAnonymousRewardViaLightning, payFixReward, resolvePayoutInvoice, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
+import { AUTO_APPROVE_CONFIDENCE, createAdminClient, notifyRewardOnHold, generateClaimToken, isPostFundingInvoiceMemo, isPostRewardFunded, payAnonymousRewardViaLightning, payFixReward, resolvePayoutInvoice, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
 
 async function getCookieStore() {
   const { cookies } = await import("next/headers")
@@ -105,6 +104,8 @@ export async function payAnonymousFixLightningAddressAction(
   let lockId: string | null = null
   // Once we've tried to pay, never release the lock (a retry could pay twice)
   let paymentAttempted = false
+  let paidHash: string | null = null // set once LND confirms the payment
+  let paymentRecorded = false
   const releaseLock = async () => {
     if (!lockId) return
     await supabase
@@ -221,17 +222,20 @@ export async function payAnonymousFixLightningAddressAction(
         }
       }
       console.error("SECURITY: anonymous Lightning-address payout outcome uncertain; keeping lock", { postId, lockId })
-      await sendRewardOnHoldAlert({
+      await notifyRewardOnHold({
         postId,
         amount: post.reward,
-        source: "payAnonymousFixLightningAddressAction",
-        error: String((paymentResult as any)?.error ?? "unknown"),
+        reason: "payment_uncertain",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        details: String((paymentResult as any)?.error ?? ""),
       })
       return {
         success: false,
         error: "The payment could not be confirmed. The reward is on hold; please contact support.",
       }
     }
+
+    paidHash = (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage || "unknown"
 
     // Mark as paid
     const now = new Date().toISOString()
@@ -255,11 +259,20 @@ export async function payAnonymousFixLightningAddressAction(
 
     if (updateError) {
       console.error("Error marking anonymous fix reward as paid:", updateError)
+      await notifyRewardOnHold({
+        postId,
+        amount: post.reward,
+        reason: "paid_but_not_recorded",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        paymentHash: (paymentResult as any).paymentHash || (paymentResult as any).paymentPreimage,
+        details: updateError.message,
+      })
       return {
         success: false,
         error: "Payment was sent but there was an error updating our records. Please contact support.",
       }
     }
+    paymentRecorded = true
 
     // Create activity for the anonymous fix payment
     await supabase.from("activities").insert({
@@ -306,6 +319,15 @@ export async function payAnonymousFixLightningAddressAction(
   } catch (error) {
     if (!paymentAttempted) await releaseLock()
     console.error("Unexpected error in payAnonymousFixLightningAddressAction:", error)
+    if (paymentAttempted && !paymentRecorded) {
+      await notifyRewardOnHold({
+        postId,
+        reason: paidHash ? "paid_but_not_recorded" : "payment_uncertain",
+        flow: "Owner approved anonymous fix (Lightning address)",
+        paymentHash: paidHash,
+        details: error instanceof Error ? error.message : String(error),
+      })
+    }
     return {
       success: false,
       error: "An unexpected error occurred while processing the payment.",
@@ -443,6 +465,7 @@ export async function payAnonymousRewardAction(
     }
     return { success: true, paymentHash: payout.paymentHash || undefined }
   } catch (error) {
+    // Payment errors after the lock are handled (and alerted) in the helper
     console.error("Unexpected error in payAnonymousRewardAction:", error)
     return {
       success: false,
@@ -2460,20 +2483,6 @@ export async function deletePostAction(
       return { success: false, error: 'This post can no longer be deleted (fixed, under review, or a reward payout is in progress)' }
     }
 
-    // Create activity for the deletion
-    await adminSupabase.from('activities').insert({
-      id: uuidv4(),
-      user_id: effectiveUserId,
-      type: 'post_deleted',
-      related_id: postId,
-      related_table: 'posts',
-      timestamp: nowIso,
-      metadata: {
-        title: post.title || 'Deleted issue',
-        reward: post.reward || 0
-      },
-    })
-
     // Refund the reward back to the poster's balance, only if it was funded
     // (a post inserted directly with an unfunded reward must not mint sats)
     const rewardFunded = !!post.reward && post.reward > 0 && (await isPostRewardFunded(adminSupabase, { id: postId }))
@@ -2487,9 +2496,32 @@ export async function deletePostAction(
         p_memo: `Refund for deleted post: ${post.title || 'Issue'}`,
       })
       if (refundError) {
-        console.error('Error refunding post reward:', refundError)
+        // Don't strand the reward: undo the soft delete so the owner can retry
+        // (refund_post_reward is once-only, so a retry can't refund twice).
+        console.error('Error refunding post reward; restoring post:', refundError)
+        await adminSupabase
+          .from('posts')
+          .update({ deleted_at: null })
+          .eq('id', postId)
+          .eq('deleted_at', nowIso)
+          .is('reward_refunded_at', null)
+        return { success: false, error: 'Could not refund the reward. The post was not deleted; please try again.' }
       }
     }
+
+    // Create activity for the deletion
+    await adminSupabase.from('activities').insert({
+      id: uuidv4(),
+      user_id: effectiveUserId,
+      type: 'post_deleted',
+      related_id: postId,
+      related_table: 'posts',
+      timestamp: nowIso,
+      metadata: {
+        title: post.title || 'Deleted issue',
+        reward: post.reward || 0
+      },
+    })
 
     console.log(`Post deleted: ${postId} by user ${effectiveUserId}`)
     return { success: true }

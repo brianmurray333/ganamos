@@ -151,11 +151,22 @@ export async function POST(request: NextRequest) {
 
     // Link this L402 token (and payout target) to the submission.
     const { createAdminClient, recordAgentFixPayoutDetails } = await import('@/lib/payouts')
-    await recordAgentFixPayoutDetails(createAdminClient(), {
+    const linkDetails = () => recordAgentFixPayoutDetails(createAdminClient(), {
       postId: post_id,
       paymentHash: verification.paymentHash!,
       payoutInvoice: payout_invoice || null,
     })
+    // Without this link the token can't poll or claim, so don't report success.
+    if (!(await linkDetails()) && !(await linkDetails())) {
+      console.error('[/api/fixes] Fix submitted but L402 credential not linked', { post_id, paymentHash: verification.paymentHash })
+      return corsResponse(
+        NextResponse.json({
+          error: 'Your fix was submitted, but we could not link your L402 token to it. Contact support with this post_id and payment_hash to claim the reward.',
+          post_id,
+          payment_hash: verification.paymentHash,
+        }, { status: 500 })
+      )
+    }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'
 

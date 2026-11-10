@@ -148,6 +148,7 @@ export function ShareGroupModal({ open, onOpenChange, group, onDone }: ShareGrou
 
         <DialogFooter>
           <Button
+            size="xl"
             type="button"
             onClick={handleDone}
             className="w-full bg-green-600 hover:bg-green-700 text-white"

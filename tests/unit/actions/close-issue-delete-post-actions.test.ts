@@ -592,14 +592,22 @@ describe('deletePostAction', () => {
       expect(post().deleted_at).toBeTruthy()
     })
 
-    it('still reports the deletion when the refund fails (nothing credited)', async () => {
+    it('restores the post when the refund fails, so the owner can retry', async () => {
       setup()
       db.failOp = op => (op.op === 'rpc' && op.table === 'refund_post_reward' ? { message: 'Refund failed' } : null)
 
-      expect(await del()).toEqual({ success: true })
-      expect(post().deleted_at).toBeTruthy()
+      const result = await del()
+      expect(result.success).toBe(false)
+      expect(post().deleted_at).toBeFalsy()
       expect(balance(OWNER_ID)).toBe(OWNER_START)
       expect(refundTxs()).toHaveLength(0)
+      expect(db.rows('activities')).toHaveLength(0)
+
+      // Retry succeeds and refunds once
+      db.failOp = () => null
+      expect(await del()).toEqual({ success: true })
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toHaveLength(1)
     })
 
     it('credits the refund and its ledger entry together', async () => {

@@ -23,6 +23,8 @@ const buttonVariants = cva(
         default: "h-10 px-4 py-2",
         sm: "h-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
+        // Primary/secondary actions in modals and sheets; matches the new-post "Post" button
+        xl: "h-12 rounded-lg px-4 text-lg font-semibold",
         icon: "h-10 w-10",
       },
     },

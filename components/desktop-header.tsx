@@ -175,7 +175,7 @@ export function DesktopHeader() {
             height={32}
             className="rounded-lg"
           />
-          <span className="text-xl font-semibold text-gray-900 dark:text-white" style={{ fontFamily: 'Pacifico, cursive' }}>
+          <span className="text-xl font-semibold text-gray-900 dark:text-white" style={{ fontFamily: 'var(--font-pacifico), Pacifico, cursive' }}>
             Ganamos
           </span>
         </a>

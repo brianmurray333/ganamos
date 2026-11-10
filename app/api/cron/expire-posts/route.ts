@@ -105,19 +105,6 @@ export async function GET(request: NextRequest) {
         .select('id')
       if (!expiredRows?.length) continue
 
-      // Log activity
-      await adminSupabase.from('activities').insert({
-        id: uuidv4(),
-        user_id: post.user_id,
-        type: 'post_expired',
-        related_id: post.id,
-        related_table: 'posts',
-        timestamp: nowIso,
-        metadata: {
-          title: post.title || 'Expired post',
-          reward: post.reward || 0,
-        },
-      })
 
       // Refund sats if post has a reward and an authenticated user
       // Only refund rewards that were actually funded
@@ -138,7 +125,15 @@ export async function GET(request: NextRequest) {
           .single()
 
         if (refundError) {
-          console.error(`Refund failed for expired post ${post.id}:`, refundError)
+          // Undo the expiry so the next run retries (the refund is once-only)
+          console.error(`Refund failed for expired post ${post.id}; restoring it for retry:`, refundError)
+          await adminSupabase
+            .from('posts')
+            .update({ deleted_at: null })
+            .eq('id', post.id)
+            .eq('deleted_at', nowIso)
+            .is('reward_refunded_at', null)
+          continue
         } else if (profile) {
           // Send confirmation email
           if (profile.email && !profile.email.includes('@ganamos.app')) {
@@ -154,6 +149,20 @@ export async function GET(request: NextRequest) {
           }
         }
       }
+
+      // Log activity
+      await adminSupabase.from('activities').insert({
+        id: uuidv4(),
+        user_id: post.user_id,
+        type: 'post_expired',
+        related_id: post.id,
+        related_table: 'posts',
+        timestamp: nowIso,
+        metadata: {
+          title: post.title || 'Expired post',
+          reward: post.reward || 0,
+        },
+      })
 
       // Clear assignment and notify fixer
       if (post.assigned_to) {

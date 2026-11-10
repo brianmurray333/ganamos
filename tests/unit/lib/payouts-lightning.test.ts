@@ -170,7 +170,8 @@ describe('isPostFundingInvoiceMemo', () => {
 
 describe('isPostRewardFunded: post_funding_overrides', () => {
   const owned = (extra: Record<string, any> = {}) => new FakeDb({
-    posts: [{ id: POST_ID, user_id: 'owner-1', reward: 1000, created_at: '2026-11-08T12:00:00Z', funding_transaction_id: null, ...extra }],
+    // Legacy post: created before funding links, no funding link
+    posts: [{ id: POST_ID, user_id: 'owner-1', reward: 1000, created_at: '2026-10-01T12:00:00Z', funding_transaction_id: null, ...extra }],
     transactions: [],
   })
 
@@ -185,6 +186,13 @@ describe('isPostRewardFunded: post_funding_overrides', () => {
     const { isPostRewardFunded } = await import('@/lib/payouts')
     const db = owned()
     db.table('post_funding_overrides').push({ post_id: POST_ID, amount: 999 })
+    expect(await isPostRewardFunded(db.client(), { id: POST_ID })).toBe(false)
+  })
+
+  it('does not let an override fund a post created after funding links existed', async () => {
+    const { isPostRewardFunded } = await import('@/lib/payouts')
+    const db = owned({ created_at: '2026-11-09T12:00:00Z' })
+    db.table('post_funding_overrides').push({ post_id: POST_ID, amount: 1000 })
     expect(await isPostRewardFunded(db.client(), { id: POST_ID })).toBe(false)
   })
 

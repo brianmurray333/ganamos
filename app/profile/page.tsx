@@ -51,6 +51,14 @@ import { LoadingSpinner } from "@/components/loading-spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import QRCode from "@/components/qr-code";
 
+// Whose per-user profile caches to read on mount: the connected account being
+// viewed, else the signed-in main account (activeUserId is unset for it, so
+// its id is remembered separately and cleared on sign-out).
+const MAIN_USER_CACHE_KEY = "ganamos_main_user_id"
+function getProfileCacheUserId(): string | null {
+  return localStorage.getItem("ganamos_active_user_id") || localStorage.getItem(MAIN_USER_CACHE_KEY)
+}
+
 const PROFILE_CARD_CLASS =
   "mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card";
 
@@ -131,7 +139,18 @@ export default function ProfilePage() {
   const router = useRouter();
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [showAvatarSelector, setShowAvatarSelector] = useState(false);
-  const [postedIssuesCount, setPostedIssuesCount] = useState<number>(0);
+  // Post count isn't on the profile row (fixes are), so it's fetched; keep the
+  // last value per user so it shows instantly like Fixes instead of 0 → N.
+  const [postedIssuesCount, setPostedIssuesCount] = useState<number | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const userId = getProfileCacheUserId();
+      const cached = userId ? localStorage.getItem(`ganamos_post_count_${userId}`) : null;
+      return cached !== null && !Number.isNaN(Number(cached)) ? Number(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [fixedIssuesCount, setFixedIssuesCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(() => {
@@ -194,7 +213,7 @@ export default function ProfilePage() {
   const [cachedBalance, setCachedBalance] = useState<number | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       const cached = localStorage.getItem(`${CACHE_KEYS.BALANCE}_${userId}`);
       if (cached) {
@@ -208,22 +227,32 @@ export default function ProfilePage() {
   const [cachedAvatar, setCachedAvatar] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       return localStorage.getItem(`${CACHE_KEYS.AVATAR}_${userId}`);
     } catch (e) {}
     return null;
   });
   
+  // Whether we've seen this account's pet status before (pet or no pet)
+  const [petStatusKnown] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const userId = getProfileCacheUserId();
+      return !!userId && localStorage.getItem(`ganamos_pet_${userId}`) !== null;
+    } catch {
+      return false;
+    }
+  });
   const [cachedPet, setCachedPet] = useState<any>(() => {
     if (typeof window === 'undefined') return null;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return null;
       const cached = localStorage.getItem(`${CACHE_KEYS.PET}_${userId}`);
       if (cached) {
-        const { pet, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < 60 * 60 * 1000) return pet;
+        const { pet } = JSON.parse(cached);
+        if (pet) return pet;
       }
     } catch (e) {}
     return null;
@@ -232,7 +261,7 @@ export default function ProfilePage() {
   const [cachedHasConnectedAccounts, setCachedHasConnectedAccounts] = useState(() => {
     if (typeof window === 'undefined') return false;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return false;
       return localStorage.getItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${userId}`) === 'true';
     } catch (e) {}
@@ -242,7 +271,7 @@ export default function ProfilePage() {
   const [cachedFamilyCount, setCachedFamilyCount] = useState(() => {
     if (typeof window === 'undefined') return 0;
     try {
-      const userId = localStorage.getItem('ganamos_active_user_id');
+      const userId = getProfileCacheUserId();
       if (!userId) return 0;
       const cached = localStorage.getItem(`${CACHE_KEYS.FAMILY_COUNT}_${userId}`);
       if (cached) {
@@ -311,7 +340,10 @@ export default function ProfilePage() {
             setCachedPet(petData);
           } else {
             // Clear cache when no devices are connected
-            localStorage.removeItem(`${CACHE_KEYS.PET}_${targetUserId}`);
+            localStorage.setItem(
+              `${CACHE_KEYS.PET}_${targetUserId}`,
+              JSON.stringify({ pet: null, timestamp: Date.now() })
+            );
             setCachedPet(null);
           }
       }
@@ -329,27 +361,26 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchPostsCount = async () => {
       if (!profile?.id) return;
+      const countKey = `ganamos_post_count_${profile.id}`;
+      // Switching accounts: show this account's last known count right away
+      try {
+        const cached = localStorage.getItem(countKey);
+        setPostedIssuesCount(cached !== null && !Number.isNaN(Number(cached)) ? Number(cached) : null);
+      } catch {}
       
       try {
-        // Fetch posts created by user
-        const { data: posted, error: postedError } = await supabase
-          .from("posts")
-          .select("id")
-          .eq("user_id", profile.id)
-          .is("deleted_at", null);
+        // Count posts created / fixed by the user (counts only, no rows)
+        const [{ count: postedCount, error: postedError }, { count: fixedCount, error: fixedError }] = await Promise.all([
+          supabase.from("posts").select("id", { count: "exact", head: true }).eq("user_id", profile.id).is("deleted_at", null),
+          supabase.from("posts").select("id", { count: "exact", head: true }).eq("fixed_by", profile.id).is("deleted_at", null),
+        ]);
         
-        // Fetch posts fixed by user  
-        const { data: fixed, error: fixedError } = await supabase
-          .from("posts")
-          .select("id")
-          .eq("fixed_by", profile.id)
-          .is("deleted_at", null);
-        
-        if (!postedError && posted) {
-          setPostedIssuesCount(posted.length);
+        if (!postedError && typeof postedCount === "number") {
+          setPostedIssuesCount(postedCount);
+          try { localStorage.setItem(countKey, String(postedCount)); } catch {}
         }
-        if (!fixedError && fixed) {
-          setFixedIssuesCount(fixed.length);
+        if (!fixedError && typeof fixedCount === "number") {
+          setFixedIssuesCount(fixedCount);
         }
       } catch (error) {
         console.error("Failed to fetch posts count:", error);
@@ -359,19 +390,27 @@ export default function ProfilePage() {
     fetchPostsCount();
   }, [profile?.id, supabase]);
 
+  // Remember the main account's id so the caches below can be read on mount
+  useEffect(() => {
+    if (user?.id) {
+      try { localStorage.setItem(MAIN_USER_CACHE_KEY, user.id); } catch {}
+    }
+  }, [user?.id]);
+
   // Cache balance and avatar when profile changes
   useEffect(() => {
-    if (profile && activeUserId) {
+    const cacheUserId = activeUserId || profile?.id;
+    if (profile && cacheUserId) {
       // Cache balance
       localStorage.setItem(
-        `${CACHE_KEYS.BALANCE}_${activeUserId}`,
+        `${CACHE_KEYS.BALANCE}_${cacheUserId}`,
         JSON.stringify({ balance: profile.balance, timestamp: Date.now() })
       );
       setCachedBalance(profile.balance);
       
       // Cache avatar
       if (profile.avatar_url) {
-        localStorage.setItem(`${CACHE_KEYS.AVATAR}_${activeUserId}`, profile.avatar_url);
+        localStorage.setItem(`${CACHE_KEYS.AVATAR}_${cacheUserId}`, profile.avatar_url);
         setCachedAvatar(profile.avatar_url);
       }
     }
@@ -379,12 +418,13 @@ export default function ProfilePage() {
 
   // Cache connected accounts state
   useEffect(() => {
-    if (activeUserId) {
+    const cacheUserId = activeUserId || profile?.id;
+    if (cacheUserId) {
       const hasConnected = connectedAccounts.length > 0;
-      localStorage.setItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${activeUserId}`, hasConnected.toString());
+      localStorage.setItem(`${CACHE_KEYS.CONNECTED_ACCOUNTS}_${cacheUserId}`, hasConnected.toString());
       setCachedHasConnectedAccounts(hasConnected);
     }
-  }, [connectedAccounts, activeUserId, CACHE_KEYS.CONNECTED_ACCOUNTS]);
+  }, [connectedAccounts, activeUserId, profile?.id, CACHE_KEYS.CONNECTED_ACCOUNTS]);
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -506,13 +546,19 @@ export default function ProfilePage() {
                     className="w-28 h-28 rounded-full overflow-hidden cursor-pointer border-[3px] border-gray-200 dark:border-gray-600 shadow-lg"
                 onClick={() => setShowAvatarSelector(true)}
               >
-                <Image
-                      src={profile.avatar_url || cachedAvatar || "/placeholder.svg?height=112&width=112"}
+                {/* Plain <img> on the photo URL (like the family avatars) so the
+                    browser's cached copy shows instantly when switching tabs;
+                    next/image re-requested an optimized copy each visit. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={profile.avatar_url || cachedAvatar || "/placeholder.svg?height=112&width=112"}
                   alt={profile.name || "User"}
-                      width={112}
-                      height={112}
-                      className="object-cover w-full h-full"
-                    />
+                  width={112}
+                  height={112}
+                  loading="eager"
+                  decoding="async"
+                  className="object-cover w-full h-full"
+                />
                   </div>
                   {/* QR Code Badge - Green background with white QR */}
                   <button
@@ -698,7 +744,11 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <p className="text-[22px] font-bold text-gray-900 dark:text-white leading-none">
-                      {postedIssuesCount}
+                      {postedIssuesCount === null ? (
+                        <span className="inline-block h-[22px] w-6 rounded-md bg-muted animate-pulse align-top" aria-label="Loading" />
+                      ) : (
+                        postedIssuesCount
+                      )}
                     </p>
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Posts</p>
                   </div>
@@ -709,7 +759,9 @@ export default function ProfilePage() {
                   className="pt-3 cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => hasPet ? router.push('/pet-settings') : router.push('/connect-pet')}
                 >
-                  {hasPet ? (
+                  {!hasPet && isDevicesLoading && !petStatusKnown ? (
+                    <div className="w-7 h-7 rounded-full bg-muted animate-pulse" aria-label="Loading" />
+                  ) : hasPet ? (
                     <div className="w-7 h-7 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center">
                       {getPetIcon((connectedDevices[0]?.pet_type || cachedPet?.pet_type), 16)}
                     </div>
@@ -719,7 +771,7 @@ export default function ProfilePage() {
                     </div>
                   )}
                   <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                    {hasPet ? (connectedDevices[0]?.pet_name || cachedPet?.pet_name || "Pet") : "Connect Pet"}
+                    {hasPet ? (connectedDevices[0]?.pet_name || cachedPet?.pet_name || "Pet") : isDevicesLoading && !petStatusKnown ? "\u00a0" : "Connect Pet"}
                   </p>
                 </div>
               </div>

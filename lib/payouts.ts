@@ -33,10 +33,10 @@ const FUNDING_LINK_CUTOFF = "2026-11-08T00:00:00Z"
  *   must point to the owner's completed internal deduction.
  * - Older posts without that link: an unlinked deduction of exactly the
  *   reward by the owner within 2 minutes of the post's creation.
+ * - Older posts an admin vouched for: a post_funding_overrides row covering
+ *   the reward (server-only table).
  * - Anonymous web/API posts: funding_status 'paid' with a funding invoice,
  *   verified as settled when the post was created.
- * - Any post with a post_funding_overrides row covering its reward
- *   (funding verified out of band; server-only table).
  * Browser sessions can't set any of these fields (DB triggers).
  */
 export async function isPostRewardFunded(
@@ -50,14 +50,6 @@ export async function isPostRewardFunded(
     .single()
   if (!post) return false
   if (!post.reward || post.reward <= 0) return true // nothing to fund
-
-  // Funding verified out of band (server-only table, no browser access)
-  const { data: override } = await admin
-    .from("post_funding_overrides")
-    .select("amount")
-    .eq("post_id", post.id)
-    .maybeSingle()
-  if (override && Number(override.amount) >= post.reward) return true
 
   if (!post.user_id) {
     return post.funding_status === "paid" && !!post.funding_r_hash
@@ -74,6 +66,15 @@ export async function isPostRewardFunded(
 
   // Legacy posts (no funding link)
   if (!post.created_at || new Date(post.created_at) >= new Date(FUNDING_LINK_CUTOFF)) return false
+
+  // Admin-approved funding (post_funding_overrides), up to the amount vouched for
+  const { data: override } = await admin
+    .from("post_funding_overrides")
+    .select("amount")
+    .eq("post_id", post.id)
+    .maybeSingle()
+  if (override && override.amount >= post.reward) return true
+
   const created = new Date(post.created_at).getTime()
   const amounts = Array.from(new Set([post.reward, post.original_reward].filter((a): a is number => !!a && a > 0)))
   const { data: candidates } = await admin
@@ -257,6 +258,28 @@ export async function resolvePayoutInvoice(
   return { ok: true, invoice }
 }
 
+/**
+ * Alert the admin that a reward payout is on hold, waiting at most
+ * `timeoutMs` so a stalled email transport can't hang the payout response.
+ * Never throws (the lock is what keeps the reward safe; the alert is advisory).
+ */
+export async function notifyRewardOnHold(
+  params: Parameters<typeof sendRewardOnHoldAlert>[0],
+  timeoutMs = 5000
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      sendRewardOnHoldAlert(params),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs) }),
+    ])
+  } catch (error) {
+    console.error("[notifyRewardOnHold] alert failed:", error)
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 export type LightningRewardPayoutResult =
   | { success: true; paymentHash: string | null; amount: number }
   | { success: false; error: string; code: "not_available" | "unfunded" | "invalid_invoice" | "payment_failed" | "on_hold" | "record_failed" }
@@ -339,7 +362,13 @@ export async function payAnonymousRewardViaLightning(
       return { success: false, error: "Lightning payment failed. Try a different invoice.", code: "payment_failed" }
     }
     console.error("SECURITY: Lightning reward payout outcome uncertain; keeping lock", { postId, lockId, source })
-    await sendRewardOnHoldAlert({ postId, amount: reward, source, error: String(paymentResult?.error ?? "unknown") })
+    await notifyRewardOnHold({
+      postId,
+      amount: reward,
+      reason: "payment_uncertain",
+      flow: source,
+      details: String(paymentResult?.error ?? ""),
+    })
     return {
       success: false,
       error: "The payment could not be confirmed. The reward is on hold; please contact support.",
@@ -350,14 +379,27 @@ export async function payAnonymousRewardViaLightning(
   const paymentHash: string | null = paymentResult.paymentHash || paymentResult.paymentPreimage || null
   const now = new Date().toISOString()
   // The lock stays set; anonymous_reward_paid_at is the permanent marker.
-  const { error: markError } = await admin
-    .from("posts")
-    .update({ anonymous_reward_paid_at: now, anonymous_reward_payment_hash: paymentHash })
-    .eq("id", postId)
-    .eq("anonymous_reward_payment_lock", lockId)
+  let markError: { message: string } | null = null
+  try {
+    const { error } = await admin
+      .from("posts")
+      .update({ anonymous_reward_paid_at: now, anonymous_reward_payment_hash: paymentHash })
+      .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId)
+    markError = error
+  } catch (error) {
+    markError = { message: error instanceof Error ? error.message : String(error) }
+  }
   if (markError) {
     console.error("CRITICAL: reward paid but not recorded", { postId, lockId, markError })
-    await sendRewardOnHoldAlert({ postId, amount: reward, source, error: `paid, not recorded: ${markError.message}` })
+    await notifyRewardOnHold({
+      postId,
+      amount: reward,
+      reason: "paid_but_not_recorded",
+      flow: source,
+      paymentHash,
+      details: markError.message,
+    })
     return { success: false, error: "Payment was sent but our records could not be updated. Please contact support.", code: "record_failed" }
   }
 

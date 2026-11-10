@@ -366,7 +366,7 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
         onClick={handleClick} 
         onMouseEnter={handleMouseEnter}
       >
-        <div className="relative w-full h-48">
+        <div className="image-frame relative w-full h-48 bg-gray-100 dark:bg-gray-800">
           {isImageless ? (
             <div className="w-full h-full flex items-start p-5 bg-gray-900 rounded-t-2xl">
               <p className="text-white text-base leading-relaxed line-clamp-5 break-all">

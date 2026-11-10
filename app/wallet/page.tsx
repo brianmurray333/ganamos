@@ -25,13 +25,25 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+// Last first page of transactions per wallet owner, kept in memory only (not
+// persisted) so coming back to the Wallet tab shows the list instantly while it
+// refreshes, instead of skeleton rows swapping out every visit.
+const transactionsCache = new Map<string, Transaction[]>()
+
 function TransactionHistory() {
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(false)
-  const [page, setPage] = useState(0)
   const { user, profile, activeUserId } = useAuth()
+  const cacheKey = activeUserId || user?.id || ""
+  const cached = cacheKey ? transactionsCache.get(cacheKey) : undefined
+  const [transactions, setTransactions] = useState<Transaction[]>(cached ?? [])
+  const [loading, setLoading] = useState(!cached)
+  // Rows ease in only the first time they appear (not when shown from memory)
+  const [animateRows] = useState(!cached)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(cached ? cached.length === 10 : false)
+  const [page, setPage] = useState(0)
+  // Infinite scroll stays off until page 0 has been (re)fetched, so a cached
+  // list can't trigger page 1 while the refresh is replacing it.
+  const [firstPageSettled, setFirstPageSettled] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
   const TRANSACTIONS_PER_PAGE = 10
 
@@ -60,6 +72,7 @@ function TransactionHistory() {
           setTransactions(prev => [...prev, ...newTransactions])
         } else {
           setTransactions(newTransactions)
+          transactionsCache.set(walletUserId, newTransactions)
         }
         setHasMore(newTransactions.length === TRANSACTIONS_PER_PAGE)
       }
@@ -70,6 +83,8 @@ function TransactionHistory() {
         setIsLoadingMore(false)
       } else {
         setLoading(false)
+        setPage(0)
+        setFirstPageSettled(true)
       }
     }
   }, [user, profile, activeUserId])
@@ -82,7 +97,7 @@ function TransactionHistory() {
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading) {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore && !loading && firstPageSettled) {
           setIsLoadingMore(true)
           const nextPage = page + 1
           setPage(nextPage)
@@ -102,7 +117,7 @@ function TransactionHistory() {
         observer.unobserve(currentTarget)
       }
     }
-  }, [hasMore, isLoadingMore, loading, page, fetchTransactions])
+  }, [hasMore, isLoadingMore, loading, page, fetchTransactions, firstPageSettled])
 
   if (loading) {
     return (
@@ -139,10 +154,13 @@ function TransactionHistory() {
 
   return (
     <div className="space-y-3">
-      {transactions.map((tx) => (
+      {transactions.map((tx, i) => (
         <div
           key={tx.id}
-          className="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0"
+          className={`flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-800 last:border-0 ${
+            animateRows ? "animate-in fade-in slide-in-from-bottom-1 duration-500 ease-out fill-mode-both" : ""
+          }`}
+          style={animateRows && i < 10 ? { animationDelay: `${i * 45}ms` } : undefined}
         >
           <div className="flex items-center gap-3">
             <div
@@ -214,9 +232,14 @@ interface NWCStatus {
   promptDismissed: boolean
 }
 
+// Wallet-connection status per user, kept in memory so the connected-wallet
+// card / connect banner don't pop in late on every visit.
+const nwcStatusCache = new Map<string, NWCStatus>()
+
 export default function WalletPage() {
   const router = useRouter()
   const { user, profile, loading, refreshProfile } = useAuth()
+  const cachedNwc = user?.id ? nwcStatusCache.get(user.id) : undefined
   const [balance, setBalance] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(null)
@@ -224,9 +247,11 @@ export default function WalletPage() {
   const bitcoinPriceFetched = useRef(false)
   
   // NWC wallet state
-  const [nwcStatus, setNwcStatus] = useState<NWCStatus | null>(null)
+  const [nwcStatus, setNwcStatus] = useState<NWCStatus | null>(cachedNwc ?? null)
   const [showConnectionModal, setShowConnectionModal] = useState(false)
-  const [showBanner, setShowBanner] = useState(false)
+  const [showBanner, setShowBanner] = useState(cachedNwc ? !cachedNwc.hasNWCWallet && !cachedNwc.promptDismissed : false)
+  // Animate the banner / wallet card in only when they arrive late (not from memory)
+  const [animateNwc] = useState(!cachedNwc)
 
   // Fetch NWC wallet status
   const fetchNWCStatus = useCallback(async () => {
@@ -235,12 +260,14 @@ export default function WalletPage() {
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
-          setNwcStatus({
+          const status: NWCStatus = {
             hasNWCWallet: data.hasNWCWallet,
             wallet: data.wallet,
             custodialBalance: data.custodialBalance,
             promptDismissed: data.promptDismissed,
-          })
+          }
+          setNwcStatus(status)
+          if (user?.id) nwcStatusCache.set(user.id, status)
           // Show banner if no NWC wallet and not dismissed
           setShowBanner(!data.hasNWCWallet && !data.promptDismissed)
         }
@@ -248,7 +275,7 @@ export default function WalletPage() {
     } catch (error) {
       console.error("Failed to fetch NWC status:", error)
     }
-  }, [])
+  }, [user?.id])
 
   // Fetch the current Bitcoin price
   const fetchBitcoinPrice = useCallback(async () => {
@@ -302,6 +329,11 @@ export default function WalletPage() {
   // Handle banner dismissal
   const handleBannerDismiss = () => {
     setShowBanner(false)
+    if (user?.id) {
+      const cached = nwcStatusCache.get(user.id)
+      if (cached) nwcStatusCache.set(user.id, { ...cached, promptDismissed: true })
+    }
+    setNwcStatus((prev) => (prev ? { ...prev, promptDismissed: true } : prev))
   }
 
   useEffect(() => {
@@ -352,10 +384,12 @@ export default function WalletPage() {
     <div className="container max-w-md mx-auto pt-6 px-4">
       {/* Connected wallet card */}
       {nwcStatus?.hasNWCWallet && nwcStatus.wallet && (
-        <ConnectedWalletCard
-          wallet={nwcStatus.wallet}
-          onDisconnect={handleWalletDisconnected}
-        />
+        <div className={animateNwc ? "animate-in fade-in duration-500 ease-out" : undefined}>
+          <ConnectedWalletCard
+            wallet={nwcStatus.wallet}
+            onDisconnect={handleWalletDisconnected}
+          />
+        </div>
       )}
 
       {/* Balance Card */}
@@ -407,12 +441,12 @@ export default function WalletPage() {
               {nwcStatus?.hasNWCWallet ? "Ganamos Balance" : "Current Balance"}
             </p>
             <p className="text-3xl font-bold" data-testid="wallet-balance">{formatSatsValue(balance || 0)}</p>
-            <p className="text-sm text-muted-foreground mt-1 h-5">
-              {!isPriceLoading && bitcoinPrice && calculateUsdValue(balance || 0) ? (
-                `$${calculateUsdValue(balance || 0)} USD`
-              ) : (
-                <span className="opacity-0">$0.00 USD</span>
-              )}
+            <p
+              className={`text-sm text-muted-foreground mt-1 h-5 transition-opacity duration-500 ease-out ${
+                !isPriceLoading && bitcoinPrice ? "opacity-100" : "opacity-0"
+              }`}
+            >
+              {bitcoinPrice && calculateUsdValue(balance || 0) ? `$${calculateUsdValue(balance || 0)} USD` : "$0.00 USD"}
             </p>
             {nwcStatus?.hasNWCWallet && (
               <p className="text-xs text-muted-foreground mt-2">
@@ -445,10 +479,12 @@ export default function WalletPage() {
 
       {/* Connect wallet banner - below Send/Receive buttons */}
       {showBanner && (
-        <WalletConnectBanner
-          onConnect={() => setShowConnectionModal(true)}
-          onDismiss={handleBannerDismiss}
-        />
+        <div className={animateNwc ? "animate-in fade-in slide-in-from-top-1 duration-500 ease-out" : undefined}>
+          <WalletConnectBanner
+            onConnect={() => setShowConnectionModal(true)}
+            onDismiss={handleBannerDismiss}
+          />
+        </div>
       )}
 
       <Card className="shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card">

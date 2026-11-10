@@ -277,7 +277,7 @@ export default function PetSettingsPage() {
 
         {/* Save Button */}
         {hasChanges && (
-          <Button 
+          <Button size="xl" 
             onClick={handleSave} 
             disabled={isSaving || !petName.trim()}
             className="w-full h-12"
@@ -300,7 +300,7 @@ export default function PetSettingsPage() {
             <p className="text-sm text-muted-foreground mb-4">
               Unpair your device to connect it to a different account or reset your pet.
             </p>
-            <Button 
+            <Button size="xl" 
               variant="destructive" 
               onClick={() => setShowUnpairDialog(true)}
               className="w-full h-12"

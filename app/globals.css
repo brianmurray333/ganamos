@@ -86,11 +86,11 @@
 }
 
 .font-cursive {
-  font-family: "Pacifico", cursive;
+  font-family: var(--font-pacifico), "Pacifico", cursive;
 }
 
 .app-title {
-  font-family: "Pacifico", cursive;
+  font-family: var(--font-pacifico), "Pacifico", cursive;
   font-size: 4.5rem;
   color: white;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
@@ -303,4 +303,40 @@ html {
   100% {
     transform: translate(100%, 100%) rotate(25deg);
   }
+}
+
+/* Images fade in as they load (see components/image-fade-in.tsx) */
+img[data-fade] {
+  transition: opacity 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+img[data-fade="pending"] {
+  opacity: 0;
+}
+/* A frame breathes gently while its image is still loading */
+@keyframes image-frame-breathe {
+  0%, 100% { background-color: rgb(243 244 246); }
+  50% { background-color: rgb(229 231 235); }
+}
+@keyframes image-frame-breathe-dark {
+  0%, 100% { background-color: rgb(31 41 55); }
+  50% { background-color: rgb(55 65 81); }
+}
+.image-frame:has(> img[data-fade="pending"]) {
+  animation: image-frame-breathe 1.6s ease-in-out infinite;
+}
+.dark .image-frame:has(> img[data-fade="pending"]) {
+  animation-name: image-frame-breathe-dark;
+}
+@keyframes image-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-image-in,
+img[data-fade="cached"] {
+  animation: image-in 450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  img[data-fade] { transition: none; }
+  .animate-image-in, img[data-fade="cached"] { animation: none; }
+  .image-frame:has(> img[data-fade="pending"]) { animation: none; }
 }

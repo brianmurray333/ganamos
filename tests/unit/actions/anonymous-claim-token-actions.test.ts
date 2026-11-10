@@ -51,6 +51,7 @@ vi.mock('@/lib/safety-caps', () => ({
   checkLivePostsCap: vi.fn().mockResolvedValue({ allowed: true, capLevel: 'none' }),
 }))
 vi.mock('@/lib/sms-alerts', () => ({ alertLargePostBounty: vi.fn() }))
+vi.mock('@/lib/security-alerts', () => ({ sendRewardOnHoldAlert: vi.fn().mockResolvedValue(undefined) }))
 
 import {
   submitAnonymousFixLightningAddressAction,
@@ -62,6 +63,7 @@ import {
   approveAnonymousFixAction,
 } from '@/app/actions/post-actions'
 import { payInvoice } from '@/lib/lightning'
+import { sendRewardOnHoldAlert } from '@/lib/security-alerts'
 import { verifyFixImages } from '@/lib/verify-fix'
 import { generateClaimToken, hashClaimToken, verifyClaimToken } from '@/lib/payouts'
 import { createFakeSupabase, type FakeSupabase } from '@/tests/unit/helpers/fake-supabase-db'
@@ -308,6 +310,25 @@ describe('payAnonymousRewardAction', () => {
 
     expect((await payAnonymousRewardAction(POST_ID, 'lnbc_fresh_invoice', TOKEN)).success).toBe(false)
     expect(payInvoice).toHaveBeenCalledTimes(1)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledTimes(1)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledWith(expect.objectContaining({ postId: POST_ID, amount: REWARD, reason: 'payment_uncertain' }))
+  })
+
+  it('emails the admin with the payment hash if recording a sent payment throws', async () => {
+    setup(fixedAnonymously())
+    db.beforeOp = op => {
+      if (op.table === 'posts' && op.op === 'update' && op.payload?.anonymous_reward_paid_at) throw new Error('connection reset')
+    }
+
+    expect((await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)).success).toBe(false)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledTimes(1)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledWith(expect.objectContaining({ postId: POST_ID, reason: 'paid_but_not_recorded', paymentHash: 'payhash-1' }))
+  })
+
+  it('does not alert on a normal payout', async () => {
+    setup(fixedAnonymously())
+    expect((await payAnonymousRewardAction(POST_ID, INVOICE, TOKEN)).success).toBe(true)
+    expect(sendRewardOnHoldAlert).not.toHaveBeenCalled()
   })
 })
 
@@ -619,6 +640,18 @@ describe('payAnonymousFixLightningAddressAction (owner approves an anonymous fix
     // A retry can't pay a second time
     expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
     expect(payInvoice).toHaveBeenCalledTimes(1)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledWith(expect.objectContaining({ postId: POST_ID, reason: 'payment_uncertain', paymentHash: null }))
+  })
+
+  it('emails the admin with the payment hash if recording a sent payment throws', async () => {
+    setup(withAddress(), OWNER_ID)
+    db.beforeOp = op => {
+      if (op.table === 'posts' && op.op === 'update' && op.payload?.anonymous_reward_paid_at) throw new Error('connection reset')
+    }
+
+    expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(false)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledTimes(1)
+    expect(sendRewardOnHoldAlert).toHaveBeenCalledWith(expect.objectContaining({ postId: POST_ID, reason: 'paid_but_not_recorded', paymentHash: 'payhash-1' }))
   })
 })
 

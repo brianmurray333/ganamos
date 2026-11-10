@@ -6,7 +6,8 @@
  *  - posts.funding_transaction_id (set by create_post_atomic): the owner's completed internal
  *    deduction;
  *  - legacy posts (created before 2026-11-08, no link): an unlinked deduction of exactly the
- *    reward (or original_reward) by the owner within 2 minutes of creation.
+ *    reward (or original_reward) by the owner within 2 minutes of creation;
+ *  - legacy posts an admin vouched for: a post_funding_overrides row covering the reward.
  */
 import { describe, it, expect } from 'vitest'
 import { isPostRewardFunded } from '@/lib/payouts'
@@ -21,10 +22,11 @@ const deduction = (over: Record<string, any> = {}) => ({
   memo: 'Post reward for: something', created_at: '2026-11-08T12:00:00.000Z', ...over,
 })
 
-function funded(post: Record<string, any>, transactions: any[] = [], otherPosts: any[] = []) {
+function funded(post: Record<string, any>, transactions: any[] = [], otherPosts: any[] = [], overrides: any[] = []) {
   const db = createFakeSupabase({
     posts: [{ id: POST_ID, user_id: OWNER, reward: REWARD, original_reward: null, created_at: '2026-11-08T12:00:00.000Z', funding_transaction_id: null, ...post }, ...otherPosts],
     transactions,
+    post_funding_overrides: overrides,
   })
   return isPostRewardFunded(db.adminClient as any, { id: POST_ID })
 }
@@ -110,6 +112,27 @@ describe('isPostRewardFunded', () => {
       ['not completed', { status: 'pending', created_at: '2026-10-01T12:00:10.000Z' }],
     ])('rejects a deduction %s', async (_label, over) => {
       expect(await funded(legacyPost, [deduction(over)])).toBe(false)
+    })
+  })
+
+  describe('admin funding overrides (legacy posts)', () => {
+    const legacyPost = { created_at: '2026-10-01T12:00:00.000Z' }
+    const override = (over: Record<string, any> = {}) => ({ post_id: POST_ID, amount: REWARD, ...over })
+
+    it('accepts a legacy post with an override covering the reward', async () => {
+      expect(await funded(legacyPost, [], [], [override()])).toBe(true)
+    })
+
+    it('rejects an override smaller than the current reward', async () => {
+      expect(await funded({ ...legacyPost, reward: REWARD + 1 }, [], [], [override()])).toBe(false)
+    })
+
+    it("ignores another post's override", async () => {
+      expect(await funded(legacyPost, [], [], [override({ post_id: 'other-post' })])).toBe(false)
+    })
+
+    it('ignores overrides for posts created on or after the cutoff', async () => {
+      expect(await funded({ created_at: '2026-11-08T12:00:00.000Z' }, [], [], [override()])).toBe(false)
     })
   })
 

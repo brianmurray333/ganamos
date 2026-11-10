@@ -1,6 +1,7 @@
 import { sendEmail } from './email'
 import { formatSatsValue } from './utils'
 import { createServerSupabaseClient } from './supabase'
+import { renderEmail, escapeHtml, EMAIL_BASE_URL } from './email-layout'
 
 /**
  * Get the current Bitcoin price in USD from the database
@@ -82,140 +83,23 @@ export async function sendBitcoinReceivedEmail(params: {
 
   // Determine the source text
   const sourceText = transactionType === 'internal' && fromName 
-    ? `from ${fromName}` 
+    ? `from ${escapeHtml(fromName)}` 
     : 'via Lightning'
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Bitcoin Received</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            You received Bitcoin ${sourceText}.
-          </p>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Amount:&nbsp;</span>
-              <span class="detail-value">${formattedAmount} (${usdAmount})</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-            ${fromName ? `
-            <div class="detail-row">
-              <span class="detail-label">From:&nbsp;</span>
-              <span class="detail-value">${fromName}</span>
-            </div>
-            ` : ''}
-          </div>
-          <center>
-            <a href="https://www.ganamos.earth/wallet" class="cta-button">View Wallet</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const details: Array<[string, string]> = [
+    ['Amount', `${formattedAmount} (${usdAmount})`],
+    ['Date', formattedDate],
+  ]
+  if (fromName) details.push(['From', escapeHtml(fromName)])
+
+  const html = renderEmail({
+    title: 'Bitcoin Received',
+    preheader: `You received ${formattedAmount} ${transactionType === 'internal' && fromName ? `from ${fromName}` : 'via Lightning'}.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [`You received Bitcoin ${sourceText}.`],
+    details,
+    button: { label: 'View Wallet', href: `${EMAIL_BASE_URL}/wallet` },
+  })
 
   return await sendEmail(
     toEmail,
@@ -268,140 +152,23 @@ export async function sendBitcoinSentEmail(params: {
 
   // Determine the destination text
   const destinationText = transactionType === 'internal' && toName 
-    ? `to ${toName}` 
+    ? `to ${escapeHtml(toName)}` 
     : 'via Lightning'
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Bitcoin Sent</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            You sent Bitcoin ${destinationText}.
-          </p>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Amount:&nbsp;</span>
-              <span class="detail-value">${formattedAmount} (${usdAmount})</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-            ${toName ? `
-            <div class="detail-row">
-              <span class="detail-label">To:&nbsp;</span>
-              <span class="detail-value">${toName}</span>
-            </div>
-            ` : ''}
-          </div>
-          <center>
-            <a href="https://www.ganamos.earth/wallet" class="cta-button">View Wallet</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const details: Array<[string, string]> = [
+    ['Amount', `${formattedAmount} (${usdAmount})`],
+    ['Date', formattedDate],
+  ]
+  if (toName) details.push(['To', escapeHtml(toName)])
+
+  const html = renderEmail({
+    title: 'Bitcoin Sent',
+    preheader: `You sent ${formattedAmount} ${transactionType === 'internal' && toName ? `to ${toName}` : 'via Lightning'}.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [`You sent Bitcoin ${destinationText}.`],
+    details,
+    button: { label: 'View Wallet', href: `${EMAIL_BASE_URL}/wallet` },
+  })
 
   return await sendEmail(
     toEmail,
@@ -456,150 +223,23 @@ export async function sendIssueFixedEmail(params: {
   // Get first name only
   const firstName = userName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        p {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          border-left: 4px solid #16a349;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Issue Fixed</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            Great news! ${isPostOwnerAssigning ? `You marked your issue as fixed and assigned ${fixerName} as the fixer.` : `${fixerName} submitted a fix for your issue.`}
-          </p>
-          <div class="issue-title">
-            "${issueTitle}"
-          </div>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Fixed By:&nbsp;</span>
-              <span class="detail-value">${fixerName}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Reward Paid:&nbsp;</span>
-              <span class="detail-value">${formattedReward} (${usdReward})</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-          </div>
-          <center>
-            <a href="https://www.ganamos.earth/post/${postId}" class="cta-button">View Issue</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const safeFixerName = escapeHtml(fixerName)
+
+  const html = renderEmail({
+    title: 'Issue Fixed',
+    preheader: `${fixerName} fixed "${issueTitle}" and earned ${formattedReward}.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      `Great news! ${isPostOwnerAssigning ? `You marked your issue as fixed and assigned ${safeFixerName} as the fixer.` : `${safeFixerName} submitted a fix for your issue.`}`,
+      `<strong>"${escapeHtml(issueTitle)}"</strong>`,
+    ],
+    details: [
+      ['Fixed By', safeFixerName],
+      ['Reward Paid', `${formattedReward} (${usdReward})`],
+      ['Date', formattedDate],
+    ],
+    button: { label: 'View Issue', href: `${EMAIL_BASE_URL}/post/${postId}` },
+  })
 
   return await sendEmail(
     toEmail,
@@ -652,150 +292,23 @@ export async function sendRewardEarnedEmail(params: {
   // Get first name only
   const firstName = fixerName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        p {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          border-left: 4px solid #16a349;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">You Earned a Reward!</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            Great news! You earned a reward for fixing an issue posted by ${posterName}.
-          </p>
-          <div class="issue-title">
-            "${issueTitle}"
-          </div>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Reward Earned:&nbsp;</span>
-              <span class="detail-value">${formattedReward} (${usdReward})</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Posted By:&nbsp;</span>
-              <span class="detail-value">${posterName}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-          </div>
-          <center>
-            <a href="https://www.ganamos.earth/post/${postId}" class="cta-button">View Issue</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const safePosterName = escapeHtml(posterName)
+
+  const html = renderEmail({
+    title: 'You Earned a Reward!',
+    preheader: `You earned ${formattedReward} for fixing "${issueTitle}".`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      `Great news! You earned a reward for fixing an issue posted by ${safePosterName}.`,
+      `<strong>"${escapeHtml(issueTitle)}"</strong>`,
+    ],
+    details: [
+      ['Reward Earned', `${formattedReward} (${usdReward})`],
+      ['Posted By', safePosterName],
+      ['Date', formattedDate],
+    ],
+    button: { label: 'View Issue', href: `${EMAIL_BASE_URL}/post/${postId}` },
+  })
 
   return await sendEmail(
     toEmail,
@@ -851,181 +364,44 @@ export async function sendFixSubmittedForReviewEmail(params: {
   // Get first name only
   const firstName = userName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          border-left: 4px solid #f59e0b;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #10b981;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Fix Submitted for Review</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            ${fixerName} has submitted a fix for your issue and it's awaiting your review.
-          </p>
-          <div class="issue-title">
-            "${issueTitle}"
-          </div>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Submitted By:&nbsp;</span>
-              <span class="detail-value">${fixerName}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-          </div>
-          ${aiAnalysis ? `
-          <div style="background-color: #f0f9ff; border-left: 4px solid #3b82f6; padding: 15px; margin: 20px 0; border-radius: 6px;">
-            <h3 style="margin: 0 0 10px 0; font-size: 16px; font-weight: 600; color: #1e40af;">AI Review</h3>
-            <p style="margin: 0; font-size: 14px; color: #1e3a8a; line-height: 1.6;">${aiAnalysis}</p>
-          </div>
-          ` : ''}
-          ${beforeImageUrl && afterImageUrl ? `
-          <div style="margin: 20px 0;">
-            <h3 style="margin: 0 0 15px 0; font-size: 16px; font-weight: 600;">Before & After</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tr>
-                <td style="width: 50%; padding-right: 8px; vertical-align: top;">
-                  <div style="background-color: #4b5563; border-radius: 8px; padding: 8px 8px 4px 8px;">
-                    <img src="${beforeImageUrl}" alt="Before" style="width: 100%; height: auto; border-radius: 4px; display: block;" />
-                    <div style="color: white; padding: 6px 0 2px 0; font-size: 13px; font-weight: 600; text-align: center;">Before</div>
-                  </div>
-                </td>
-                <td style="width: 50%; padding-left: 8px; vertical-align: top;">
-                  <div style="background-color: #4b5563; border-radius: 8px; padding: 8px 8px 4px 8px;">
-                    <img src="${afterImageUrl}" alt="After" style="width: 100%; height: auto; border-radius: 4px; display: block;" />
-                    <div style="color: white; padding: 6px 0 2px 0; font-size: 13px; font-weight: 600; text-align: center;">After</div>
-                  </div>
-                </td>
-              </tr>
-            </table>
-          </div>
-          ` : ''}
-          ${proofOfCompletionText ? `
-          <div style="background-color: #f0fdf4; border-left: 4px solid #22c55e; padding: 15px; margin: 20px 0; border-radius: 6px;">
-            <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #166534;">Proof of completion:</h3>
-            <p style="margin: 0; font-size: 14px; color: #15803d; line-height: 1.6; white-space: pre-line;">${proofOfCompletionText}</p>
-          </div>
-          ` : ''}
-          ${fixerNote ? `
-          <div style="background-color: #f9fafb; border-left: 4px solid #9ca3af; padding: 15px; margin: 20px 0; border-radius: 6px;">
-            <h3 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600; color: #374151;">Fixer's note:</h3>
-            <p style="margin: 0; font-size: 14px; color: #4b5563; line-height: 1.6; white-space: pre-line;">${fixerNote}</p>
-          </div>
-          ` : ''}
-          <center>
-            <a href="${reviewUrl}" class="cta-button">Review Fix</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const safeFixerName = escapeHtml(fixerName)
+  const hasBeforeAfter = Boolean(beforeImageUrl && afterImageUrl)
+
+  const paragraphs = [
+    `${safeFixerName} has submitted a fix for your issue and it's awaiting your review.`,
+    `<strong>"${escapeHtml(issueTitle)}"</strong>`,
+  ]
+  if (proofOfCompletionText) {
+    paragraphs.push(
+      `<strong>Proof of completion:</strong><br><span style="white-space:pre-line;">${escapeHtml(proofOfCompletionText)}</span>`
+    )
+  }
+  if (fixerNote) {
+    paragraphs.push(
+      `<strong>Fixer's note:</strong><br><span style="white-space:pre-line;">${escapeHtml(fixerNote)}</span>`
+    )
+  }
+
+  const html = renderEmail({
+    title: 'Fix Submitted for Review',
+    preheader: `${fixerName} submitted a fix for "${issueTitle}". It's awaiting your review.`,
+    greeting: escapeHtml(firstName),
+    paragraphs,
+    details: [
+      ['Submitted By', safeFixerName],
+      ['Date', formattedDate],
+    ],
+    callout: aiAnalysis
+      ? { tone: 'info', title: 'AI Review', html: escapeHtml(aiAnalysis) }
+      : undefined,
+    imagePair: hasBeforeAfter
+      ? [
+          { src: escapeHtml(beforeImageUrl), alt: 'Before', label: 'Before' },
+          { src: escapeHtml(afterImageUrl), alt: 'After', label: 'After' },
+        ]
+      : undefined,
+    button: { label: 'Review Fix', href: reviewUrl },
+  })
 
   return await sendEmail(
     toEmail,
@@ -1078,160 +454,24 @@ export async function sendDeviceJobCompletionEmail(params: {
   // Build verify URL with query params to pre-load the modal
   const verifyUrl = `https://www.ganamos.earth/post/${postId}?verify=true&fixer=${encodeURIComponent(fixerUsername)}`
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          border-left: 4px solid #16a349;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 14px 32px;
-          border-radius: 6px;
-          font-weight: 600;
-          font-size: 16px;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .reward-highlight {
-          background-color: #ecfdf5;
-          border: 2px solid #16a349;
-          border-radius: 8px;
-          padding: 15px;
-          text-align: center;
-          margin: 20px 0;
-        }
-        .reward-amount {
-          font-size: 24px;
-          font-weight: 700;
-          color: #138a3d;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;">Fix Submitted</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            <strong>${fixerName}</strong> says they completed your task:
-          </p>
-          <div class="issue-title">
-            "${issueTitle}"
-          </div>
-          <div class="reward-highlight">
-            <div class="reward-amount">${rewardAmount.toLocaleString()} sats</div>
-            <div style="color: #6b7280; font-size: 14px; margin-top: 4px;">Ready to send when verified</div>
-          </div>
-          <center>
-            <a href="${verifyUrl}" class="cta-button">Review Fix</a>
-          </center>
-          <div class="details" style="margin-top: 16px;">
-            <div class="detail-row">
-              <span class="detail-label">Completed By:&nbsp;</span>
-              <span class="detail-value">@${fixerUsername}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-          </div>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const html = renderEmail({
+    title: 'Fix Submitted',
+    preheader: `${fixerName} says they completed "${issueTitle}". Review the fix to send ${rewardAmount.toLocaleString()} sats.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      `<strong>${escapeHtml(fixerName)}</strong> says they completed your task:`,
+      `<strong>"${escapeHtml(issueTitle)}"</strong>`,
+    ],
+    details: [
+      ['Completed By', `@${escapeHtml(fixerUsername)}`],
+      ['Date', formattedDate],
+    ],
+    callout: {
+      tone: 'success',
+      html: `<div style="font-size:24px;font-weight:700;color:#138a3d;">${rewardAmount.toLocaleString()} sats</div><div style="color:#6b7280;font-size:14px;margin-top:4px;">Ready to send when verified</div>`,
+    },
+    button: { label: 'Review Fix', href: verifyUrl },
+  })
 
   return await sendEmail(
     toEmail,
@@ -1280,142 +520,22 @@ export async function sendGroupJoinRequestEmail(params: {
   // Get first name only
   const firstName = adminName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .group-name {
-          background-color: #f9fafb;
-          border-left: 4px solid #16a349;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .details {
-          background-color: #f9fafb;
-          border-radius: 6px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-          gap: 16px;
-        }
-        .detail-row:last-child {
-          border-bottom: none;
-        }
-        .detail-label {
-          font-weight: 600;
-          color: #6b7280;
-          flex-shrink: 0;
-        }
-        .detail-value {
-          color: #111827;
-          text-align: right;
-        }
-        .cta-button {
-          display: inline-block;
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 12px 30px;
-          border-radius: 6px;
-          font-weight: 600;
-          margin: 20px 0;
-        }
-        a.cta-button {
-          color: #ffffff !important;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">New Join Request</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            <strong>${requesterName}</strong> has requested to join your group.
-          </p>
-          <div class="group-name">
-            ${groupName}
-          </div>
-          <div class="details">
-            <div class="detail-row">
-              <span class="detail-label">Requested By:&nbsp;</span>
-              <span class="detail-value">${requesterName}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">Date:&nbsp;</span>
-              <span class="detail-value">${formattedDate}</span>
-            </div>
-          </div>
-          <center>
-            <a href="https://www.ganamos.earth/groups/${groupId}" class="cta-button">Review Request</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const safeRequesterName = escapeHtml(requesterName)
+
+  const html = renderEmail({
+    title: 'New Join Request',
+    preheader: `${requesterName} has requested to join ${groupName}.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      `<strong>${safeRequesterName}</strong> has requested to join your group.`,
+      `<strong>${escapeHtml(groupName)}</strong>`,
+    ],
+    details: [
+      ['Requested By', safeRequesterName],
+      ['Date', formattedDate],
+    ],
+    button: { label: 'Review Request', href: `${EMAIL_BASE_URL}/groups/${groupId}` },
+  })
 
   return await sendEmail(
     toEmail,
@@ -1459,107 +579,17 @@ export async function sendGroupJoinRequestConfirmationEmail(params: {
   // Get first name only
   const firstName = requesterName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #16a349 0%, #138a3d 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .group-name {
-          background-color: #f9fafb;
-          border-left: 4px solid #16a349;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .pending-badge {
-          display: inline-block;
-          background-color: #fef3c7;
-          color: #92400e;
-          padding: 4px 12px;
-          border-radius: 9999px;
-          font-size: 14px;
-          font-weight: 500;
-          margin-left: 8px;
-        }
-        .footer {
-          text-align: center;
-          padding: 20px;
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .footer a {
-          color: #16a349;
-          text-decoration: none;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1 style="color: #ffffff !important;">Join Request Sent</h1>
-        </div>
-        <div class="content">
-          <div class="greeting">
-            Hello ${firstName},
-          </div>
-          <p>
-            Your request to join the group has been submitted successfully.
-          </p>
-          <div class="group-name">
-            ${groupName} <span class="pending-badge">Pending</span>
-          </div>
-          <p>
-            A group admin will review your request and you'll be notified once it's approved.
-          </p>
-          <p style="color: #6b7280; font-size: 14px;">
-            Request submitted: ${formattedDate}
-          </p>
-        </div>
-        <div class="footer">
-          <p>
-            This is an automated notification from <a href="https://www.ganamos.earth">Ganamos</a>.
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const html = renderEmail({
+    title: 'Join Request Sent',
+    preheader: `Your request to join ${groupName} has been submitted.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      'Your request to join the group has been submitted successfully.',
+      `<strong>${escapeHtml(groupName)}</strong> <span style="display:inline-block;background-color:#fef3c7;color:#92400e;padding:4px 12px;border-radius:9999px;font-size:14px;font-weight:500;margin-left:8px;">Pending</span>`,
+      "A group admin will review your request and you'll be notified once it's approved.",
+      `<span style="color:#6b7280;font-size:14px;">Request submitted: ${formattedDate}</span>`,
+    ],
+  })
 
   return await sendEmail(
     toEmail,
@@ -1611,159 +641,34 @@ export async function sendGroupAdminClosedIssueEmail(params: {
   // Get first name only
   const firstName = postOwnerName.split(' ')[0]
 
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 8px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-          padding: 30px 20px;
-          text-align: center;
-        }
-        .header h1 {
-          color: #ffffff !important;
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-        }
-        .content {
-          padding: 30px 20px;
-        }
-        .greeting {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        p {
-          font-size: 16px;
-          margin-bottom: 20px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          border-left: 4px solid #3b82f6;
-          padding: 15px;
-          margin: 20px 0;
-          font-weight: 600;
-        }
-        .info-box {
-          background-color: #eff6ff;
-          border: 1px solid #bfdbfe;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 20px 0;
-        }
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-        }
-        .info-row:last-child {
-          border-bottom: none;
-        }
-        .info-label {
-          color: #6b7280;
-          font-size: 14px;
-        }
-        .info-value {
-          font-weight: 600;
-          font-size: 14px;
-        }
-        .button {
-          display: inline-block;
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 14px 28px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          margin: 20px 0;
-        }
-        .footer {
-          background-color: #f9fafb;
-          padding: 20px;
-          text-align: center;
-          font-size: 14px;
-          color: #6b7280;
-        }
-        .note {
-          background-color: #fefce8;
-          border: 1px solid #fef08a;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 20px 0;
-          font-size: 14px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>🔔 Issue Closed by Admin</h1>
-        </div>
-        <div class="content">
-          <p class="greeting">Hi ${firstName},</p>
-          <p>A group admin has closed an issue you posted:</p>
-          <div class="issue-title">"${issueTitle}"</div>
-          
-          <div class="info-box">
-            <div class="info-row">
-              <span class="info-label">Closed by</span>
-              <span class="info-value">${adminName} (Group Admin)</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Group</span>
-              <span class="info-value">${groupName}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Reward sent to</span>
-              <span class="info-value">@${fixerName}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Reward amount</span>
-              <span class="info-value">${formattedReward} (~${usdReward})</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Date</span>
-              <span class="info-value">${formattedDate}</span>
-            </div>
-          </div>
-          
-          <div class="note">
-            <strong>📋 Why am I getting this?</strong><br>
-            Group admins in ${groupName} have permission to close issues and distribute rewards. This notification is sent for your awareness.
-          </div>
-          
-          <center>
-            <a href="${process.env.NEXT_PUBLIC_URL || 'https://www.ganamos.earth'}/post/${postId}" class="button">View Issue</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>If you have questions about this action, please contact your group admin.</p>
-          <p style="margin-bottom: 0;">Ganamos Earth</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+  const safeGroupName = escapeHtml(groupName)
+
+  const html = renderEmail({
+    title: 'Issue Closed by Admin',
+    preheader: `${adminName} (group admin) closed "${issueTitle}" and sent the reward to @${fixerName}.`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      'A group admin has closed an issue you posted:',
+      `<strong>"${escapeHtml(issueTitle)}"</strong>`,
+    ],
+    details: [
+      ['Closed by', `${escapeHtml(adminName)} (Group Admin)`],
+      ['Group', safeGroupName],
+      ['Reward sent to', `@${escapeHtml(fixerName)}`],
+      ['Reward amount', `${formattedReward} (~${usdReward})`],
+      ['Date', formattedDate],
+    ],
+    callout: {
+      tone: 'info',
+      title: 'Why am I getting this?',
+      html: `Group admins in ${safeGroupName} have permission to close issues and distribute rewards. This notification is sent for your awareness.`,
+    },
+    button: {
+      label: 'View Issue',
+      href: `${process.env.NEXT_PUBLIC_URL || 'https://www.ganamos.earth'}/post/${postId}`,
+    },
+    footer: 'If you have questions about this action, please contact your group admin.<br>Ganamos Earth',
+  })
 
   return await sendEmail(
     toEmail,
@@ -1805,130 +710,25 @@ export async function sendPostExpiryWarningEmail(params: {
     const { formatDistanceToNow } = await import('date-fns')
     const timeRemaining = formatDistanceToNow(expiresAt, { addSuffix: false })
 
-    const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          color: #ffffff;
-          padding: 30px;
-          text-align: center;
-        }
-        .header h1 {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-        }
-        .content {
-          padding: 30px;
-        }
-        .greeting {
-          font-size: 18px;
-          font-weight: 600;
-          margin-bottom: 10px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          padding: 15px;
-          border-left: 4px solid #f59e0b;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .info-box {
-          background-color: #fef3c7;
-          border: 1px solid #fde68a;
-          border-radius: 8px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #fde68a;
-        }
-        .info-row:last-child {
-          border-bottom: none;
-        }
-        .info-label {
-          font-weight: 600;
-          color: #92400e;
-        }
-        .info-value {
-          color: #78350f;
-          font-size: 14px;
-        }
-        .button {
-          display: inline-block;
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 14px 28px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          margin: 20px 0;
-        }
-        .footer {
-          background-color: #f9fafb;
-          padding: 20px;
-          text-align: center;
-          font-size: 14px;
-          color: #6b7280;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⏰ Your post expires soon</h1>
-        </div>
-        <div class="content">
-          <p class="greeting">Hi ${firstName},</p>
-          <p>This is a reminder that your post is expiring soon:</p>
-          <div class="issue-title">"${postTitle}"</div>
-          
-          <div class="info-box">
-            <div class="info-row">
-              <span class="info-label">Time remaining</span>
-              <span class="info-value">${timeRemaining}</span>
-            </div>
-          </div>
-          
-          <p>If your post expires without being fixed, it will be automatically taken down and your sats will be refunded to your balance.</p>
-          
-          <center>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/post/${postId}" class="button">View Post</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>You can extend or remove the expiration from the post page.</p>
-          <p style="margin-bottom: 0;">Ganamos Earth</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+    const html = renderEmail({
+      title: 'Your post expires soon',
+      preheader: `"${postTitle}" expires in ${timeRemaining}.`,
+      greeting: escapeHtml(firstName),
+      paragraphs: [
+        'This is a reminder that your post is expiring soon:',
+        `<strong>"${escapeHtml(postTitle)}"</strong>`,
+      ],
+      details: [['Time remaining', timeRemaining]],
+      callout: {
+        tone: 'warning',
+        html: 'If your post expires without being fixed, it will be automatically taken down and your sats will be refunded to your balance.',
+      },
+      button: {
+        label: 'View Post',
+        href: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/post/${postId}`,
+      },
+      footer: 'You can extend or remove the expiration from the post page.<br>Ganamos Earth',
+    })
 
     await sendEmail(
       toEmail,
@@ -1970,145 +770,29 @@ export async function sendPostExpiredConfirmationEmail(params: {
     const formattedAmount = formatSatsValue(refundAmountSats)
     const usdAmount = await convertSatsToUSD(refundAmountSats)
 
-    const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-          color: #ffffff;
-          padding: 30px;
-          text-align: center;
-        }
-        .header h1 {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-        }
-        .content {
-          padding: 30px;
-        }
-        .greeting {
-          font-size: 18px;
-          font-weight: 600;
-          margin-bottom: 10px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          padding: 15px;
-          border-left: 4px solid #6b7280;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .info-box {
-          background-color: #f0fdf4;
-          border: 1px solid #bbf7d0;
-          border-radius: 8px;
-          padding: 20px;
-          margin: 20px 0;
-        }
-        .info-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #bbf7d0;
-        }
-        .info-row:last-child {
-          border-bottom: none;
-        }
-        .info-label {
-          font-weight: 600;
-          color: #166534;
-        }
-        .info-value {
-          color: #15803d;
-          font-size: 14px;
-        }
-        .button {
-          display: inline-block;
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 14px 28px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          margin: 20px 0;
-        }
-        .footer {
-          background-color: #f9fafb;
-          padding: 20px;
-          text-align: center;
-          font-size: 14px;
-          color: #6b7280;
-        }
-        .note {
-          background-color: #f0f9ff;
-          border: 1px solid #bfdbfe;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 20px 0;
-          font-size: 14px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⏱️ Your post has expired — sats refunded</h1>
-        </div>
-        <div class="content">
-          <p class="greeting">Hi ${firstName},</p>
-          <p>Your post has expired and has been automatically taken down:</p>
-          <div class="issue-title">"${postTitle}"</div>
-          
-          <div class="info-box">
-            <div class="info-row">
-              <span class="info-label">Refund amount</span>
-              <span class="info-value">${formattedAmount} (~${usdAmount})</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Status</span>
-              <span class="info-value">Refunded to your balance</span>
-            </div>
-          </div>
-          
-          <div class="note">
-            <strong>💰 Your sats are back!</strong><br>
-            The full reward amount has been returned to your account balance. You can use it to create a new post or withdraw it anytime.
-          </div>
-          
-          <center>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/profile" class="button">View Your Balance</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>Thanks for using Ganamos!</p>
-          <p style="margin-bottom: 0;">Ganamos Earth</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+    const html = renderEmail({
+      title: 'Your post expired and your sats were refunded',
+      preheader: `"${postTitle}" expired and ${formattedAmount} was refunded to your balance.`,
+      greeting: escapeHtml(firstName),
+      paragraphs: [
+        'Your post has expired and has been automatically taken down:',
+        `<strong>"${escapeHtml(postTitle)}"</strong>`,
+      ],
+      details: [
+        ['Refund amount', `${formattedAmount} (~${usdAmount})`],
+        ['Status', 'Refunded to your balance'],
+      ],
+      callout: {
+        tone: 'info',
+        title: 'Your sats are back',
+        html: 'The full reward amount has been returned to your account balance. You can use it to create a new post or withdraw it anytime.',
+      },
+      button: {
+        label: 'View Your Balance',
+        href: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/profile`,
+      },
+      footer: 'Thanks for using Ganamos!<br>Ganamos Earth',
+    })
 
     await sendEmail(
       toEmail,
@@ -2145,110 +829,25 @@ export async function sendPostExpiredFixerEmail(params: {
     // Get first name only
     const firstName = fixerName.split(' ')[0]
 
-    const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-          line-height: 1.6;
-          color: #333;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background-color: #f5f5f5;
-        }
-        .container {
-          background-color: #ffffff;
-          border-radius: 12px;
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .header {
-          background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-          color: #ffffff;
-          padding: 30px;
-          text-align: center;
-        }
-        .header h1 {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 700;
-        }
-        .content {
-          padding: 30px;
-        }
-        .greeting {
-          font-size: 18px;
-          font-weight: 600;
-          margin-bottom: 10px;
-        }
-        .issue-title {
-          background-color: #f9fafb;
-          padding: 15px;
-          border-left: 4px solid #6b7280;
-          margin: 20px 0;
-          font-weight: 600;
-          font-size: 16px;
-        }
-        .note {
-          background-color: #fef3c7;
-          border: 1px solid #fde68a;
-          border-radius: 8px;
-          padding: 15px;
-          margin: 20px 0;
-          font-size: 14px;
-        }
-        .button {
-          display: inline-block;
-          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-          color: #ffffff !important;
-          text-decoration: none;
-          padding: 14px 28px;
-          border-radius: 8px;
-          font-weight: 600;
-          font-size: 16px;
-          margin: 20px 0;
-        }
-        .footer {
-          background-color: #f9fafb;
-          padding: 20px;
-          text-align: center;
-          font-size: 14px;
-          color: #6b7280;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⏱️ A post you were assigned has expired</h1>
-        </div>
-        <div class="content">
-          <p class="greeting">Hi ${firstName},</p>
-          <p>A post you were assigned to fix has expired and been automatically removed:</p>
-          <div class="issue-title">"${postTitle}"</div>
-          
-          <div class="note">
-            <strong>📋 What this means</strong><br>
-            The post has been taken down and no longer needs a fix. The reward has been refunded to the poster. You're free to work on other posts!
-          </div>
-          
-          <center>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/feed" class="button">Browse Available Posts</a>
-          </center>
-        </div>
-        <div class="footer">
-          <p>Thanks for being part of the Ganamos community!</p>
-          <p style="margin-bottom: 0;">Ganamos Earth</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
+    const html = renderEmail({
+      title: 'A post you were assigned has expired',
+      preheader: `"${postTitle}" expired and no longer needs a fix.`,
+      greeting: escapeHtml(firstName),
+      paragraphs: [
+        'A post you were assigned to fix has expired and been automatically removed:',
+        `<strong>"${escapeHtml(postTitle)}"</strong>`,
+      ],
+      callout: {
+        tone: 'warning',
+        title: 'What this means',
+        html: "The post has been taken down and no longer needs a fix. The reward has been refunded to the poster. You're free to work on other posts!",
+      },
+      button: {
+        label: 'Browse Available Posts',
+        href: `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.ganamos.earth'}/feed`,
+      },
+      footer: 'Thanks for being part of the Ganamos community!<br>Ganamos Earth',
+    })
 
     await sendEmail(
       toEmail,
