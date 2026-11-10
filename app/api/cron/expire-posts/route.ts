@@ -98,22 +98,13 @@ export async function GET(request: NextRequest) {
         .eq('id', post.id)
         .is('deleted_at', null)
         .eq('fixed', false)
+        .eq('under_review', false)
+        .is('reward_paid_at', null)
+        .is('anonymous_reward_paid_at', null)
+        .is('anonymous_reward_payment_lock', null)
         .select('id')
       if (!expiredRows?.length) continue
 
-      // Log activity
-      await adminSupabase.from('activities').insert({
-        id: uuidv4(),
-        user_id: post.user_id,
-        type: 'post_expired',
-        related_id: post.id,
-        related_table: 'posts',
-        timestamp: nowIso,
-        metadata: {
-          title: post.title || 'Expired post',
-          reward: post.reward || 0,
-        },
-      })
 
       // Refund sats if post has a reward and an authenticated user
       // Only refund rewards that were actually funded
@@ -123,32 +114,27 @@ export async function GET(request: NextRequest) {
         post.reward > 0 &&
         (await isPostRewardFunded(adminSupabase as any, { id: post.id }))
       ) {
+        const { error: refundError } = await adminSupabase.rpc('refund_post_reward', {
+          p_post_id: post.id,
+          p_memo: `Refund for expired post: ${post.title || 'Issue'}`,
+        })
         const { data: profile } = await adminSupabase
           .from('profiles')
-          .select('balance, email, name')
+          .select('email, name')
           .eq('id', post.user_id)
           .single()
 
-        if (profile) {
-          // Update balance
+        if (refundError) {
+          // Undo the expiry so the next run retries (the refund is once-only)
+          console.error(`Refund failed for expired post ${post.id}; restoring it for retry:`, refundError)
           await adminSupabase
-            .from('profiles')
-            .update({
-              balance: (profile.balance || 0) + post.reward,
-              updated_at: nowIso,
-            })
-            .eq('id', post.user_id)
-
-          // Create transaction record
-          await adminSupabase.from('transactions').insert({
-            id: uuidv4(),
-            user_id: post.user_id,
-            type: 'internal',
-            amount: post.reward,
-            status: 'completed',
-            memo: `Refund for expired post: ${post.title || 'Issue'}`,
-          })
-
+            .from('posts')
+            .update({ deleted_at: null })
+            .eq('id', post.id)
+            .eq('deleted_at', nowIso)
+            .is('reward_refunded_at', null)
+          continue
+        } else if (profile) {
           // Send confirmation email
           if (profile.email && !profile.email.includes('@ganamos.app')) {
             await sendPostExpiredConfirmationEmail({
@@ -163,6 +149,20 @@ export async function GET(request: NextRequest) {
           }
         }
       }
+
+      // Log activity
+      await adminSupabase.from('activities').insert({
+        id: uuidv4(),
+        user_id: post.user_id,
+        type: 'post_expired',
+        related_id: post.id,
+        related_table: 'posts',
+        timestamp: nowIso,
+        metadata: {
+          title: post.title || 'Expired post',
+          reward: post.reward || 0,
+        },
+      })
 
       // Clear assignment and notify fixer
       if (post.assigned_to) {

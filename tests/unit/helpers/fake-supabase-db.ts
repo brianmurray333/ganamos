@@ -242,6 +242,7 @@ export function createFakeSupabase(initial: Tables = {}) {
     if (!post) return raise('post_not_found', 'P0002')
     if (post.deleted_at) return raise('post_deleted')
     if (post.reward_paid_at || post.anonymous_reward_paid_at) return raise('reward_already_paid')
+    if (post.anonymous_reward_payment_lock) return raise('reward_payout_in_progress')
     if (!post.reward || post.reward <= 0) return raise('no_reward')
     const fixer = (tables.profiles ||= []).find(p => p.id === args.p_fixer_id)
     // The SQL sets posts.reward_paid_to (FK to profiles) before its fixer check, so an unknown
@@ -255,6 +256,25 @@ export function createFakeSupabase(initial: Tables = {}) {
     const tx = { id: nextId('tx'), user_id: args.p_fixer_id, type: 'internal', amount: post.reward, status: 'completed', memo: args.p_memo }
     ;(tables.transactions ||= []).push(tx)
     return { data: [{ transaction_id: tx.id, amount: post.reward, new_balance: fixer.balance }], error: null }
+  }
+
+  /** refund_post_reward: credit a deleted post's reward back to its owner, once. */
+  function refundPostReward(args: { p_post_id: string; p_memo: string }) {
+    const post = (tables.posts ||= []).find(p => p.id === args.p_post_id)
+    if (!post) return raise('post_not_found', 'P0002')
+    if (!post.deleted_at) return raise('post_not_deleted')
+    if (post.reward_refunded_at) return raise('reward_already_refunded')
+    if (post.fixed || post.reward_paid_at || post.anonymous_reward_paid_at) return raise('reward_already_paid')
+    if (post.anonymous_reward_payment_lock) return raise('reward_payout_in_progress')
+    if (!post.user_id) return raise('no_owner')
+    if (!post.reward || post.reward <= 0) return raise('no_reward')
+    const owner = (tables.profiles ||= []).find(p => p.id === post.user_id)
+    if (!owner) return raise('owner_not_found', 'P0002')
+    post.reward_refunded_at = new Date().toISOString()
+    owner.balance = (owner.balance || 0) + post.reward
+    const tx = { id: nextId('tx'), user_id: post.user_id, type: 'internal', amount: post.reward, status: 'completed', memo: args.p_memo }
+    ;(tables.transactions ||= []).push(tx)
+    return { data: [{ transaction_id: tx.id, amount: post.reward, new_balance: owner.balance }], error: null }
   }
 
   /** credit_deposit: pending -> completed + credit, once; NULL if not pending for that user. */
@@ -273,7 +293,7 @@ export function createFakeSupabase(initial: Tables = {}) {
     return { data: profile.balance, error: null }
   }
 
-  const SERVICE_ROLE_ONLY = new Set(['pay_fix_reward', 'credit_deposit'])
+  const SERVICE_ROLE_ONLY = new Set(['pay_fix_reward', 'credit_deposit', 'refund_post_reward'])
 
   function rpcFor(role: ClientRole) {
     return vi.fn(async (fn: string, args: any) => {
@@ -291,6 +311,7 @@ export function createFakeSupabase(initial: Tables = {}) {
       // No awaits between check and write below: atomic like a row-locked transaction
       if (fn === 'pay_fix_reward') return payFixReward(args)
       if (fn === 'credit_deposit') return creditDeposit(args)
+      if (fn === 'refund_post_reward') return refundPostReward(args)
       return raise(`fake-supabase: unexpected rpc ${fn}`)
     })
   }

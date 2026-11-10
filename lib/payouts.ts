@@ -6,9 +6,12 @@
  * use these helpers so that amounts come from the database and every reward
  * is paid at most once.
  */
-import { createHash, randomBytes, timingSafeEqual } from "crypto"
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { AUTO_APPROVE_CONFIDENCE, verifyFixImages, type FixVerification } from "@/lib/verify-fix"
+import { payInvoice } from "@/lib/lightning"
+import { extractInvoiceAmount, validateLightningInvoice } from "@/lib/lightning-validation"
+import { sendRewardOnHoldAlert } from "@/lib/security-alerts"
 
 export { AUTO_APPROVE_CONFIDENCE }
 
@@ -181,4 +184,269 @@ export async function verifyFixForPost(
     console.error("[verifyFixForPost] AI verification failed:", error)
     return null
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Funding-invoice provenance                                         */
+/* ------------------------------------------------------------------ */
+
+/** Memo prefix of invoices from createPostFundingInvoiceAction. */
+export const POST_FUNDING_MEMO_PREFIX = "Fund anonymous post on Ganamos!"
+/** Marker in the memo of L402 invoices issued by POST /api/posts. */
+export const AGENT_POST_MEMO_MARKER = " to post job on Ganamos ("
+
+/**
+ * Was this node invoice issued to fund a post? Every invoice the node
+ * creates has a server-chosen memo, so this tells funding invoices apart
+ * from deposits, donations, orders and other L402 fees (whose settled
+ * payments are already credited elsewhere and must not fund a post too).
+ */
+export function isPostFundingInvoiceMemo(memo: string | null | undefined): boolean {
+  if (!memo || typeof memo !== "string") return false
+  return memo.startsWith(POST_FUNDING_MEMO_PREFIX) || (memo.startsWith("Pay ") && memo.includes(AGENT_POST_MEMO_MARKER))
+}
+
+/* ------------------------------------------------------------------ */
+/* Lightning payouts of anonymous / agent rewards                     */
+/* ------------------------------------------------------------------ */
+
+const SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"
+
+/**
+ * Turn a payout target (BOLT11 invoice or Lightning address) into an
+ * invoice for exactly `amount` sats. Amountless invoices and invoices for
+ * any other amount are refused.
+ */
+export async function resolvePayoutInvoice(
+  target: string,
+  amount: number
+): Promise<{ ok: true; invoice: string } | { ok: false; error: string }> {
+  if (!target || typeof target !== "string") return { ok: false, error: "A payout invoice or Lightning address is required." }
+  const trimmed = target.trim()
+  let invoice = trimmed
+
+  const isAddress = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)
+  if (isAddress) {
+    try {
+      const [user, domain] = trimmed.toLowerCase().split("@")
+      const lookup = await fetch(`https://${domain}/.well-known/lnurlp/${encodeURIComponent(user)}`)
+      if (!lookup.ok) return { ok: false, error: "Failed to look up Lightning address." }
+      const lookupData = await lookup.json()
+      if (!lookupData?.callback) return { ok: false, error: "Invalid Lightning address response." }
+      const callbackUrl = new URL(lookupData.callback)
+      if (callbackUrl.protocol !== "https:") return { ok: false, error: "Invalid Lightning address callback." }
+      callbackUrl.searchParams.set("amount", String(amount * 1000))
+      const invoiceResponse = await fetch(callbackUrl.toString())
+      if (!invoiceResponse.ok) return { ok: false, error: "Failed to get an invoice from the Lightning address." }
+      const invoiceData = await invoiceResponse.json()
+      if (!invoiceData?.pr || typeof invoiceData.pr !== "string") return { ok: false, error: "Invalid invoice from the Lightning address." }
+      invoice = invoiceData.pr.trim()
+    } catch (error) {
+      console.error("[resolvePayoutInvoice] Lightning address lookup failed:", error)
+      return { ok: false, error: "Failed to resolve the Lightning address." }
+    }
+  }
+
+  if (!validateLightningInvoice(invoice)) return { ok: false, error: "Invalid Lightning invoice." }
+  const invoiceAmount = extractInvoiceAmount(invoice)
+  if (invoiceAmount !== amount) {
+    return {
+      ok: false,
+      error: `The invoice must be for exactly ${amount} sats (got ${invoiceAmount === null ? "no amount" : `${invoiceAmount} sats`}).`,
+    }
+  }
+  return { ok: true, invoice }
+}
+
+/**
+ * Alert the admin that a reward payout is on hold, waiting at most
+ * `timeoutMs` so a stalled email transport can't hang the payout response.
+ * Never throws (the lock is what keeps the reward safe; the alert is advisory).
+ */
+export async function notifyRewardOnHold(
+  params: Parameters<typeof sendRewardOnHoldAlert>[0],
+  timeoutMs = 5000
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      sendRewardOnHoldAlert(params),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, timeoutMs) }),
+    ])
+  } catch (error) {
+    console.error("[notifyRewardOnHold] alert failed:", error)
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+export type LightningRewardPayoutResult =
+  | { success: true; paymentHash: string | null; amount: number }
+  | { success: false; error: string; code: "not_available" | "unfunded" | "invalid_invoice" | "payment_failed" | "on_hold" | "record_failed" }
+
+/**
+ * Pay a fixed post's reward to an anonymous / agent fixer over Lightning,
+ * at most once. The caller must already have authorized the payout.
+ *
+ * - The post must be fixed with no registered fixer, funded, not deleted,
+ *   unpaid and unlocked; a lock is taken atomically before anything is paid.
+ * - The amount always comes from the post; the invoice must match it exactly.
+ * - A definitive LND payment_error releases the lock (nothing was sent).
+ *   Any other failure may have paid: the lock is kept, the admin is alerted,
+ *   and no retry can pay again until someone reconciles it.
+ */
+export async function payAnonymousRewardViaLightning(
+  admin: SupabaseClient,
+  params: { postId: string; target: string; source: string; requireAnonymousFixer?: boolean }
+): Promise<LightningRewardPayoutResult> {
+  const { postId, target, source } = params
+
+  // Without node credentials nothing can be sent: fail before locking.
+  if (!process.env.LND_REST_URL || !process.env.LND_ADMIN_MACAROON) {
+    return { success: false, error: "Lightning payment system is currently unavailable.", code: "not_available" }
+  }
+
+  if (!(await isPostRewardFunded(admin, { id: postId }))) {
+    console.error("SECURITY: Lightning payout attempted for unfunded post", { postId, source })
+    return { success: false, error: "This post's reward was never funded.", code: "unfunded" }
+  }
+
+  const lockId = randomUUID()
+  let lockQuery = admin
+    .from("posts")
+    .update({ anonymous_reward_payment_lock: lockId })
+    .eq("id", postId)
+    .eq("fixed", true)
+    .is("fixed_by", null)
+    .is("deleted_at", null)
+    .is("reward_paid_at", null)
+    .is("anonymous_reward_paid_at", null)
+    .is("anonymous_reward_payment_lock", null)
+  if (params.requireAnonymousFixer) lockQuery = lockQuery.eq("fixed_by_is_anonymous", true)
+  const { data: locked, error: lockError } = await lockQuery.select("id, reward, title")
+  const post = Array.isArray(locked) ? locked[0] : null
+  if (lockError || !post) {
+    return { success: false, error: "Reward unavailable, already paid, or being processed.", code: "not_available" }
+  }
+
+  const releaseLock = async () => {
+    await admin
+      .from("posts")
+      .update({ anonymous_reward_payment_lock: null })
+      .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId)
+  }
+
+  const reward = Number(post.reward)
+  if (!Number.isInteger(reward) || reward <= 0) {
+    await releaseLock()
+    return { success: false, error: "This post has no reward to pay.", code: "not_available" }
+  }
+
+  const resolved = await resolvePayoutInvoice(target, reward)
+  if (!resolved.ok) {
+    await releaseLock()
+    return { success: false, error: resolved.error, code: "invalid_invoice" }
+  }
+
+  let paymentResult: any
+  try {
+    paymentResult = await payInvoice(resolved.invoice)
+  } catch (error) {
+    paymentResult = { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+
+  if (!paymentResult?.success) {
+    if (paymentResult?.details?.payment_error) {
+      await releaseLock()
+      return { success: false, error: "Lightning payment failed. Try a different invoice.", code: "payment_failed" }
+    }
+    console.error("SECURITY: Lightning reward payout outcome uncertain; keeping lock", { postId, lockId, source })
+    await notifyRewardOnHold({
+      postId,
+      amount: reward,
+      reason: "payment_uncertain",
+      flow: source,
+      details: String(paymentResult?.error ?? ""),
+    })
+    return {
+      success: false,
+      error: "The payment could not be confirmed. The reward is on hold; please contact support.",
+      code: "on_hold",
+    }
+  }
+
+  const paymentHash: string | null = paymentResult.paymentHash || paymentResult.paymentPreimage || null
+  const now = new Date().toISOString()
+  // The lock stays set; anonymous_reward_paid_at is the permanent marker.
+  let markError: { message: string } | null = null
+  try {
+    const { error } = await admin
+      .from("posts")
+      .update({ anonymous_reward_paid_at: now, anonymous_reward_payment_hash: paymentHash })
+      .eq("id", postId)
+      .eq("anonymous_reward_payment_lock", lockId)
+    markError = error
+  } catch (error) {
+    markError = { message: error instanceof Error ? error.message : String(error) }
+  }
+  if (markError) {
+    console.error("CRITICAL: reward paid but not recorded", { postId, lockId, markError })
+    await notifyRewardOnHold({
+      postId,
+      amount: reward,
+      reason: "paid_but_not_recorded",
+      flow: source,
+      paymentHash,
+      details: markError.message,
+    })
+    return { success: false, error: "Payment was sent but our records could not be updated. Please contact support.", code: "record_failed" }
+  }
+
+  await admin.from("activities").insert({
+    id: randomUUID(),
+    user_id: null,
+    type: "reward",
+    related_id: postId,
+    related_table: "posts",
+    timestamp: now,
+    metadata: { amount: reward, payment_hash: paymentHash, payment_method: "lightning", is_anonymous: true },
+  })
+  const { error: txError } = await admin.from("transactions").insert({
+    id: randomUUID(),
+    user_id: SYSTEM_USER_ID,
+    type: "internal",
+    amount: reward,
+    status: "completed",
+    payment_hash: paymentHash,
+    memo: `Anonymous fix reward payout for post ${postId}`,
+    created_at: now,
+    updated_at: now,
+  })
+  if (txError) console.error("Error creating anonymous reward audit transaction:", txError)
+
+  return { success: true, paymentHash, amount: reward }
+}
+
+/**
+ * Record an agent fixer's L402 payment hash (their credential for status
+ * polling and claims) and optional payout target on a fix they just
+ * submitted. Server-only: call after verifying the L402 token.
+ */
+export async function recordAgentFixPayoutDetails(
+  admin: SupabaseClient,
+  params: { postId: string; paymentHash: string; payoutInvoice?: string | null }
+): Promise<boolean> {
+  const update: Record<string, string> = { submitted_fix_payment_hash: params.paymentHash }
+  if (params.payoutInvoice) update.submitted_fix_payout_invoice = params.payoutInvoice.trim()
+  const { data, error } = await admin
+    .from("posts")
+    .update(update)
+    .eq("id", params.postId)
+    .eq("under_review", true)
+    .is("submitted_fix_by_id", null)
+    .is("submitted_fix_payment_hash", null)
+    .select("id")
+  if (error) console.error("[recordAgentFixPayoutDetails] failed:", error)
+  return !error && !!data?.length
 }

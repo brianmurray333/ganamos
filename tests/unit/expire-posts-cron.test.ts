@@ -583,6 +583,25 @@ describe('POST Expiration Cron - Unit Tests', () => {
       expect(refunds()).toHaveLength(1)
     })
 
+    it('does not expire or refund a post with a reward payout in flight', async () => {
+      setupDb({ anonymous_reward_payment_lock: 'payout-in-flight' })
+
+      await run()
+
+      expect(db.row('posts', 'post-1')!.deleted_at).toBeFalsy()
+      expect(balance(OWNER)).toBe(5000)
+      expect(refunds()).toHaveLength(0)
+    })
+
+    it('does not refund a reward that was already paid', async () => {
+      setupDb({ reward_paid_at: '2026-11-08T12:30:00.000Z' })
+
+      await run()
+
+      expect(balance(OWNER)).toBe(5000)
+      expect(refunds()).toHaveLength(0)
+    })
+
     it('two overlapping runs refund once (conditional soft delete)', async () => {
       setupDb()
       db.latency = db.barrier(op => op.table === 'posts' && op.op === 'update' && 'deleted_at' in (op.payload || {}))

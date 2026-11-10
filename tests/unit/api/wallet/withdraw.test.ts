@@ -38,6 +38,14 @@ vi.mock('@/lib/lightning', () => ({
   extractInvoiceAmount: vi.fn(),
 }))
 
+// Invoice decoding: default to a well-formed amountless invoice; individual
+// tests override the encoded amount.
+vi.mock('@/lib/lightning-validation', () => ({
+  validateLightningInvoice: vi.fn((inv: string) => typeof inv === 'string' && inv.startsWith('lnbc')),
+  isAmountlessInvoice: vi.fn(() => true),
+  extractInvoiceAmount: vi.fn(() => null),
+}))
+
 vi.mock('@supabase/auth-helpers-nextjs', () => ({
   createRouteHandlerClient: vi.fn(),
 }))
@@ -64,6 +72,7 @@ vi.mock('@/lib/withdrawal-security', () => ({
   sendReconciliationAlert: vi.fn().mockResolvedValue(undefined),
   sendWithdrawalApprovalRequest: vi.fn().mockResolvedValue(undefined),
   sendSystemThresholdAlert: vi.fn().mockResolvedValue(undefined),
+  emergencyDisableWithdrawals: vi.fn().mockResolvedValue({ success: true }),
 }))
 
 // Mock security alerts to avoid SMS/email dependencies
@@ -102,6 +111,7 @@ vi.mock('uuid', () => ({
 
 // Import mocked functions for assertions
 import { payInvoice, extractInvoiceAmount } from '@/lib/lightning'
+import * as invoiceValidation from '@/lib/lightning-validation'
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { sendBitcoinSentEmail } from '@/lib/transaction-emails'
@@ -214,6 +224,8 @@ describe('POST /api/wallet/withdraw', () => {
     // Setup default mock behaviors
     mockRouteHandlerClient = createMockSupabaseClient()
     mockAdminSupabaseClient = createMockSupabaseClient()
+    vi.mocked(invoiceValidation.isAmountlessInvoice).mockReturnValue(true)
+    vi.mocked(invoiceValidation.extractInvoiceAmount).mockReturnValue(null)
 
     // Mock RPC to handle create_pending_withdrawal and update_withdrawal_complete
     mockAdminSupabaseClient.rpc.mockImplementation((funcName: string) => {
@@ -393,6 +405,43 @@ describe('POST /api/wallet/withdraw', () => {
     })
   })
 
+  describe('Invoice amount', () => {
+    beforeEach(() => {
+      mockRouteHandlerClient.auth.getUser.mockResolvedValue({
+        data: { user: VALID_SESSION.user },
+        error: null,
+      })
+    })
+
+    it('rejects an invoice whose encoded amount is larger than the withdrawal amount', async () => {
+      vi.mocked(invoiceValidation.isAmountlessInvoice).mockReturnValue(false)
+      vi.mocked(invoiceValidation.extractInvoiceAmount).mockReturnValue(24_000)
+
+      const response = await POST(createMockRequest({ paymentRequest: VALID_INVOICE, amount: 1 }))
+      const data = await response.json()
+
+      expect(response.status).toBe(400)
+      expect(data.success).toBe(false)
+      expect(payInvoice).not.toHaveBeenCalled()
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalledWith('create_pending_withdrawal', expect.anything())
+    })
+
+    it('rejects an invoice whose amount cannot be parsed (not amountless)', async () => {
+      vi.mocked(invoiceValidation.isAmountlessInvoice).mockReturnValue(false)
+      vi.mocked(invoiceValidation.extractInvoiceAmount).mockReturnValue(null)
+
+      const response = await POST(createMockRequest({ paymentRequest: VALID_INVOICE, amount: VALID_AMOUNT }))
+      expect(response.status).toBe(400)
+      expect(payInvoice).not.toHaveBeenCalled()
+    })
+
+    it('rejects a malformed invoice before touching balances', async () => {
+      const response = await POST(createMockRequest({ paymentRequest: 'not-an-invoice', amount: VALID_AMOUNT }))
+      expect(response.status).toBe(400)
+      expect(payInvoice).not.toHaveBeenCalled()
+    })
+  })
+
   describe('Balance Verification', () => {
     beforeEach(() => {
       mockRouteHandlerClient.auth.getUser.mockResolvedValue({
@@ -527,11 +576,11 @@ describe('POST /api/wallet/withdraw', () => {
     })
 
     it('should return 500 and update transaction to failed when payment fails', async () => {
-      // Mock failed payment
+      // Definitive LND failure: nothing was sent
       vi.mocked(payInvoice).mockResolvedValue({
         success: false,
-        error: 'Insufficient node balance',
-        details: { code: 'INSUFFICIENT_FUNDS' },
+        error: 'Payment failed: insufficient local balance',
+        details: { payment_error: 'insufficient local balance' },
       })
 
       const request = createMockRequest({
@@ -561,8 +610,15 @@ describe('POST /api/wallet/withdraw', () => {
       const response = await POST(request)
       const data = await response.json()
 
-      expect(response.status).toBe(500)
+      // Outcome unknown: the withdrawal stays pending (sats stay reserved)
+      // and is never marked failed or completed here.
+      expect(response.status).toBe(202)
       expect(data.success).toBe(false)
+      const statusUpdates = mockAdminSupabaseClient.update.mock.calls.filter(
+        ([arg]: any[]) => arg && (arg.status === 'failed' || arg.status === 'completed')
+      )
+      expect(statusUpdates).toHaveLength(0)
+      expect(mockAdminSupabaseClient.rpc).not.toHaveBeenCalledWith('update_withdrawal_complete', expect.anything())
     })
 
     it('should not send email notification for ganamos.app email addresses', async () => {

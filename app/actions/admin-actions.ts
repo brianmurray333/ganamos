@@ -12,11 +12,15 @@ async function verifyAdmin() {
   
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   
-  if (authError || !user || user.email !== ADMIN_EMAIL) {
+  // Fail closed if ADMIN_EMAIL is unset (an email-less user would otherwise
+  // match `undefined`).
+  if (authError || !user || !ADMIN_EMAIL || !user.email || user.email !== ADMIN_EMAIL) {
     return { authorized: false, supabase: null }
   }
-  
-  return { authorized: true, supabase }
+
+  // Admin-only tables (e.g. pet_orders) are service-role only at the DB.
+  const adminClient = createServerSupabaseClient({ supabaseKey: process.env.SUPABASE_SECRET_API_KEY })
+  return { authorized: true, supabase: adminClient }
 }
 
 // ==================== ORDERS ====================
@@ -518,39 +522,6 @@ export async function toggleWithdrawals(enabled: boolean, reason?: string) {
   } catch (error) {
     console.error("Error in toggleWithdrawals:", error)
     return { success: false, error: "Failed to toggle withdrawals" }
-  }
-}
-
-/**
- * Emergency kill-switch for withdrawals that works without an admin session.
- * Uses the service role client directly. Only call from server-side security code
- * (e.g. threshold breach auto-disable), never from client-facing actions.
- */
-export async function emergencyDisableWithdrawals(reason: string) {
-  try {
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
-
-    const { error } = await adminSupabase
-      .from("system_settings")
-      .update({
-        withdrawals_enabled: false,
-        updated_at: new Date().toISOString(),
-        updated_by: reason,
-      })
-      .eq("id", "main")
-
-    if (error) {
-      console.error("[SECURITY] Emergency disable withdrawals failed:", error)
-      return { success: false, error: error.message }
-    }
-
-    console.log(`[SECURITY] Withdrawals EMERGENCY DISABLED. Reason: ${reason}`)
-    return { success: true }
-  } catch (error) {
-    console.error("[SECURITY] Emergency disable withdrawals exception:", error)
-    return { success: false, error: "Failed to emergency disable withdrawals" }
   }
 }
 

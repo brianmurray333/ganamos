@@ -30,6 +30,15 @@ vi.mock('@/lib/lightning', () => ({
   lndRequest: vi.fn(),
 }))
 
+// Invoice decoding: the test invoices are placeholders, so treat them as
+// well-formed amountless invoices (the route then pays exactly `amount`).
+// Amount-mismatch rejection is covered in tests/unit/api/wallet/withdraw.test.ts.
+vi.mock('@/lib/lightning-validation', () => ({
+  validateLightningInvoice: vi.fn((inv: string) => typeof inv === 'string' && inv.startsWith('lnbc')),
+  isAmountlessInvoice: vi.fn(() => true),
+  extractInvoiceAmount: vi.fn(() => null),
+}))
+
 // Mock transaction emails to avoid sending real emails
 vi.mock('@/lib/transaction-emails', () => ({
   sendBitcoinSentEmail: vi.fn().mockResolvedValue({ success: true }),
@@ -51,6 +60,7 @@ vi.mock('@/lib/withdrawal-security', () => ({
   sendReconciliationAlert: vi.fn().mockResolvedValue(undefined),
   sendWithdrawalApprovalRequest: vi.fn().mockResolvedValue(undefined),
   sendSystemThresholdAlert: vi.fn().mockResolvedValue(undefined),
+  emergencyDisableWithdrawals: vi.fn().mockResolvedValue({ success: true }),
 }))
 
 // Mock security alerts to avoid SMS/email dependencies  
@@ -407,10 +417,11 @@ describe('POST /api/wallet/withdraw - Integration Tests', () => {
     })
 
     it('should update transaction to failed and NOT deduct balance on payment failure', async () => {
+      // Definitive LND failure (payment_error): nothing was sent
       vi.mocked(payInvoice).mockResolvedValue({
         success: false,
-        error: 'Insufficient node balance',
-        details: { code: 'INSUFFICIENT_FUNDS' },
+        error: 'Payment failed: insufficient local balance',
+        details: { payment_error: 'insufficient local balance' },
       })
 
       const request = createWithdrawRequest({
@@ -423,6 +434,14 @@ describe('POST /api/wallet/withdraw - Integration Tests', () => {
       expect(response.status).toBe(500)
       const data = await response.json()
       expect(data.success).toBe(false)
+
+      const tx = await queryOne<{ status: string }>(
+        "SELECT status FROM transactions WHERE user_id = $1 AND type = 'withdrawal'",
+        [userId]
+      )
+      expect(tx.status).toBe('failed')
+      const profile = await queryOne<{ balance: number }>('SELECT balance FROM profiles WHERE id = $1', [userId])
+      expect(profile.balance).toBe(5000)
     })
 
     it('should create activity log on successful withdrawal', async () => {
@@ -668,9 +687,16 @@ describe('POST /api/wallet/withdraw - Integration Tests', () => {
 
       const response = await POST(request)
 
-      expect(response.status).toBe(500)
+      // Outcome unknown: the withdrawal stays pending (its sats stay
+      // reserved) instead of being marked failed and released.
+      expect(response.status).toBe(202)
       const data = await response.json()
       expect(data.success).toBe(false)
+      const txs = await queryDB<{ status: string }>(
+        "SELECT status FROM transactions WHERE user_id = $1 AND type = 'withdrawal'",
+        [userId]
+      )
+      expect(txs.map((t) => t.status)).toEqual(['pending'])
     })
 
     it('should handle multiple concurrent withdrawals correctly', async () => {

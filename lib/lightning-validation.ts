@@ -243,3 +243,14 @@ export function validateInvoiceAmount(invoice: string, expectedAmount: number): 
   console.log('[LIGHTNING DEBUG] Amount validation result:', isValid, '(difference:', Math.abs(invoiceAmount - expectedAmount), ')')
   return isValid
 }
+
+/**
+ * True only if the invoice encodes no amount at all (an any-amount invoice).
+ * An amount part that fails to parse is NOT amountless.
+ */
+export function isAmountlessInvoice(invoice: string): boolean {
+  const trimmed = (invoice || '').trim().toLowerCase()
+  const prefix = trimmed.startsWith('lnbcrt') ? 'lnbcrt' : trimmed.startsWith('lnbc') ? 'lnbc' : trimmed.startsWith('lntb') ? 'lntb' : ''
+  if (!prefix) return false
+  return trimmed.lastIndexOf('1') === prefix.length
+}

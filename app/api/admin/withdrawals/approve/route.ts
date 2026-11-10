@@ -3,6 +3,7 @@ import { cookies } from "next/headers"
 import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { payInvoice } from "@/lib/lightning"
+import { extractInvoiceAmount, isAmountlessInvoice, validateLightningInvoice } from "@/lib/lightning-validation"
 import { revalidatePath } from "next/cache"
 import { v4 as uuidv4 } from "uuid"
 import { sendBitcoinSentEmail } from "@/lib/transaction-emails"
@@ -11,8 +12,9 @@ import {
   sendWithdrawalFailedEmail,
 } from "@/lib/withdrawal-security"
 
-// Admin email that can approve withdrawals
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com'
+// Admin email that can approve withdrawals (no fallback: fail closed if unset,
+// otherwise whoever registers the placeholder address could approve payouts)
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     // Check if user is admin
-    if (user.email !== ADMIN_EMAIL) {
+    if (!ADMIN_EMAIL || !user.email || user.email !== ADMIN_EMAIL) {
       console.error('[Admin API] Non-admin attempted to approve withdrawal:', user.email)
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 403 })
     }
@@ -137,15 +139,40 @@ export async function POST(request: Request) {
       }, { status: 400 })
     }
 
-    // Update transaction to approved
-    await adminSupabase
+    // SECURITY: LND pays the invoice's own amount; it must match what is
+    // debited (requests created before this check may not).
+    const invoice = String(transaction.payment_request || '').trim()
+    if (!validateLightningInvoice(invoice) || (!isAmountlessInvoice(invoice) && extractInvoiceAmount(invoice) !== transaction.amount)) {
+      await adminSupabase
+        .from("transactions")
+        .update({ status: "failed", updated_at: new Date().toISOString() })
+        .eq("id", transactionId)
+        .eq("status", "pending_approval")
+      await logWithdrawalAudit(adminSupabase, {
+        transactionId,
+        userId: transaction.user_id,
+        action: 'failed',
+        details: { reason: 'Invoice amount does not match withdrawal amount' },
+      })
+      return NextResponse.json({ success: false, error: "Invoice amount does not match the withdrawal amount" }, { status: 400 })
+    }
+
+    // Claim the approval atomically (pending_approval -> pending) so two
+    // approvals can't both pay.
+    const { data: claimed } = await adminSupabase
       .from("transactions")
       .update({
+        status: "pending",
         approved_by: user.id,
         approved_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", transactionId)
+      .eq("status", "pending_approval")
+      .select("id")
+    if (!claimed?.length) {
+      return NextResponse.json({ success: false, error: "Transaction not found or already processed" }, { status: 409 })
+    }
 
     await logWithdrawalAudit(adminSupabase, {
       transactionId,
@@ -156,10 +183,24 @@ export async function POST(request: Request) {
 
     // Process the payment
     console.log("[Admin Approve] Processing withdrawal:", transactionId)
-    const paymentResult = await payInvoice(transaction.payment_request, transaction.amount)
+    const paymentResult = await payInvoice(invoice, transaction.amount)
     
     if (!paymentResult.success) {
       console.error("[Admin Approve] Payment failed:", paymentResult.error)
+
+      if (!(paymentResult as any)?.details?.payment_error) {
+        // Outcome unknown: keep it pending (sats stay reserved); reconcile.
+        await logWithdrawalAudit(adminSupabase, {
+          transactionId,
+          userId: transaction.user_id,
+          action: 'delayed',
+          details: { outcome: 'uncertain', error: (paymentResult as any).error },
+        })
+        return NextResponse.json({
+          success: false,
+          error: "Payment outcome uncertain; the withdrawal stays pending. Check the node before retrying.",
+        }, { status: 202 })
+      }
       
       await adminSupabase
         .from("transactions")
@@ -168,6 +209,7 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", transactionId)
+        .eq("status", "pending")
 
       await logWithdrawalAudit(adminSupabase, {
         transactionId,
@@ -182,24 +224,22 @@ export async function POST(request: Request) {
       }, { status: 500 })
     }
 
-    // Payment succeeded - update transaction and balance
-    await adminSupabase
-      .from("transactions")
-      .update({
-        status: "completed",
-        payment_hash: paymentResult.paymentHash,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", transactionId)
-
-    const newBalance = profile.balance - transaction.amount
-    await adminSupabase
-      .from("profiles")
-      .update({
-        balance: newBalance,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", transaction.user_id)
+    // Payment succeeded - complete and deduct atomically
+    const { data: completeResult, error: completeError } = await adminSupabase.rpc('update_withdrawal_complete', {
+      p_transaction_id: transactionId,
+      p_user_id: transaction.user_id,
+      p_payment_hash: paymentResult.paymentHash,
+      p_amount: transaction.amount,
+    })
+    const completion = completeResult as { success: boolean; error?: string; new_balance?: number } | null
+    if (completeError || !completion?.success) {
+      console.error("[Admin Approve] CRITICAL: paid but not recorded", { transactionId, completeError, completion })
+      return NextResponse.json({
+        success: false,
+        error: "Payment sent but the withdrawal could not be recorded. Reconcile manually.",
+      }, { status: 500 })
+    }
+    const newBalance = completion.new_balance
 
     await logWithdrawalAudit(adminSupabase, {
       transactionId,

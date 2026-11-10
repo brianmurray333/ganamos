@@ -349,12 +349,23 @@ describe('deletePostAction', () => {
 
       await del()
 
-      const sensitive = db.ops(o => o.op !== 'select' && ['posts', 'profiles', 'transactions', 'activities'].includes(o.table))
-      expect(sensitive.length).toBeGreaterThanOrEqual(4)
+      const sensitive = db.ops(o => o.op !== 'select' && ['posts', 'profiles', 'transactions', 'activities', 'refund_post_reward'].includes(o.table))
+      expect(sensitive.length).toBeGreaterThanOrEqual(3)
       sensitive.forEach(o => expect(o.role).toBe('admin'))
-      // The soft delete is conditional (atomic) on the post still being live and unfixed
+      // The refund is the atomic, once-only database function
+      expect(db.ops(o => o.op === 'rpc' && o.table === 'refund_post_reward')).toHaveLength(1)
+      expect(db.ops(o => o.table === 'profiles' && o.op === 'update')).toHaveLength(0)
+      // The soft delete is conditional (atomic) on the post still being live,
+      // unfixed, and with no reward payout made or in flight
       const softDelete = db.ops(o => o.table === 'posts' && o.op === 'update')[0]
-      expect(softDelete.filters).toEqual(expect.arrayContaining([['is', 'deleted_at', null], ['eq', 'fixed', false]]))
+      expect(softDelete.filters).toEqual(expect.arrayContaining([
+        ['is', 'deleted_at', null],
+        ['eq', 'fixed', false],
+        ['eq', 'under_review', false],
+        ['is', 'reward_paid_at', null],
+        ['is', 'anonymous_reward_paid_at', null],
+        ['is', 'anonymous_reward_payment_lock', null],
+      ]))
     })
 
     it('deletes a zero-reward post without refunding', async () => {
@@ -400,10 +411,34 @@ describe('deletePostAction', () => {
 
       const result = await del()
 
-      expect(result).toEqual({ success: false, error: 'Post has already been deleted or fixed' })
+      expect(result.success).toBe(false)
+      expect(result.error).toMatch(/can no longer be deleted/)
       expect(balance(OWNER_ID)).toBe(OWNER_START)
       expect(refundTxs()).toHaveLength(0)
       expect(db.rows('activities')).toHaveLength(0)
+    })
+
+    it('refuses to delete (or refund) while an anonymous Lightning payout is locked', async () => {
+      // e.g. the owner approved a Lightning payout whose outcome is uncertain,
+      // then cleared under_review directly over REST
+      setup({ under_review: false, anonymous_reward_payment_lock: 'payout-in-flight' })
+
+      const result = await del()
+
+      expect(result.success).toBe(false)
+      expect(post().deleted_at).toBeFalsy()
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+    })
+
+    it('refuses to delete (or refund) a post whose reward was already paid', async () => {
+      setup({ reward_paid_at: '2026-11-08T12:00:00Z' })
+
+      const result = await del()
+
+      expect(result.success).toBe(false)
+      expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
     })
 
     it('does not refund when the post was fixed concurrently (no row updated)', async () => {
@@ -557,21 +592,30 @@ describe('deletePostAction', () => {
       expect(post().deleted_at).toBeTruthy()
     })
 
-    it('still reports the deletion when the balance update fails', async () => {
+    it('restores the post when the refund fails, so the owner can retry', async () => {
       setup()
-      db.failOp = op => (op.table === 'profiles' && op.op === 'update' ? { message: 'Update failed' } : null)
+      db.failOp = op => (op.op === 'rpc' && op.table === 'refund_post_reward' ? { message: 'Refund failed' } : null)
 
-      expect(await del()).toEqual({ success: true })
-      expect(post().deleted_at).toBeTruthy()
+      const result = await del()
+      expect(result.success).toBe(false)
+      expect(post().deleted_at).toBeFalsy()
       expect(balance(OWNER_ID)).toBe(OWNER_START)
+      expect(refundTxs()).toHaveLength(0)
+      expect(db.rows('activities')).toHaveLength(0)
+
+      // Retry succeeds and refunds once
+      db.failOp = () => null
+      expect(await del()).toEqual({ success: true })
+      expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toHaveLength(1)
     })
 
-    it('still reports the deletion when the refund transaction record fails', async () => {
+    it('credits the refund and its ledger entry together', async () => {
       setup()
-      db.failOp = op => (op.table === 'transactions' && op.op === 'insert' ? { message: 'Transaction insert failed' } : null)
 
       expect(await del()).toEqual({ success: true })
       expect(balance(OWNER_ID)).toBe(OWNER_START + REWARD)
+      expect(refundTxs()).toHaveLength(1)
     })
 
     it('returns the error message on unexpected exceptions', async () => {

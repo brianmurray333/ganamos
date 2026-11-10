@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { createHash, randomBytes } from 'crypto'
 import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/posts/route'
 import { getServiceClient } from './helpers/db-client'
@@ -48,11 +49,14 @@ describe('POST /api/posts - Integration Tests', () => {
   let supabase: SupabaseClient
   const createdPostIds: string[] = []
   let testPaymentHash: string
+  /** Another valid-format payment hash derived from this test's hash. */
+  const variantHash = (suffix: string) => createHash('sha256').update(testPaymentHash + suffix).digest('hex')
 
   beforeEach(async () => {
     supabase = getServiceClient()
     vi.clearAllMocks()
-    testPaymentHash = 'test-payment-hash-' + Date.now() + '-' + Math.random().toString(36).slice(2)
+    // Real L402 payment hashes are 32-byte hex (the server validates the format)
+    testPaymentHash = randomBytes(32).toString('hex')
 
     // Mock parseL402Header to return a valid token
     vi.mocked(parseL402Header).mockReturnValue({
@@ -86,7 +90,15 @@ describe('POST /api/posts - Integration Tests', () => {
     vi.mocked(checkInvoice).mockImplementation(async () => {
       const last = await vi.mocked(verifyL402Token).mock.results.at(-1)?.value
       const amount = last?.macaroon?.caveats?.find((c: any) => c.condition === 'amount')?.value ?? '0'
-      return { success: true, settled: true, amountPaid: String(amount), state: 'SETTLED' } as any
+      const reward = Number(amount) - 10
+      return {
+        success: true,
+        settled: true,
+        amountPaid: String(amount),
+        state: 'SETTLED',
+        // Server-set memo of POST /api/posts L402 invoices
+        memo: `Pay ${amount} sats to post job on Ganamos (${reward} reward + 10 API fee)`,
+      } as any
     })
   })
 
@@ -474,9 +486,9 @@ describe('POST /api/posts - Integration Tests', () => {
 
       vi.mocked(verifyL402Token).mockResolvedValue({
         success: true,
-        paymentHash: testPaymentHash + '-long',
+        paymentHash: variantHash('-long'),
         macaroon: {
-          identifier: testPaymentHash + '-long',
+          identifier: variantHash('-long'),
           location: 'ganamos-api',
           signature: 'mock-signature',
           caveats: [
@@ -525,9 +537,9 @@ describe('POST /api/posts - Integration Tests', () => {
 
       vi.mocked(verifyL402Token).mockResolvedValue({
         success: true,
-        paymentHash: testPaymentHash + '-location',
+        paymentHash: variantHash('-location'),
         macaroon: {
-          identifier: testPaymentHash + '-location',
+          identifier: variantHash('-location'),
           location: 'ganamos-api',
           signature: 'mock-signature',
           caveats: [
@@ -574,9 +586,9 @@ describe('POST /api/posts - Integration Tests', () => {
 
       vi.mocked(verifyL402Token).mockResolvedValue({
         success: true,
-        paymentHash: testPaymentHash + '-nolocation',
+        paymentHash: variantHash('-nolocation'),
         macaroon: {
-          identifier: testPaymentHash + '-nolocation',
+          identifier: variantHash('-nolocation'),
           location: 'ganamos-api',
           signature: 'mock-signature',
           caveats: [

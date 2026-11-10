@@ -50,6 +50,18 @@ import { v4 as uuidv4 } from 'uuid'
 import { createMockPostData } from '@/tests/unit/helpers/posts-api-mocks'
 import { mockSupabaseClient } from '@/tests/setup'
 
+/** transactions lookups (is this invoice already in the ledger?) — empty by default */
+let ledgerRows: any[] = []
+const ledgerLookups: any[] = []
+function ledgerBuilder() {
+  const b: any = {
+    select: vi.fn(() => b),
+    eq: vi.fn((col: string, val: any) => { ledgerLookups.push([col, val]); return b }),
+    limit: vi.fn(async () => ({ data: ledgerRows, error: null })),
+  }
+  return b
+}
+
 // Test constants
 const TEST_POST_ID = 'test-post-123'
 const TEST_ACTIVITY_ID = 'test-activity-456'
@@ -63,6 +75,8 @@ function mockFundingSettledForRequestedReward() {
     settled: true,
     amountPaid: String(requestedReward),
     state: 'SETTLED',
+    // Server-set memo of invoices from createPostFundingInvoiceAction
+    memo: `Fund anonymous post on Ganamos! (${requestedReward} sats)`,
   }) as any)
 }
 // Capture the reward of each createFundedAnonymousPostAction call before it runs
@@ -135,6 +149,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -222,6 +237,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -264,6 +280,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -306,6 +323,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -352,6 +370,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -471,6 +490,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -508,6 +528,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -556,6 +577,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -597,6 +619,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -640,6 +663,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -684,6 +708,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -721,6 +746,7 @@ describe('createFundedAnonymousPostAction', () => {
       mockSupabaseClient.from.mockImplementation((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         throw new Error(`Unexpected table: ${table}`)
       })
 
@@ -798,6 +824,7 @@ describe('createFundedAnonymousPostAction funding verification', () => {
     mockSupabaseClient.from.mockImplementation((table: string) => {
       if (table === 'posts') return postQueryBuilder
       if (table === 'activities') return activityQueryBuilder
+      if (table === 'transactions') return ledgerBuilder()
       throw new Error(`Unexpected table: ${table}`)
     })
     return { inserts, fundingLookups, activityQueryBuilder }
@@ -809,7 +836,7 @@ describe('createFundedAnonymousPostAction funding verification', () => {
   })
 
   it('creates the post when the invoice is settled for at least the reward', async () => {
-    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED' } as any)
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (1000 sats)' } as any)
     const { inserts, fundingLookups } = setupPostsTable()
 
     const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
@@ -833,13 +860,48 @@ describe('createFundedAnonymousPostAction funding verification', () => {
   })
 
   it('rejects an invoice that paid less than the reward', async () => {
-    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '999', state: 'SETTLED' } as any)
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '999', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (999 sats)' } as any)
     const { inserts } = setupPostsTable()
 
     const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
 
     expect(result).toEqual({ success: false, error: 'Funding payment not confirmed.' })
     expect(inserts).toHaveLength(0)
+  })
+
+  it.each([
+    ['a deposit invoice', 'Deposit 1000 sats to Ganamos!'],
+    ['a donation invoice', 'Donation to Somewhere (1000 sats)'],
+    ['an L402 fix-submission fee', 'Pay 10 sat to submit a fix on Ganamos'],
+    ['an invoice without a memo', undefined],
+  ])('rejects %s even when settled for the reward (it was credited elsewhere)', async (_label, memo) => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED', memo } as any)
+    const { inserts } = setupPostsTable()
+
+    const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+
+    expect(result.success).toBe(false)
+    expect(inserts).toHaveLength(0)
+  })
+
+  it('rejects a funding hash that is already in the ledger', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (1000 sats)' } as any)
+    const { inserts } = setupPostsTable()
+    ledgerRows = [{ id: 'deposit-tx' }]
+    try {
+      const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+      expect(result.success).toBe(false)
+      expect(inserts).toHaveLength(0)
+    } finally {
+      ledgerRows = []
+    }
+  })
+
+  it('inserts with the service role so funding fields are kept', async () => {
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (1000 sats)' } as any)
+    setupPostsTable()
+    await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
+    expect(createServerSupabaseClient).toHaveBeenCalledWith({ supabaseKey: process.env.SUPABASE_SECRET_API_KEY })
   })
 
   it('rejects when the node cannot confirm the invoice', async () => {
@@ -853,7 +915,7 @@ describe('createFundedAnonymousPostAction funding verification', () => {
   })
 
   it('rejects a settled invoice that already funded another post (no reuse)', async () => {
-    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '5000', state: 'SETTLED' } as any)
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '5000', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (5000 sats)' } as any)
     const { inserts } = setupPostsTable([{ id: 'earlier-post' }])
 
     const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH }))
@@ -863,7 +925,7 @@ describe('createFundedAnonymousPostAction funding verification', () => {
   })
 
   it('allows a zero-reward post (e.g. /api/posts paying only the API fee) once the invoice is settled', async () => {
-    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '10', state: 'SETTLED' } as any)
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '10', state: 'SETTLED', memo: 'Pay 10 sats to post job on Ganamos (0 reward + 10 API fee)' } as any)
     const { inserts } = setupPostsTable()
 
     const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 0, funding_r_hash: R_HASH }))
@@ -886,7 +948,7 @@ describe('createFundedAnonymousPostAction funding verification', () => {
     ['negative reward', { reward: -100 }],
     ['non-numeric reward', { reward: Number.NaN }],
   ])('rejects %s without asking the node or inserting', async (_label, overrides) => {
-    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000000', state: 'SETTLED' } as any)
+    vi.mocked(checkInvoice).mockResolvedValue({ success: true, settled: true, amountPaid: '1000000', state: 'SETTLED', memo: 'Fund anonymous post on Ganamos! (1000000 sats)' } as any)
     const { inserts } = setupPostsTable()
 
     const result = await createFundedAnonymousPostAction(createMockPostData({ reward: 1000, funding_r_hash: R_HASH, ...overrides }))
@@ -1117,7 +1179,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     const postData = createMockPostData({
       description: 'Test post with expiration',
       reward: 1000,
-      funding_r_hash: 'test-hash',
+      funding_r_hash: 'e'.repeat(64),
       funding_payment_request: 'lnbc10n1test',
       expires_at: expiresAt,
     })
@@ -1146,6 +1208,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
       from: vi.fn((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         return {}
       }),
     }
@@ -1166,7 +1229,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
     const postData = createMockPostData({
       description: 'Test post without expiration',
       reward: 1000,
-      funding_r_hash: 'test-hash',
+      funding_r_hash: 'e'.repeat(64),
       funding_payment_request: 'lnbc10n1test',
       // expires_at not provided
     })
@@ -1195,6 +1258,7 @@ describe('createFundedAnonymousPostAction with expires_at', () => {
       from: vi.fn((table: string) => {
         if (table === 'posts') return postQueryBuilder
         if (table === 'activities') return activityQueryBuilder
+        if (table === 'transactions') return ledgerBuilder()
         return {}
       }),
     }
