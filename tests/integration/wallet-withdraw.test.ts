@@ -417,10 +417,11 @@ describe('POST /api/wallet/withdraw - Integration Tests', () => {
     })
 
     it('should update transaction to failed and NOT deduct balance on payment failure', async () => {
+      // Definitive LND failure (payment_error): nothing was sent
       vi.mocked(payInvoice).mockResolvedValue({
         success: false,
-        error: 'Insufficient node balance',
-        details: { code: 'INSUFFICIENT_FUNDS' },
+        error: 'Payment failed: insufficient local balance',
+        details: { payment_error: 'insufficient local balance' },
       })
 
       const request = createWithdrawRequest({
@@ -433,6 +434,14 @@ describe('POST /api/wallet/withdraw - Integration Tests', () => {
       expect(response.status).toBe(500)
       const data = await response.json()
       expect(data.success).toBe(false)
+
+      const tx = await queryOne<{ status: string }>(
+        "SELECT status FROM transactions WHERE user_id = $1 AND type = 'withdrawal'",
+        [userId]
+      )
+      expect(tx.status).toBe('failed')
+      const profile = await queryOne<{ balance: number }>('SELECT balance FROM profiles WHERE id = $1', [userId])
+      expect(profile.balance).toBe(5000)
     })
 
     it('should create activity log on successful withdrawal', async () => {
