@@ -158,6 +158,67 @@ describe('BottomNav', () => {
     })
   })
 
+  // iOS: a tap during scroll momentum only stops the scroll (no click is
+  // dispatched), so tabs navigate on the tap's touchend instead.
+  describe('touch taps (work while the feed is still scrolling)', () => {
+    const tapAt = (el: Element, from = { x: 20, y: 20 }, to = from) => {
+      fireEvent.touchStart(el, { touches: [{ clientX: from.x, clientY: from.y }] })
+      if (to !== from) fireEvent.touchMove(el, { touches: [{ clientX: to.x, clientY: to.y }] })
+      return fireEvent.touchEnd(el, { changedTouches: [{ clientX: to.x, clientY: to.y }] })
+    }
+
+    it('navigates to the Map tab on a single tap, without waiting for a click', () => {
+      render(<BottomNav />)
+      const map = screen.getByTestId('nav-map-button')
+
+      const notPrevented = tapAt(map)
+
+      expect(nav.push).toHaveBeenCalledTimes(1)
+      expect(nav.push).toHaveBeenCalledWith('/map')
+      expect(map).toHaveAttribute('aria-current', 'page')
+      // The follow-up click is suppressed, so the tab can't fire twice
+      expect(notPrevented).toBe(false)
+    })
+
+    it('works for every tab and the new-post button', () => {
+      signedIn()
+      nav.pathname = '/map'
+      render(<BottomNav />)
+      tapAt(screen.getByTestId('nav-dashboard-link'))
+      tapAt(screen.getByTestId('nav-wallet-link'))
+      tapAt(screen.getByTestId('nav-profile-link'))
+      tapAt(screen.getByTestId('nav-new-post-button'))
+      expect(nav.push.mock.calls.map((c) => c[0])).toEqual(['/', '/wallet', '/profile', '/post/new'])
+    })
+
+    it('does not navigate when the finger moves (a scroll or swipe)', () => {
+      render(<BottomNav />)
+      const notPrevented = tapAt(screen.getByTestId('nav-map-button'), { x: 20, y: 40 }, { x: 20, y: 10 })
+      expect(nav.push).not.toHaveBeenCalled()
+      expect(notPrevented).toBe(true)
+    })
+
+    it('leaves a long press to the system', () => {
+      vi.useFakeTimers()
+      try {
+        render(<BottomNav />)
+        const map = screen.getByTestId('nav-map-button')
+        fireEvent.touchStart(map, { touches: [{ clientX: 20, clientY: 20 }] })
+        vi.advanceTimersByTime(800)
+        fireEvent.touchEnd(map, { changedTouches: [{ clientX: 20, clientY: 20 }] })
+        expect(nav.push).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('tapping the current tab does not navigate again', () => {
+      render(<BottomNav />)
+      tapAt(screen.getByTestId('nav-dashboard-link'))
+      expect(nav.push).not.toHaveBeenCalled()
+    })
+  })
+
   it('starts loading Google Maps as soon as the Map tab is pressed', () => {
     render(<BottomNav />)
     fireEvent.pointerDown(screen.getByTestId('nav-map-button'))
