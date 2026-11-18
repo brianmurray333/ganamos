@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth-provider"
 import { AuthPromptModal } from "@/components/auth-prompt-modal"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
-import { useEffect, useState, type MouseEvent } from "react"
+import { useEffect, useRef, useState, type MouseEvent, type TouchEvent } from "react"
 
 // Tabs that middleware never redirects (only /wallet and /profile are
 // auth-protected), so prefetching them can't cache a stale login redirect.
@@ -21,6 +21,42 @@ export function isTabActive(path: string, activePath: string) {
 
 function isPlainLeftClick(e: MouseEvent) {
   return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.defaultPrevented
+}
+
+// iOS WebKit: a tap that lands while the feed still has scroll momentum only
+// stops the scroll and never dispatches a click, so a tab needed a second tap.
+// Touch events are still delivered, so tabs act on a tap's touchend (finger
+// didn't move, not a long press) and suppress the follow-up click. Mouse and
+// keyboard keep using click.
+const TAP_SLOP_PX = 10
+const TAP_MAX_MS = 500
+
+function useTapActivation() {
+  const start = useRef<{ x: number; y: number; t: number } | null>(null)
+  return (activate: () => void) => ({
+    onTouchStart: (e: TouchEvent) => {
+      const touch = e.touches.length === 1 ? e.touches[0] : null
+      start.current = touch ? { x: touch.clientX, y: touch.clientY, t: Date.now() } : null
+    },
+    onTouchMove: (e: TouchEvent) => {
+      const s = start.current
+      const touch = e.touches[0]
+      if (s && touch && Math.hypot(touch.clientX - s.x, touch.clientY - s.y) > TAP_SLOP_PX) start.current = null
+    },
+    onTouchCancel: () => {
+      start.current = null
+    },
+    onTouchEnd: (e: TouchEvent) => {
+      const s = start.current
+      start.current = null
+      const touch = e.changedTouches[0]
+      if (!s || !touch) return
+      if (Math.hypot(touch.clientX - s.x, touch.clientY - s.y) > TAP_SLOP_PX) return
+      if (Date.now() - s.t > TAP_MAX_MS) return // long press: leave it to the system
+      e.preventDefault() // no synthesized click, so the tab can't fire twice
+      activate()
+    },
+  })
 }
 
 const tabClass =
@@ -54,6 +90,7 @@ export function BottomNav() {
     setPendingHref(null)
   }, [pathname])
   const activePath = pendingHref ?? pathname
+  const tap = useTapActivation()
 
   // Warm up the routes behind the tabs so a tap responds immediately instead
   // of waiting on the route payload and page JS:
@@ -94,6 +131,13 @@ export function BottomNav() {
 
   const isActive = (path: string) => isTabActive(path, activePath)
 
+  // Tap (touch) navigation for a tab link: same effect as clicking it.
+  const tapTab = (href: string) =>
+    tap(() => {
+      setPendingHref(href !== pathname ? href : null)
+      if (href !== pathname) router.push(href)
+    })
+
   const onTabClick = (href: string) => (e: MouseEvent) => {
     // A tap on the current tab clears any pending highlight (e.g. Map tapped,
     // then Home before the Map navigation committed).
@@ -123,6 +167,7 @@ export function BottomNav() {
           aria-label="Home"
           aria-current={isActive("/") ? "page" : undefined}
           onClick={onTabClick("/")}
+          {...tapTab("/")}
           className={tabClass}
         >
           <TabIcon icon={Home} active={isActive("/")} />
@@ -135,6 +180,7 @@ export function BottomNav() {
           aria-label="Map"
           aria-current={isActive("/map") ? "page" : undefined}
           onClick={onTabClick("/map")}
+          {...tapTab("/map")}
           onPointerDown={warmMap}
           className={tabClass}
         >
@@ -145,6 +191,7 @@ export function BottomNav() {
             <div className="flex items-center justify-center">
         <button
           onClick={() => router.push("/post/new")}
+          {...tap(() => router.push("/post/new"))}
           data-testid="nav-new-post-button"
                 className={cn(
                   "flex items-center justify-center w-14 h-14 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200 transform hover:scale-105 active:scale-95 active:bg-primary/80 shadow-lg touch-manipulation",
@@ -165,6 +212,7 @@ export function BottomNav() {
             aria-label="Wallet"
             aria-current={isActive("/wallet") ? "page" : undefined}
             onClick={onTabClick("/wallet")}
+            {...tapTab("/wallet")}
             className={tabClass}
           >
             <TabIcon icon={Wallet} active={isActive("/wallet")} />
@@ -175,6 +223,10 @@ export function BottomNav() {
               setAuthFeature('wallet')
               setShowAuthModal(true)
             }}
+            {...tap(() => {
+              setAuthFeature('wallet')
+              setShowAuthModal(true)
+            })}
             data-testid="nav-wallet-button"
             aria-label="Wallet"
             className={tabClass}
@@ -192,6 +244,7 @@ export function BottomNav() {
             aria-label="Profile"
             aria-current={isActive("/profile") ? "page" : undefined}
             onClick={onTabClick("/profile")}
+            {...tapTab("/profile")}
             className={cn(tabClass, "relative")}
           >
             <TabIcon icon={User} active={isActive("/profile")} />
@@ -203,6 +256,10 @@ export function BottomNav() {
               setAuthFeature('profile')
               setShowAuthModal(true)
             }}
+            {...tap(() => {
+              setAuthFeature('profile')
+              setShowAuthModal(true)
+            })}
             data-testid="nav-profile-button"
             aria-label="Profile"
             className={cn(tabClass, "relative")}
