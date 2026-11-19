@@ -578,11 +578,7 @@ export async function getAppBalanceBreakdown(client: SupabaseClient<Database>): 
     sumUnclaimedFundedRewards(db),
     sumRows((f, t) => db.from('donations').select('amount').eq('status', 'completed').order('id').range(f, t), 'amount'),
     sumRows((f, t) => db.from('pet_orders').select('total_price_sats').eq('payment_status', 'paid').order('id').range(f, t), 'total_price_sats'),
-    // Until the node_balance_adjustments migration is applied, count no adjustments rather than fail the email
-    sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount').catch((e) => {
-      console.error('[BALANCE] node_balance_adjustments unavailable:', e)
-      return 0
-    }),
+    sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount'),
   ])
   return {
     userBalances,
@@ -602,6 +598,8 @@ export interface DailySummaryData {
     onchain_balance: number
     total_balance: number
   }
+  /** Set when the node balance couldn't be read (total_balance is then 0, not real) */
+  nodeBalanceError?: string
   // Balance breakdown - all sats in the system
   balanceBreakdown: BalanceBreakdown
   // Legacy field for backwards compatibility
@@ -748,6 +746,7 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
 
   return {
     nodeBalance: nodeBalanceData.balances,
+    nodeBalanceError: nodeBalanceData.success ? undefined : nodeBalanceData.error || 'Could not read the node balance.',
     balanceBreakdown,
     appTotalBalance, // Legacy field
     balanceAudit,
@@ -794,12 +793,12 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   const node = data.nodeBalance.total_balance
   const difference = node - b.totalAppBalance
   const inSync = Math.abs(difference) <= BALANCE_TOLERANCE_SATS
-  const nodeUnavailable = data.apiHealth.voltage.status !== 'online' && node === 0
+  const nodeUnavailable = Boolean(data.nodeBalanceError)
 
   const details: Array<[string, string]> = [
-    ['Node balance', `<strong>${sats(node)}</strong>`],
+    ['Node balance', nodeUnavailable ? 'Unavailable' : `<strong>${sats(node)}</strong>`],
     ['App balance', `<strong>${sats(b.totalAppBalance)}</strong>`],
-    ['Difference', `<strong style="color:${inSync ? '#15803d' : '#b91c1c'};">${signedSats(difference)}</strong>`],
+    ['Difference', nodeUnavailable ? 'Unknown' : `<strong style="color:${inSync ? '#15803d' : '#b91c1c'};">${signedSats(difference)}</strong>`],
     ['User balances', sats(b.userBalances)],
     ['Open rewards', sats(b.openIssuesBalance)],
   ]
@@ -809,7 +808,7 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   if (b.adjustments) details.push(['Operator credit', signedSats(b.adjustments)])
 
   const callout = nodeUnavailable
-    ? { tone: 'warning' as const, title: 'Node unreachable', html: escapeHtml(data.apiHealth.voltage.error || 'Could not read the node balance.') }
+    ? { tone: 'warning' as const, title: 'Node unreachable', html: escapeHtml(data.nodeBalanceError) }
     : inSync
       ? { tone: 'success' as const, title: 'In sync', html: 'The app balance matches the node balance.' }
       : {
@@ -823,7 +822,7 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   return renderEmail({
     theme: 'amber',
     title: 'Daily Summary',
-    preheader: inSync ? `Balances in sync · ${sats(node)} on the node` : `Balances off by ${signedSats(difference)}`,
+    preheader: nodeUnavailable ? 'Node balance unavailable' : inSync ? `Balances in sync · ${sats(node)} on the node` : `Balances off by ${signedSats(difference)}`,
     paragraphs: [escapeHtml(dateLabel)],
     details,
     callout,

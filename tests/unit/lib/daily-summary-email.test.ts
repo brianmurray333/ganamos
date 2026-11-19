@@ -65,18 +65,15 @@ describe('getAppBalanceBreakdown', () => {
     })
   })
 
-  it('still reports when the adjustments table is missing', async () => {
+  it('fails rather than under-counting when the adjustments query errors', async () => {
     const db = seed()
     const client = db.client()
     const from = client.from
     client.from = (t: string) =>
       t === 'node_balance_adjustments'
-        ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: { message: 'relation does not exist' } }) }) }) }
+        ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: { message: 'timeout' } }) }) }) }
         : from(t)
-    vi.spyOn(console, 'error').mockImplementation(() => {})
-    const b = await getAppBalanceBreakdown(client)
-    expect(b.adjustments).toBe(0)
-    expect(b.totalAppBalance).toBe(1500 + 300 + 200 + 3000 + 50)
+    await expect(getAppBalanceBreakdown(client)).rejects.toThrow(/timeout/)
   })
 
   it('counts past the 1000-row page limit', async () => {
@@ -110,5 +107,16 @@ describe('generateEmailHTML', () => {
     expect(html).toContain('In sync')
     expect(html).toContain('Operator credit')
     expect(html).not.toContain('Node holds more')
+  })
+
+  it('says the node is unavailable instead of comparing against a zero balance', () => {
+    const d = { ...summary(breakdown, 0), nodeBalanceError: 'LND timeout' } as any
+    // Health check succeeded later; the balance shown was still never read
+    d.apiHealth.voltage.status = 'online'
+    const html = generateEmailHTML(d)
+    expect(html).toContain('Node unreachable')
+    expect(html).toContain('LND timeout')
+    expect(html).not.toContain('App owes more')
+    expect(html).not.toContain('−765,230')
   })
 })
