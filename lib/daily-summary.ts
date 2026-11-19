@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { Database } from './database.types'
 import { sendEmail } from './email'
+import { renderEmail, escapeHtml, EMAIL_BASE_URL } from './email-layout'
 import { lndRequest } from './lightning'
 
 let supabase: SupabaseClient<Database> | null = null
@@ -412,66 +413,6 @@ async function getDeviceCoinStats(yesterdayIso: string): Promise<Array<{
   return deviceStats
 }
 
-// Get stats for a specific day (daysAgo: 0 = today, 1 = yesterday, etc.)
-async function getDayStats(supabaseClient: SupabaseClient<Database>, daysAgo: number): Promise<DayStats> {
-  const now = new Date()
-  
-  // Calculate start and end of the day
-  const startOfDay = new Date(now)
-  startOfDay.setDate(now.getDate() - daysAgo)
-  startOfDay.setHours(0, 0, 0, 0)
-  
-  const endOfDay = new Date(startOfDay)
-  endOfDay.setHours(23, 59, 59, 999)
-  
-  const startIso = startOfDay.toISOString()
-  const endIso = endOfDay.toISOString()
-  
-  // Get transactions
-  const { data: transactions } = await supabaseClient
-    .from('transactions')
-    .select('type')
-    .gte('created_at', startIso)
-    .lte('created_at', endIso)
-    .eq('status', 'completed')
-  
-  const transactionCount = transactions?.length || 0
-  const deposits = transactions?.filter(t => t.type === 'deposit').length || 0
-  const withdrawals = transactions?.filter(t => t.type === 'withdrawal').length || 0
-  
-  // Get posts created (new issues)
-  const { count: postsCount } = await supabaseClient
-    .from('posts')
-    .select('*', { count: 'exact', head: true })
-    .gte('created_at', startIso)
-    .lte('created_at', endIso)
-  
-  // Get posts fixed
-  const { count: fixesCount } = await supabaseClient
-    .from('posts')
-    .select('*', { count: 'exact', head: true })
-    .gte('fixed_at', startIso)
-    .lte('fixed_at', endIso)
-    .eq('fixed', true)
-  
-  // Get active users
-  const { data: activeUserIds } = await supabaseClient
-    .rpc('get_active_users_last_24h', { since_timestamp: startIso })
-  
-  // Filter to only users active within this specific day
-  // Since the RPC gives us 24h from since_timestamp, we need to approximate
-  const activeUsers = activeUserIds?.length || 0
-  
-  return {
-    transactions: transactionCount,
-    deposits,
-    withdrawals,
-    posts: postsCount || 0,
-    fixes: fixesCount || 0,
-    activeUsers
-  }
-}
-
 async function performBalanceAudit(): Promise<{
   status: 'passed' | 'failed'
   totalUsers: number
@@ -570,14 +511,84 @@ async function performBalanceAudit(): Promise<{
   }
 }
 
-// Stats for a single day
-export interface DayStats {
-  transactions: number
-  deposits: number
-  withdrawals: number
-  posts: number
-  fixes: number
-  activeUsers: number
+export interface BalanceBreakdown {
+  userBalances: number       // Sum of every profile.balance (suspended/deleted accounts' sats are still on the node)
+  openIssuesBalance: number  // Rewards held for open, non-deleted posts
+  unclaimedRewards: number   // Funded rewards of approved anonymous fixes not yet paid out
+  donationsBalance: number   // Completed donations (held by Ganamos, not credited to any user)
+  paidOrdersBalance: number  // Paid pet orders
+  adjustments: number        // Operator credits/debits (node_balance_adjustments)
+  totalAppBalance: number    // Sum of the above; should equal the node balance
+}
+
+const PAGE = 1000
+
+/** Sums a column across every matching row (PostgREST caps a select at 1000 rows). */
+async function sumRows(
+  build: (from: number, to: number) => PromiseLike<{ data: any[] | null; error: any }>,
+  column: string
+): Promise<number> {
+  let total = 0
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build(from, from + PAGE - 1)
+    if (error) throw new Error(`[BALANCE] ${error.message ?? error}`)
+    for (const row of data ?? []) total += Number(row[column]) || 0
+    if (!data || data.length < PAGE) return total
+  }
+}
+
+/**
+ * Rewards of approved anonymous fixes that haven't been paid out. Only funded
+ * rewards count: an unfunded legacy reward was never on the node.
+ */
+async function sumUnclaimedFundedRewards(db: SupabaseClient<any>): Promise<number> {
+  const rows: Array<{ id: string; reward: number }> = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
+      .from('posts')
+      .select('id, reward')
+      .eq('fixed', true).is('fixed_by', null).is('deleted_at', null).gt('reward', 0)
+      .is('anonymous_reward_paid_at', null).is('reward_paid_at', null)
+      .order('id').range(from, from + PAGE - 1)
+    if (error) throw new Error(`[BALANCE] ${error.message ?? error}`)
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+  let total = 0
+  for (const row of rows) {
+    const { data: funded, error } = await db.rpc('post_reward_is_funded', { p_post_id: row.id })
+    if (error) throw new Error(`[BALANCE] post_reward_is_funded: ${error.message ?? error}`)
+    if (funded === true) total += Number(row.reward) || 0
+  }
+  return total
+}
+
+/**
+ * Every sat the app accounts for. The node balance is the source of truth;
+ * this should equal it, give or take in-flight payments.
+ */
+export async function getAppBalanceBreakdown(client: SupabaseClient<Database>): Promise<BalanceBreakdown> {
+  const db = client as SupabaseClient<any>
+  const [userBalances, openIssuesBalance, unclaimedRewards, donationsBalance, paidOrdersBalance, adjustments] = await Promise.all([
+    sumRows((f, t) => db.from('profiles').select('balance').order('id').range(f, t), 'balance'),
+    sumRows(
+      (f, t) => db.from('posts').select('reward').eq('fixed', false).is('deleted_at', null).gt('reward', 0).order('id').range(f, t),
+      'reward'
+    ),
+    sumUnclaimedFundedRewards(db),
+    sumRows((f, t) => db.from('donations').select('amount').eq('status', 'completed').order('id').range(f, t), 'amount'),
+    sumRows((f, t) => db.from('pet_orders').select('total_price_sats').eq('payment_status', 'paid').order('id').range(f, t), 'total_price_sats'),
+    sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount'),
+  ])
+  return {
+    userBalances,
+    openIssuesBalance,
+    unclaimedRewards,
+    donationsBalance,
+    paidOrdersBalance,
+    adjustments,
+    totalAppBalance: userBalances + openIssuesBalance + unclaimedRewards + donationsBalance + paidOrdersBalance + adjustments,
+  }
 }
 
 export interface DailySummaryData {
@@ -587,13 +598,10 @@ export interface DailySummaryData {
     onchain_balance: number
     total_balance: number
   }
+  /** Set when the node balance couldn't be read (total_balance is then 0, not real) */
+  nodeBalanceError?: string
   // Balance breakdown - all sats in the system
-  balanceBreakdown: {
-    userBalances: number      // Sum of all profile.balance
-    openIssuesBalance: number // Sum of rewards on unfixed, non-deleted posts
-    paidOrdersBalance: number // Sum of paid pet_orders
-    totalAppBalance: number   // Sum of above - should equal node balance
-  }
+  balanceBreakdown: BalanceBreakdown
   // Legacy field for backwards compatibility
   appTotalBalance: number
   balanceAudit: {
@@ -634,8 +642,6 @@ export interface DailySummaryData {
       error?: string
     }
   }
-  // Multi-day stats: index 0 = today, 1 = yesterday, etc.
-  dailyStats: DayStats[]
   last24Hours: {
     transactions: {
       count: number
@@ -683,42 +689,10 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
 
   const supabaseClient = getSupabaseClient()
   
-  // =============================================
-  // BALANCE BREAKDOWN - All sats in the system
-  // =============================================
-  
-  // 1. User Balances (sum of all profile.balance, excluding deleted accounts)
-  const { data: profiles } = await supabaseClient
-    .from('profiles')
-    .select('balance')
-    .neq('status', 'deleted')
-    .neq('status', 'suspended')
-    
-  const userBalances = profiles?.reduce((sum, profile) => sum + (profile.balance || 0), 0) || 0
+  const balanceBreakdown = await getAppBalanceBreakdown(supabaseClient)
 
-  // 2. Open Issues Balance (sum of rewards on unfixed, non-deleted posts)
-  const { data: openPosts } = await supabaseClient
-    .from('posts')
-    .select('reward')
-    .eq('fixed', false)
-    .is('deleted_at', null)
-    .gt('reward', 0)
-    
-  const openIssuesBalance = openPosts?.reduce((sum, post) => sum + (post.reward || 0), 0) || 0
-
-  // 3. Paid Orders Balance (sum of paid pet orders)
-  const { data: paidOrders } = await supabaseClient
-    .from('pet_orders')
-    .select('total_price_sats')
-    .eq('payment_status', 'paid')
-    
-  const paidOrdersBalance = paidOrders?.reduce((sum, order) => sum + (order.total_price_sats || 0), 0) || 0
-
-  // Total App Balance (should equal node balance)
-  const totalAppBalance = userBalances + openIssuesBalance + paidOrdersBalance
-  
   // Legacy field for backwards compatibility
-  const appTotalBalance = userBalances
+  const appTotalBalance = balanceBreakdown.userBalances
 
   // Get transactions in last 24 hours
   const { data: transactions } = await supabaseClient
@@ -770,23 +744,10 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
     getMergedPRsForEmail()
   ])
 
-  // Get stats for the last 5 days (0 = today, 1 = yesterday, etc.)
-  const dailyStats = await Promise.all([
-    getDayStats(supabaseClient, 0),
-    getDayStats(supabaseClient, 1),
-    getDayStats(supabaseClient, 2),
-    getDayStats(supabaseClient, 3),
-    getDayStats(supabaseClient, 4)
-  ])
-
   return {
     nodeBalance: nodeBalanceData.balances,
-    balanceBreakdown: {
-      userBalances,
-      openIssuesBalance,
-      paidOrdersBalance,
-      totalAppBalance,
-    },
+    nodeBalanceError: nodeBalanceData.success ? undefined : nodeBalanceData.error || 'Could not read the node balance.',
+    balanceBreakdown,
     appTotalBalance, // Legacy field
     balanceAudit,
     devices,
@@ -795,7 +756,6 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
       groq: groqHealth,
       resend: resendHealth
     },
-    dailyStats,
     last24Hours: {
       transactions: {
         count: transactionsCount
@@ -822,58 +782,52 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
   }
 }
 
-export function generateEmailHTML(data: DailySummaryData): string {
-  // Calculate the audit difference
-  const difference = data.nodeBalance.total_balance - data.balanceBreakdown.totalAppBalance
-  const differenceColor = Math.abs(difference) <= 100 ? '#666' : '#dc3545'
-  const warningIcon = Math.abs(difference) > 100 ? '⚠️ ' : ''
+/** Differences at or under this many sats count as in sync (in-flight payments, rounding). */
+export const BALANCE_TOLERANCE_SATS = 100
 
-  // Build the 5-day activity table rows
-  const tableRows = data.dailyStats.map((day, index) => {
-    const rowLabel = index === 0 ? '0' : `-${index}`
-    return `
-      <tr>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center; font-weight: bold;">${rowLabel}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.transactions}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.deposits}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.withdrawals}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.posts}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.fixes}</td>
-        <td style="padding: 4px 8px; border: 1px solid #ddd; text-align: center;">${day.activeUsers}</td>
-      </tr>
-    `
-  }).join('')
+const sats = (n: number) => `${n.toLocaleString('en-US')} sats`
+const signedSats = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toLocaleString('en-US')} sats`
 
-  return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5;">
-      <p style="margin: 0 0 4px 0; font-family: monospace; font-size: 15px;">
-        <strong>${data.balanceBreakdown.totalAppBalance.toLocaleString()}s</strong> App Balance
-      </p>
-      <p style="margin: 0 0 4px 0; font-family: monospace; font-size: 15px;">
-        <strong>${data.nodeBalance.total_balance.toLocaleString()}s</strong> Node Balance
-      </p>
-      <p style="margin: 0 0 16px 0; font-family: monospace; font-size: 15px; color: ${differenceColor};">
-        ${warningIcon}<strong>${difference.toLocaleString()}s</strong> Difference
-      </p>
+export function generateEmailHTML(data: DailySummaryData, date: Date = new Date()): string {
+  const b = data.balanceBreakdown
+  const node = data.nodeBalance.total_balance
+  const difference = node - b.totalAppBalance
+  const inSync = Math.abs(difference) <= BALANCE_TOLERANCE_SATS
+  const nodeUnavailable = Boolean(data.nodeBalanceError)
 
-      <table style="border-collapse: collapse; font-family: monospace; font-size: 13px;">
-        <thead>
-          <tr style="background: #f5f5f5;">
-            <th style="padding: 4px 8px; border: 1px solid #ddd;"></th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Transactions">Tx</th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Deposits">D</th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Withdrawals">W</th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Posts">P</th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Fixes">F</th>
-            <th style="padding: 4px 8px; border: 1px solid #ddd;" title="Active Users">U</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRows}
-        </tbody>
-      </table>
-    </div>
-  `
+  const details: Array<[string, string]> = [
+    ['Node balance', nodeUnavailable ? 'Unavailable' : `<strong>${sats(node)}</strong>`],
+    ['App balance', `<strong>${sats(b.totalAppBalance)}</strong>`],
+    ['Difference', nodeUnavailable ? 'Unknown' : `<strong style="color:${inSync ? '#15803d' : '#b91c1c'};">${signedSats(difference)}</strong>`],
+    ['User balances', sats(b.userBalances)],
+    ['Open rewards', sats(b.openIssuesBalance)],
+  ]
+  if (b.unclaimedRewards) details.push(['Unclaimed rewards', sats(b.unclaimedRewards)])
+  if (b.donationsBalance) details.push(['Donations', sats(b.donationsBalance)])
+  if (b.paidOrdersBalance) details.push(['Pet orders', sats(b.paidOrdersBalance)])
+  if (b.adjustments) details.push(['Operator credit', signedSats(b.adjustments)])
+
+  const callout = nodeUnavailable
+    ? { tone: 'warning' as const, title: 'Node unreachable', html: escapeHtml(data.nodeBalanceError) }
+    : inSync
+      ? { tone: 'success' as const, title: 'In sync', html: 'The app balance matches the node balance.' }
+      : {
+          tone: 'warning' as const,
+          title: difference > 0 ? 'Node holds more than the app accounts for' : 'App owes more than the node holds',
+          html: `The node balance is the source of truth. The app balance is off by ${sats(Math.abs(difference))}.`,
+        }
+
+  const dateLabel = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' })
+
+  return renderEmail({
+    theme: 'amber',
+    title: 'Daily Summary',
+    preheader: nodeUnavailable ? 'Node balance unavailable' : inSync ? `Balances in sync · ${sats(node)} on the node` : `Balances off by ${signedSats(difference)}`,
+    paragraphs: [escapeHtml(dateLabel)],
+    details,
+    callout,
+    button: { label: 'Open Admin', href: `${EMAIL_BASE_URL}/admin` },
+  })
 }
 
 export async function sendDailySummaryEmail(toEmail: string = 'admin@example.com') {
@@ -886,13 +840,14 @@ export async function sendDailySummaryEmail(toEmail: string = 'admin@example.com
     console.log('[DAILY SUMMARY DEBUG] Data generated successfully:', JSON.stringify(data, null, 2))
     
     console.log('[DAILY SUMMARY DEBUG] Generating email content...')
-    const emailHTML = generateEmailHTML(data)
+    const now = new Date()
+    const emailHTML = generateEmailHTML(data, now)
     console.log('[DAILY SUMMARY DEBUG] Email HTML generated, length:', emailHTML.length)
     
     console.log('[DAILY SUMMARY DEBUG] About to call sendEmail...')
     const result = await sendEmail(
       toEmail,
-      `Ganamos - ${new Date().toLocaleDateString()}`,
+      `Ganamos Daily Summary - ${now.toLocaleDateString('en-US', { timeZone: 'America/New_York' })}`,
       emailHTML
     )
     console.log('[DAILY SUMMARY DEBUG] sendEmail result:', JSON.stringify(result, null, 2))
