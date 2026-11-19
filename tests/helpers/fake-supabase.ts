@@ -2,7 +2,7 @@
  * Minimal in-memory Supabase client for unit tests that need real
  * conditional-update semantics (locks, compare-and-swap, once-only markers).
  *
- * Supports: from(t).select(cols).eq/neq/is/in/gte/lte/or/limit/order/single/maybeSingle,
+ * Supports: from(t).select(cols).eq/neq/is/in/gt/gte/lte/or/limit/range/order/single/maybeSingle,
  * from(t).update(v).<filters>.select(), from(t).insert(v).select().single(),
  * from(t).delete().<filters>, and rpc(name, args) via handlers.
  * Filters apply to the rows; updates mutate them. Everything is awaitable.
@@ -52,6 +52,7 @@ class Query implements PromiseLike<any> {
   private returning = false
   private singleMode: 'none' | 'single' | 'maybe' = 'none'
   private limitN: number | null = null
+  private offsetN = 0
 
   constructor(private db: FakeDb, private tableName: string) {}
 
@@ -68,6 +69,7 @@ class Query implements PromiseLike<any> {
   neq(col: string, v: any) { this.filters.push((r) => r[col] !== v); return this }
   is(col: string, v: any) { this.filters.push((r) => (v === null ? r[col] === null || r[col] === undefined : r[col] === v)); return this }
   in(col: string, vs: any[]) { this.filters.push((r) => vs.includes(r[col])); return this }
+  gt(col: string, v: any) { this.filters.push((r) => r[col] > v); return this }
   gte(col: string, v: any) { this.filters.push((r) => r[col] >= v); return this }
   lte(col: string, v: any) { this.filters.push((r) => r[col] <= v); return this }
   not(col: string, op: string, v: any) {
@@ -82,6 +84,7 @@ class Query implements PromiseLike<any> {
   }
   order() { return this }
   limit(n: number) { this.limitN = n; return this }
+  range(from: number, to: number) { this.offsetN = from; this.limitN = to - from + 1; return this }
   single() { this.singleMode = 'single'; return this }
   maybeSingle() { this.singleMode = 'maybe'; return this }
 
@@ -108,7 +111,7 @@ class Query implements PromiseLike<any> {
     } else {
       rows = this.matches()
     }
-    if (this.limitN !== null) rows = rows.slice(0, this.limitN)
+    if (this.limitN !== null || this.offsetN) rows = rows.slice(this.offsetN, this.limitN === null ? undefined : this.offsetN + this.limitN)
     const copies = rows.map((r) => ({ ...r }))
     if (this.singleMode === 'single') {
       return copies.length === 1 ? { data: copies[0], error: null } : { data: null, error: { message: 'not found', code: 'PGRST116' } }
