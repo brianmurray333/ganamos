@@ -5,6 +5,11 @@ options:
     iOS: "17.0"
   xcodeVersion: "26.0"
 
+packages:
+  GoogleMaps:
+    url: https://github.com/googlemaps/ios-maps-sdk
+    from: 11.0.0
+
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -14,6 +19,9 @@ targets:
   Ganamos:
     type: application
     platform: iOS
+    dependencies:
+      - package: GoogleMaps
+        product: GoogleMaps
     sources:
       - path: Sources
       - path: Resources
@@ -39,7 +47,7 @@ targets:
         CFBundleDisplayName: Ganamos!
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         CFBundleURLTypes:
           - CFBundleURLName: earth.ganamos.oauth
             CFBundleURLSchemes:
@@ -55,6 +63,7 @@ targets:
         GANAMOS_ADMIN_EMAIL: "$(GANAMOS_ADMIN_EMAIL)"
         GANAMOS_SUPABASE_URL: "$(GANAMOS_SUPABASE_URL)"
         GANAMOS_SUPABASE_ANON_KEY: "$(GANAMOS_SUPABASE_ANON_KEY)"
+        GANAMOS_GOOGLE_MAPS_API_KEY: "$(GANAMOS_GOOGLE_MAPS_API_KEY)"
   GanamosTests:
     type: bundle.unit-test
     platform: iOS
