@@ -10,7 +10,7 @@ vi.mock('@/lib/lightning', () => ({ lndRequest: vi.fn() }))
 
 import { getAppBalanceBreakdown, generateEmailHTML, type DailySummaryData } from '@/lib/daily-summary'
 
-function seed() {
+function seedRows() {
   return new FakeDb({
     profiles: [
       { id: 'u1', balance: 1000, status: 'active' },
@@ -20,6 +20,7 @@ function seed() {
     posts: [
       { id: 'p-open', reward: 300, fixed: false, fixed_by: null, deleted_at: null },
       { id: 'p-deleted', reward: 999, fixed: false, fixed_by: null, deleted_at: '2026-11-01T00:00:00Z' },
+      { id: 'p-anon-unfunded', reward: 4000, fixed: true, fixed_by: null, deleted_at: null, anonymous_reward_paid_at: null, reward_paid_at: null },
       { id: 'p-anon-unclaimed', reward: 200, fixed: true, fixed_by: null, deleted_at: null, anonymous_reward_paid_at: null, reward_paid_at: null },
       { id: 'p-anon-paid', reward: 777, fixed: true, fixed_by: null, deleted_at: null, anonymous_reward_paid_at: '2026-11-02T00:00:00Z', reward_paid_at: null },
       { id: 'p-user-paid', reward: 888, fixed: true, fixed_by: 'u1', deleted_at: null, anonymous_reward_paid_at: null, reward_paid_at: '2026-11-02T00:00:00Z' },
@@ -29,8 +30,18 @@ function seed() {
       { id: 'o1', total_price_sats: 50, payment_status: 'paid' },
       { id: 'o2', total_price_sats: 70, payment_status: 'pending' },
     ],
+    donations: [
+      { id: 'd1', amount: 3000, status: 'completed' },
+      { id: 'd2', amount: 9999, status: 'pending' },
+    ],
     node_balance_adjustments: [{ id: 'a1', amount: 21_550, reason: 'Operator overfunded the node' }],
   })
+}
+
+function seed() {
+  const db = seedRows()
+  db.rpcHandlers.post_reward_is_funded = ({ p_post_id }: any) => ({ data: p_post_id !== 'p-anon-unfunded' })
+  return db
 }
 
 const summary = (breakdown: any, node: number): DailySummaryData =>
@@ -41,16 +52,31 @@ const summary = (breakdown: any, node: number): DailySummaryData =>
   }) as any
 
 describe('getAppBalanceBreakdown', () => {
-  it('sums users (any status), open and unclaimed rewards, paid orders and operator credits', async () => {
+  it('sums users (any status), open and funded unclaimed rewards, donations, paid orders and operator credits', async () => {
     const b = await getAppBalanceBreakdown(seed().client())
     expect(b).toEqual({
       userBalances: 1500,
       openIssuesBalance: 300,
       unclaimedRewards: 200,
+      donationsBalance: 3000,
       paidOrdersBalance: 50,
       adjustments: 21_550,
-      totalAppBalance: 1500 + 300 + 200 + 50 + 21_550,
+      totalAppBalance: 1500 + 300 + 200 + 3000 + 50 + 21_550,
     })
+  })
+
+  it('still reports when the adjustments table is missing', async () => {
+    const db = seed()
+    const client = db.client()
+    const from = client.from
+    client.from = (t: string) =>
+      t === 'node_balance_adjustments'
+        ? { select: () => ({ order: () => ({ range: async () => ({ data: null, error: { message: 'relation does not exist' } }) }) }) }
+        : from(t)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const b = await getAppBalanceBreakdown(client)
+    expect(b.adjustments).toBe(0)
+    expect(b.totalAppBalance).toBe(1500 + 300 + 200 + 3000 + 50)
   })
 
   it('counts past the 1000-row page limit', async () => {
@@ -60,7 +86,7 @@ describe('getAppBalanceBreakdown', () => {
 })
 
 describe('generateEmailHTML', () => {
-  const breakdown = { userBalances: 700_000, openIssuesBalance: 65_230, unclaimedRewards: 0, paidOrdersBalance: 0, adjustments: 0, totalAppBalance: 765_230 }
+  const breakdown = { userBalances: 700_000, openIssuesBalance: 65_230, unclaimedRewards: 0, donationsBalance: 0, paidOrdersBalance: 0, adjustments: 0, totalAppBalance: 765_230 }
 
   it('uses the shared template and drops the activity grid', () => {
     const html = generateEmailHTML(summary(breakdown, 786_780))

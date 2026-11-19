@@ -514,7 +514,8 @@ async function performBalanceAudit(): Promise<{
 export interface BalanceBreakdown {
   userBalances: number       // Sum of every profile.balance (suspended/deleted accounts' sats are still on the node)
   openIssuesBalance: number  // Rewards held for open, non-deleted posts
-  unclaimedRewards: number   // Approved anonymous fixes whose reward hasn't been paid out yet
+  unclaimedRewards: number   // Funded rewards of approved anonymous fixes not yet paid out
+  donationsBalance: number   // Completed donations (held by Ganamos, not credited to any user)
   paidOrdersBalance: number  // Paid pet orders
   adjustments: number        // Operator credits/debits (node_balance_adjustments)
   totalAppBalance: number    // Sum of the above; should equal the node balance
@@ -537,35 +538,60 @@ async function sumRows(
 }
 
 /**
+ * Rewards of approved anonymous fixes that haven't been paid out. Only funded
+ * rewards count: an unfunded legacy reward was never on the node.
+ */
+async function sumUnclaimedFundedRewards(db: SupabaseClient<any>): Promise<number> {
+  const rows: Array<{ id: string; reward: number }> = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
+      .from('posts')
+      .select('id, reward')
+      .eq('fixed', true).is('fixed_by', null).is('deleted_at', null).gt('reward', 0)
+      .is('anonymous_reward_paid_at', null).is('reward_paid_at', null)
+      .order('id').range(from, from + PAGE - 1)
+    if (error) throw new Error(`[BALANCE] ${error.message ?? error}`)
+    rows.push(...(data ?? []))
+    if (!data || data.length < PAGE) break
+  }
+  let total = 0
+  for (const row of rows) {
+    const { data: funded, error } = await db.rpc('post_reward_is_funded', { p_post_id: row.id })
+    if (error) throw new Error(`[BALANCE] post_reward_is_funded: ${error.message ?? error}`)
+    if (funded === true) total += Number(row.reward) || 0
+  }
+  return total
+}
+
+/**
  * Every sat the app accounts for. The node balance is the source of truth;
  * this should equal it, give or take in-flight payments.
  */
 export async function getAppBalanceBreakdown(client: SupabaseClient<Database>): Promise<BalanceBreakdown> {
   const db = client as SupabaseClient<any>
-  const [userBalances, openIssuesBalance, unclaimedRewards, paidOrdersBalance, adjustments] = await Promise.all([
+  const [userBalances, openIssuesBalance, unclaimedRewards, donationsBalance, paidOrdersBalance, adjustments] = await Promise.all([
     sumRows((f, t) => db.from('profiles').select('balance').order('id').range(f, t), 'balance'),
     sumRows(
       (f, t) => db.from('posts').select('reward').eq('fixed', false).is('deleted_at', null).gt('reward', 0).order('id').range(f, t),
       'reward'
     ),
-    sumRows(
-      (f, t) =>
-        db.from('posts').select('reward')
-          .eq('fixed', true).is('fixed_by', null).is('deleted_at', null).gt('reward', 0)
-          .is('anonymous_reward_paid_at', null).is('reward_paid_at', null)
-          .order('id').range(f, t),
-      'reward'
-    ),
+    sumUnclaimedFundedRewards(db),
+    sumRows((f, t) => db.from('donations').select('amount').eq('status', 'completed').order('id').range(f, t), 'amount'),
     sumRows((f, t) => db.from('pet_orders').select('total_price_sats').eq('payment_status', 'paid').order('id').range(f, t), 'total_price_sats'),
-    sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount'),
+    // Until the node_balance_adjustments migration is applied, count no adjustments rather than fail the email
+    sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount').catch((e) => {
+      console.error('[BALANCE] node_balance_adjustments unavailable:', e)
+      return 0
+    }),
   ])
   return {
     userBalances,
     openIssuesBalance,
     unclaimedRewards,
+    donationsBalance,
     paidOrdersBalance,
     adjustments,
-    totalAppBalance: userBalances + openIssuesBalance + unclaimedRewards + paidOrdersBalance + adjustments,
+    totalAppBalance: userBalances + openIssuesBalance + unclaimedRewards + donationsBalance + paidOrdersBalance + adjustments,
   }
 }
 
@@ -778,6 +804,7 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
     ['Open rewards', sats(b.openIssuesBalance)],
   ]
   if (b.unclaimedRewards) details.push(['Unclaimed rewards', sats(b.unclaimedRewards)])
+  if (b.donationsBalance) details.push(['Donations', sats(b.donationsBalance)])
   if (b.paidOrdersBalance) details.push(['Pet orders', sats(b.paidOrdersBalance)])
   if (b.adjustments) details.push(['Operator credit', signedSats(b.adjustments)])
 
