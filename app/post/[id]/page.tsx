@@ -1375,7 +1375,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-52 p-1.5">
+      {/* Portaled, but React still bubbles its clicks to the photo (which opens fullscreen) */}
+      <DropdownMenuContent align="end" className="w-52 p-1.5" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => handleShare()} className="gap-2.5 py-2.5">
           <Share className="h-4 w-4" aria-hidden="true" />
           Share
