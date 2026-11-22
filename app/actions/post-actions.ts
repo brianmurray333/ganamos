@@ -7,6 +7,7 @@ import { validateLightningInvoice, validateInvoiceAmount } from "@/lib/lightning
 import { sendFixSubmittedForReviewEmail, sendIssueFixedEmail, sendRewardEarnedEmail, sendGroupAdminClosedIssueEmail } from "@/lib/transaction-emails"
 import { alertLargePostBounty } from "@/lib/sms-alerts"
 import { checkPostRewardCap, checkLivePostsCap, checkBalanceCap } from "@/lib/safety-caps"
+import { authorizePostReview, isSelfDealingReview, logParentReview } from "@/lib/post-review-auth"
 import { AUTO_APPROVE_CONFIDENCE, createAdminClient, notifyRewardOnHold, generateClaimToken, isPostFundingInvoiceMemo, isPostRewardFunded, payAnonymousRewardViaLightning, payFixReward, resolvePayoutInvoice, verifyClaimToken, verifyFixForPost } from "@/lib/payouts"
 
 async function getCookieStore() {
@@ -127,17 +128,11 @@ export async function payAnonymousFixLightningAddressAction(
       return { success: false, error: "Post not found." }
     }
 
-    let isAuthorized = post.user_id === user.id
-    if (!isAuthorized && post.group_id) {
-      const { data: membership } = await supabase
-        .from("group_members")
-        .select("role")
-        .eq("group_id", post.group_id)
-        .eq("user_id", user.id)
-        .eq("status", "approved")
-        .maybeSingle()
-      isAuthorized = membership?.role === "admin"
-    }
+    // SECURITY: owner, approved group admin, or a parent acting for one of
+    // those (child derived server-side from connected_accounts)
+    const reviewAccess = await authorizePostReview(supabase, user.id, post)
+    const isAuthorized = reviewAccess.allowed
+    logParentReview(user.id, reviewAccess, post)
     if (!isAuthorized) {
       console.error("SECURITY ALERT: unauthorized anonymous Lightning payout attempt", { postId, userId: user.id })
       return { success: false, error: "Only the post owner can approve this fix." }
@@ -362,17 +357,11 @@ export async function approveAnonymousFixAction(
       .single()
     if (fetchError || !post) return { success: false, error: "Post not found." }
 
-    let isAuthorized = post.user_id === user.id
-    if (!isAuthorized && post.group_id) {
-      const { data: membership } = await admin
-        .from("group_members")
-        .select("role")
-        .eq("group_id", post.group_id)
-        .eq("user_id", user.id)
-        .eq("status", "approved")
-        .maybeSingle()
-      isAuthorized = membership?.role === "admin"
-    }
+    // SECURITY: owner, approved group admin, or a parent acting for one of
+    // those (child derived server-side from connected_accounts)
+    const reviewAccess = await authorizePostReview(admin, user.id, post)
+    const isAuthorized = reviewAccess.allowed
+    logParentReview(user.id, reviewAccess, post)
     if (!isAuthorized) {
       console.error("SECURITY ALERT: unauthorized anonymous fix approval attempt", { postId, userId: user.id })
       return { success: false, error: "Only the post owner can approve this fix." }
@@ -1985,18 +1974,11 @@ export async function createFixRewardAction(params: {
     let markedFixedHere = false
 
     if (isPostOwnerClosing) {
-      // SECURITY: caller must be the post owner or an approved group admin
-      let isAuthorized = post.user_id === user.id
-      if (!isAuthorized && post.group_id) {
-        const { data: membership } = await admin
-          .from('group_members')
-          .select('role')
-          .eq('group_id', post.group_id)
-          .eq('user_id', user.id)
-          .eq('status', 'approved')
-          .maybeSingle()
-        isAuthorized = membership?.role === 'admin'
-      }
+      // SECURITY: owner, approved group admin, or a parent acting for one of
+      // those (child derived server-side from connected_accounts)
+      const reviewAccess = await authorizePostReview(admin, user.id, post)
+      const isAuthorized = reviewAccess.allowed
+      logParentReview(user.id, reviewAccess, post)
       if (!isAuthorized) {
         console.error('SECURITY ALERT: Unauthorized fix approval attempt', { authenticatedUserId: user.id, postId })
         return { success: false, error: 'Unauthorized: only the post owner or a group admin can approve this fix' }
@@ -2008,6 +1990,12 @@ export async function createFixRewardAction(params: {
       if (!designatedFixer || designatedFixer !== userId) {
         console.error('SECURITY ALERT: Approval payout to a user who did not submit the fix', { postId, userId, designatedFixer })
         return { success: false, error: 'This user did not submit the fix for this post' }
+      }
+      // SECURITY: an admin (or admin's parent) can't approve a fix by
+      // themselves or their own child on someone else's post
+      if (await isSelfDealingReview(admin, user.id, reviewAccess, designatedFixer)) {
+        console.error('SECURITY ALERT: Self-dealing fix approval blocked', { postId, reviewerId: user.id, fixerId: designatedFixer, via: reviewAccess.allowed ? reviewAccess.via : null })
+        return { success: false, error: "You can't approve your own fix (or your child's) on someone else's post. The post owner or another admin needs to review it." }
       }
 
       if (!(await isPostRewardFunded(admin, post))) {
@@ -2183,33 +2171,13 @@ export async function closeIssueAction(
       return { success: false, error: 'Post not found' }
     }
 
-    // SECURITY: Only the post owner OR a group admin can close the issue.
-    // A parent acting for a connected (child) account counts as the owner,
-    // matching the posts UPDATE RLS policy.
-    let isPostOwner = post.user_id === user.id
-    if (!isPostOwner && post.user_id) {
-      const { data: link } = await supabase
-        .from('connected_accounts')
-        .select('connected_user_id')
-        .eq('primary_user_id', user.id)
-        .eq('connected_user_id', post.user_id)
-        .maybeSingle()
-      isPostOwner = !!link
-    }
-    
-    // Check if user is a group admin for this post's group
-    let isGroupAdmin = false
-    if (post.group_id) {
-      const { data: membership } = await supabase
-        .from('group_members')
-        .select('role')
-        .eq('group_id', post.group_id)
-        .eq('user_id', user.id)
-        .eq('status', 'approved')
-        .single()
-      
-      isGroupAdmin = membership?.role === 'admin'
-    }
+    // SECURITY: Only the post owner OR a group admin can close the issue, or
+    // a parent acting for a connected child who is one of those (the child is
+    // derived server-side from connected_accounts, never taken from the client).
+    const closeAccess = await authorizePostReview(createAdminClient(), user.id, post)
+    const isPostOwner = closeAccess.allowed && (closeAccess.via === 'owner' || closeAccess.via === 'parent_of_owner')
+    const isGroupAdmin = closeAccess.allowed && (closeAccess.via === 'group_admin' || closeAccess.via === 'parent_of_group_admin')
+    logParentReview(user.id, closeAccess, post)
     
     const canCloseIssue = isPostOwner || isGroupAdmin
     
@@ -2273,6 +2241,13 @@ export async function closeIssueAction(
       .select('id, username')
       .eq('username', fixerUsername)
       .single()
+
+    // SECURITY: an admin (or admin's parent) can't name themselves or their own
+    // child as the fixer to collect the reward on someone else's post
+    if (fixerProfile && (await isSelfDealingReview(createAdminClient(), user.id, closeAccess, fixerProfile.id))) {
+      console.error('SECURITY ALERT: Self-dealing issue close blocked', { postId, reviewerId: user.id, fixerId: fixerProfile.id, via: closeAccess.allowed ? closeAccess.via : null })
+      return { success: false, error: "You can't close someone else's post with yourself (or your child) as the fixer. The post owner or another admin needs to do it." }
+    }
 
     if (fixerError || !fixerProfile) {
       return { success: false, error: `User "${fixerUsername}" not found` }

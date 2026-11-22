@@ -1258,19 +1258,14 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         // Store the fixer ID before clearing it (needed for device notification)
         const fixerUserId = post.submitted_fix_by_id
         
-        const { error } = await supabase
-          .from("posts")
-          .update({
-            under_review: false,
-            submitted_fix_by_id: null,
-            submitted_fix_by_name: null,
-            submitted_fix_by_avatar: null,
-            submitted_fix_at: null,
-            submitted_fix_image_url: null,
-            submitted_fix_note: null,
-            submitted_fix_proof_text: null,
-          })
-          .eq("id", post.id)
+        // Server-side, atomic: the DB function checks the caller may review
+        // this post (owner, group admin, or a parent acting for one) and that
+        // a fix is actually pending, then reopens the post.
+        const { error } = await supabase.rpc("review_submitted_fix_atomic", {
+          p_post_id: post.id,
+          p_approve: false,
+          p_rejection_reason: null,
+        })
         if (error) {
           console.error("Error rejecting fix:", error)
           throw new Error("Failed to reject fix")

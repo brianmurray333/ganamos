@@ -58,7 +58,7 @@ function world(post: Record<string, any> = {}, extra: Record<string, any[]> = {}
       { id: OWNER_ID, username: 'posteruser', name: 'Poster', email: 'poster@example.com', balance: OWNER_START, pet_coins: 0, fixed_issues_count: 0 },
       { id: FIXER_ID, username: FIXER_USERNAME, name: 'Fixer', email: 'fixer@example.com', balance: FIXER_START, pet_coins: 0, fixed_issues_count: 0 },
       { id: OTHER_ID, username: 'other', name: 'Other', email: 'other@example.com', balance: 0, pet_coins: 0 },
-      { id: CHILD_ID, username: 'child', name: 'Child', email: 'child@ganamos.app', balance: 100, pet_coins: 0 },
+      { id: CHILD_ID, username: 'child', name: 'Child', email: 'child@ganamos.app', balance: 100, pet_coins: 0, status: 'active' },
       { id: GROUP_ADMIN_ID, username: 'admin', name: 'Group Admin', email: 'admin@example.com', balance: 0, pet_coins: 0 },
     ],
     posts: [
@@ -198,6 +198,88 @@ describe('closeIssueAction', () => {
       )
     })
 
+    describe('a parent acting for a connected child (OWNER_ID is CHILD_ID\'s parent)', () => {
+      const childAdminOf = (status = 'approved', role = 'admin') => ({
+        group_members: [{ group_id: GROUP_ID, user_id: CHILD_ID, role, status }],
+      })
+
+      it("closes the child's own post and pays the fixer", async () => {
+        setup({ user_id: CHILD_ID }, {}, OWNER_ID)
+
+        const result = await close()
+
+        expect(result).toEqual({ success: true })
+        expect(post()).toMatchObject({ fixed: true, fixed_by: FIXER_ID, reward_paid_to: FIXER_ID })
+        expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
+        expect(payoutRpcs()).toHaveLength(1)
+      })
+
+      it('closes a post in a group the child admins, without being in the group', async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf(), OWNER_ID)
+
+        const result = await close()
+
+        expect(result).toEqual({ success: true })
+        expect(balance(FIXER_ID)).toBe(FIXER_START + REWARD)
+        expect(payoutRpcs()).toHaveLength(1)
+      })
+
+      it('is refused when the child is only a member of the group', async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf('approved', 'member'), OWNER_ID)
+
+        expect((await close()).success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+
+      it("is refused when the child's admin membership is not approved", async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf('pending'), OWNER_ID)
+
+        expect((await close()).success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+
+      it('is refused when the child account is suspended', async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf(), OWNER_ID)
+        db.row('profiles', CHILD_ID)!.status = 'suspended'
+
+        expect((await close()).success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+
+      it('is refused for someone with no link to the admin child', async () => {
+        setup({ user_id: GROUP_ADMIN_ID, group_id: GROUP_ID }, childAdminOf(), OTHER_ID)
+
+        expect((await close()).success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+
+      it('is refused when naming the child as the fixer on someone else\'s post (self-dealing)', async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf(), OWNER_ID)
+
+        const result = await close('child')
+
+        expect(result.success).toBe(false)
+        expect(writes()).toHaveLength(0)
+        expect(balance(CHILD_ID)).toBe(100)
+      })
+
+      it('is refused when naming themselves as the fixer on someone else\'s post (self-dealing)', async () => {
+        setup({ user_id: OTHER_ID, group_id: GROUP_ID }, childAdminOf(), OWNER_ID)
+
+        expect((await close('posteruser')).success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+
+      it('ignores a client-supplied account id: passing the child id grants nothing', async () => {
+        setup({ user_id: CHILD_ID }, {}, OTHER_ID)
+
+        const result = await closeIssueAction(POST_ID, CHILD_ID, FIXER_USERNAME)
+
+        expect(result.success).toBe(false)
+        expect(writes()).toHaveLength(0)
+      })
+    })
+
     it('closes a zero-reward post without any payout', async () => {
       setup({ reward: 0 })
 
@@ -241,6 +323,16 @@ describe('closeIssueAction', () => {
 
       expect(result.success).toBe(false)
       expect(writes()).toHaveLength(0)
+    })
+
+    it("rejects a group admin naming themselves as the fixer on someone else's post", async () => {
+      setup({ group_id: GROUP_ID }, {}, GROUP_ADMIN_ID)
+
+      const result = await close('admin')
+
+      expect(result.success).toBe(false)
+      expect(writes()).toHaveLength(0)
+      expect(balance(GROUP_ADMIN_ID)).toBe(0)
     })
 
     it('rejects a group member who is not an approved admin', async () => {
