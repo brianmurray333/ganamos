@@ -9,7 +9,8 @@
 --   created when a parent creates a child account), so nobody can link
 --   themselves to another person's account.
 -- * One hop only: a child's own connected accounts don't count.
--- * Only active child profiles count (suspended / deleted ones don't).
+-- * Only active child profiles count (suspended / deleted ones don't; NULL
+--   status counts as active, as in close_issue_atomic).
 
 CREATE OR REPLACE FUNCTION public.ganamos_can_review_post(p_user_id UUID, p_group_id UUID)
 RETURNS BOOLEAN
@@ -31,7 +32,7 @@ AS $$
       WHERE ca.primary_user_id = auth.uid()
         AND ca.connected_user_id = p_user_id
         AND ca.connected_user_id <> auth.uid()
-        AND child.status = 'active'
+        AND COALESCE(child.status, 'active') = 'active'
     ))
     -- 3b. a parent of an approved admin of the post's group
     OR (p_group_id IS NOT NULL AND EXISTS (
@@ -40,7 +41,7 @@ AS $$
       JOIN group_members gm ON gm.user_id = ca.connected_user_id
       WHERE ca.primary_user_id = auth.uid()
         AND ca.connected_user_id <> auth.uid()
-        AND child.status = 'active'
+        AND COALESCE(child.status, 'active') = 'active'
         AND gm.group_id = p_group_id
         AND gm.role = 'admin' AND gm.status = 'approved'
     ))
@@ -86,31 +87,38 @@ CREATE POLICY "Users can view group members of their groups" ON group_members
 -- Self-dealing guard (web: isSelfDealingReview in lib/post-review-auth.ts).
 -- The post owner, or a parent acting for the owning child, spends their own
 -- family's reward and may pay anyone. Anyone whose authority comes from
--- administering the group must not pay it to themselves or their own child.
+-- administering the group must not pay it to themselves or their own child,
+-- nor approve an anonymous fix (they could have submitted it logged out).
+-- NULL-safe: an owner-less post counts as "not the reviewer's".
 CREATE OR REPLACE FUNCTION public.ganamos_review_is_self_dealing(p_owner_id UUID, p_fixer_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
 AS $$
-  SELECT auth.uid() IS NOT NULL
-    AND p_fixer_id IS NOT NULL
+  SELECT COALESCE(
+    auth.uid() IS NOT NULL
     AND NOT (
-      p_owner_id = auth.uid()
-      OR EXISTS (
-        SELECT 1 FROM connected_accounts ca
-        JOIN profiles child ON child.id = ca.connected_user_id
-        WHERE ca.primary_user_id = auth.uid()
-          AND ca.connected_user_id = p_owner_id
-          AND ca.connected_user_id <> auth.uid()
-          AND child.status = 'active'
+      p_owner_id IS NOT NULL AND (
+        p_owner_id = auth.uid()
+        OR EXISTS (
+          SELECT 1 FROM connected_accounts ca
+          JOIN profiles child ON child.id = ca.connected_user_id
+          WHERE ca.primary_user_id = auth.uid()
+            AND ca.connected_user_id = p_owner_id
+            AND ca.connected_user_id <> auth.uid()
+            AND COALESCE(child.status, 'active') = 'active'
+        )
       )
     )
     AND (
-      p_fixer_id = auth.uid()
+      p_fixer_id IS NULL
+      OR p_fixer_id = auth.uid()
       OR EXISTS (
         SELECT 1 FROM connected_accounts ca
         WHERE ca.primary_user_id = auth.uid() AND ca.connected_user_id = p_fixer_id
       )
-    )
+    ),
+    TRUE  -- anything indeterminate counts as a conflict
+  )
 $$;
 REVOKE ALL ON FUNCTION public.ganamos_review_is_self_dealing(UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.ganamos_review_is_self_dealing(UUID, UUID) TO service_role;
@@ -133,11 +141,14 @@ BEGIN
   SELECT * INTO v_post FROM posts WHERE id = p_post_id FOR UPDATE;
 
   -- An admin (or a parent acting for an admin child) can't pay someone
-  -- else's reward to themselves or their own child (20261122000000).
-  IF auth.uid() IS NOT NULL AND p_fixer_id IS NOT NULL
+  -- else's reward to themselves or their own child, or approve an anonymous
+  -- fix on it (20261122000000).
+  IF auth.uid() IS NOT NULL
      AND public.ganamos_review_is_self_dealing(v_post.user_id, p_fixer_id) THEN
     RAISE EXCEPTION USING ERRCODE = '42501',
-      MESSAGE = 'You can''t approve your own fix (or your child''s) on someone else''s post';
+      MESSAGE = CASE WHEN p_fixer_id IS NULL
+        THEN 'Only the post owner can approve an anonymous fix on this post'
+        ELSE 'You can''t approve your own fix (or your child''s) on someone else''s post' END;
   END IF;
 
   IF v_post.reward IS NOT NULL AND v_post.reward > 0 AND NOT public.post_reward_is_funded(p_post_id) THEN

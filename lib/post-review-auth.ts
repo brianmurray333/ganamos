@@ -13,7 +13,8 @@
  *   the service role can write (rows are created when a parent creates a
  *   child account), so a user can't link themselves to someone else.
  * - Only direct children count (one hop); a child's own children don't.
- * - Children whose profile isn't active (suspended / deleted) don't count.
+ * - Children whose profile is suspended / deleted don't count (NULL status
+ *   counts as active, as in close_issue_atomic).
  * - `admin` must be a service-role client so these reads aren't narrowed by
  *   RLS; any query error denies (fails closed).
  */
@@ -40,6 +41,29 @@ export async function authorizePostReview(
 
   if (post.user_id && post.user_id === userId) return { allowed: true, via: "owner" }
 
+  // Direct, active children of the session user
+  const { data: links, error: linksError } = await admin
+    .from("connected_accounts")
+    .select("connected_user_id")
+    .eq("primary_user_id", userId)
+  if (linksError) return DENY
+  const linkedIds = [...new Set((links || []).map((l: { connected_user_id: string }) => l.connected_user_id))].filter(
+    (id) => id && id !== userId
+  )
+
+  // NULL status counts as active (same as close_issue_atomic)
+  const { data: activeChildren, error: childrenError } = linkedIds.length
+    ? await admin.from("profiles").select("id").in("id", linkedIds).or("status.is.null,status.eq.active")
+    : { data: [], error: null }
+  if (childrenError) return DENY
+  const childIds = (activeChildren || []).map((c: { id: string }) => c.id)
+
+  // Ownership before admin rights: a parent of the owning child spends their
+  // own family's reward (see isSelfDealingReview)
+  if (post.user_id && childIds.includes(post.user_id)) {
+    return { allowed: true, via: "parent_of_owner", actingForUserId: post.user_id }
+  }
+
   if (post.group_id) {
     const { data, error } = await admin
       .from("group_members")
@@ -53,28 +77,7 @@ export async function authorizePostReview(
     if (data && data.length > 0) return { allowed: true, via: "group_admin" }
   }
 
-  // Direct, active children of the session user
-  const { data: links, error: linksError } = await admin
-    .from("connected_accounts")
-    .select("connected_user_id")
-    .eq("primary_user_id", userId)
-  if (linksError || !links?.length) return DENY
-  const linkedIds = [...new Set(links.map((l: { connected_user_id: string }) => l.connected_user_id))].filter(
-    (id) => id && id !== userId
-  )
-  if (!linkedIds.length) return DENY
-
-  const { data: activeChildren, error: childrenError } = await admin
-    .from("profiles")
-    .select("id")
-    .in("id", linkedIds)
-    .eq("status", "active")
-  if (childrenError || !activeChildren?.length) return DENY
-  const childIds = activeChildren.map((c: { id: string }) => c.id)
-
-  if (post.user_id && childIds.includes(post.user_id)) {
-    return { allowed: true, via: "parent_of_owner", actingForUserId: post.user_id }
-  }
+  if (!childIds.length) return DENY
 
   if (post.group_id) {
     const { data: childAdmins, error } = await admin
@@ -118,7 +121,12 @@ export function logParentReview(
  * group (directly, or through an admin child) must not pay a post owner's
  * reward to themselves or to one of their own children. Owners (and parents
  * acting for the owning child) are spending their own family's reward, so they
- * may approve anyone. Mirrored in SQL by public.ganamos_review_is_self_dealing.
+ * may approve anyone. An anonymous fix (no fixer account) counts as a conflict
+ * for admin-derived reviewers, since they could have submitted it logged out.
+ * Mirrored in SQL by public.ganamos_review_is_self_dealing.
+ *
+ * This blocks the obvious self-payment; it can't stop an admin using a second,
+ * unlinked account. Group admins are trusted with their group's posts.
  * Fails closed: returns true (conflict) on any lookup error.
  */
 export async function isSelfDealingReview(
@@ -129,7 +137,8 @@ export async function isSelfDealingReview(
 ): Promise<boolean> {
   if (!access.allowed) return true
   if (access.via === "owner" || access.via === "parent_of_owner") return false
-  if (!fixerId) return false
+  // An anonymous fix could have been submitted by the reviewer logged out
+  if (!fixerId) return true
   if (fixerId === sessionUserId) return true
   const { data, error } = await admin
     .from("connected_accounts")

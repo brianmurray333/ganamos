@@ -517,11 +517,17 @@ describe('payAnonymousFixLightningAddressAction (owner approves an anonymous fix
     expect(post().fixed).toBe(false)
   })
 
-  it('allows an approved group admin', async () => {
+  // A group admin could have submitted the anonymous fix themselves (logged
+  // out, with their own Lightning address), so only the owner may pay it.
+  it("refuses a group admin paying an anonymous fix on someone else's post", async () => {
     setup(withAddress({ group_id: GROUP_ID }), GROUP_ADMIN_ID)
 
-    expect((await payAnonymousFixLightningAddressAction(POST_ID)).success).toBe(true)
-    expect(payInvoice).toHaveBeenCalledTimes(1)
+    const result = await payAnonymousFixLightningAddressAction(POST_ID)
+
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/Only the post owner/)
+    expect(payInvoice).not.toHaveBeenCalled()
+    expect(post().fixed).toBe(false)
   })
 
   it('refuses an unfunded post', async () => {
@@ -721,9 +727,14 @@ describe('approveAnonymousFixAction (owner approves an anonymous fix with no pay
     expect(balance(NEW_USER_ID)).toBe(REWARD)
   })
 
-  it('allows an approved group admin', async () => {
+  // See above: only the owner (or a parent acting for the owning child) may
+  // approve an anonymous fix.
+  it("refuses a group admin approving an anonymous fix on someone else's post", async () => {
     setup(underReview({ group_id: GROUP_ID }), GROUP_ADMIN_ID)
-    expect(await approveAnonymousFixAction(POST_ID)).toEqual({ success: true })
+    const result = await approveAnonymousFixAction(POST_ID)
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/Only the post owner/)
+    expect(post().fixed).toBe(false)
   })
 
   it.each([

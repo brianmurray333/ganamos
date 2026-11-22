@@ -138,6 +138,13 @@ export async function payAnonymousFixLightningAddressAction(
       return { success: false, error: "Only the post owner can approve this fix." }
     }
 
+    // SECURITY: admin-derived reviewers can't approve an anonymous fix on
+    // someone else's post (they could have submitted it logged out)
+    if (await isSelfDealingReview(supabase, user.id, reviewAccess, null)) {
+      console.error("SECURITY ALERT: anonymous fix approval by a non-owner blocked", { postId, userId: user.id })
+      return { success: false, error: "Only the post owner can approve an anonymous fix on this post." }
+    }
+
     if (post.deleted_at) {
       return { success: false, error: "Post has been deleted." }
     }
@@ -365,6 +372,13 @@ export async function approveAnonymousFixAction(
     if (!isAuthorized) {
       console.error("SECURITY ALERT: unauthorized anonymous fix approval attempt", { postId, userId: user.id })
       return { success: false, error: "Only the post owner can approve this fix." }
+    }
+
+    // SECURITY: admin-derived reviewers can't approve an anonymous fix on
+    // someone else's post (they could have submitted it logged out)
+    if (await isSelfDealingReview(admin, user.id, reviewAccess, null)) {
+      console.error("SECURITY ALERT: anonymous fix approval by a non-owner blocked", { postId, userId: user.id })
+      return { success: false, error: "Only the post owner can approve an anonymous fix on this post." }
     }
 
     if (post.deleted_at) return { success: false, error: "Post has been deleted." }
@@ -2240,6 +2254,8 @@ export async function closeIssueAction(
       .from('profiles')
       .select('id, username')
       .eq('username', fixerUsername)
+      // Only active accounts can be paid (same as close_issue_atomic)
+      .or('status.is.null,status.eq.active')
       .single()
 
     // SECURITY: an admin (or admin's parent) can't name themselves or their own

@@ -107,8 +107,8 @@ export function createFakeSupabase(initial: Tables = {}) {
     typeof ms !== 'number' ? ms : ms > 0 ? new Promise(r => setTimeout(r, ms)) : Promise.resolve()
   const isNull = (v: any) => v === null || v === undefined
 
-  function matches(row: Row, filters: Array<[string, string, any]>) {
-    return filters.every(([kind, col, val]) => {
+  function matches(row: Row, filters: Array<[string, string, any]>): boolean {
+    return filters.every(([kind, col, val]): boolean => {
       const v = row[col]
       switch (kind) {
         case 'eq': return v === val
@@ -120,6 +120,10 @@ export function createFakeSupabase(initial: Tables = {}) {
         case 'lte': return !isNull(v) && v <= val
         case 'gt': return !isNull(v) && v > val
         case 'gte': return !isNull(v) && v >= val
+        case 'or': {
+          // PostgREST "col.op.value,col.op.value" (eq / neq / is.null only)
+          return (val as Array<[string, string, any]>).some((f): boolean => matches(row, [f]))
+        }
         case 'ilike': {
           const re = new RegExp('^' + String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*').replace(/_/g, '.') + '$', 'i')
           return !isNull(v) && re.test(String(v))
@@ -207,6 +211,16 @@ export function createFakeSupabase(initial: Tables = {}) {
         filters.push(['not.is', c, v]); return q
       },
       in: (c: string, v: any[]) => { filters.push(['in', c, v]); return q },
+      or: (expr: string) => {
+        const parts = expr.split(',').map(part => {
+          const [col, operator, ...rest] = part.trim().split('.')
+          const raw = rest.join('.')
+          if (operator === 'is' && raw === 'null') return ['is', col, null] as [string, string, any]
+          if (operator === 'eq' || operator === 'neq') return [operator, col, raw] as [string, string, any]
+          throw new Error(`fake-supabase: unsupported or() term ${part}`)
+        })
+        filters.push(['or', '', parts]); return q
+      },
       lt: (c: string, v: any) => { filters.push(['lt', c, v]); return q },
       lte: (c: string, v: any) => { filters.push(['lte', c, v]); return q },
       gt: (c: string, v: any) => { filters.push(['gt', c, v]); return q },

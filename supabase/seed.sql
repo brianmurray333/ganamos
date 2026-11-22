@@ -642,8 +642,9 @@ GRANT EXECUTE ON FUNCTION public.is_approved_group_member(uuid, uuid)
 DROP POLICY IF EXISTS "Users can view group members of their groups" ON public.group_members;
 CREATE POLICY "Users can view group members of their groups" ON public.group_members
   FOR SELECT USING (
+    -- Same policy as 20261122000000 (production), so tests exercise it
     user_id = auth.uid()
-    OR public.is_approved_group_member(group_id, auth.uid())
+    OR public.is_group_member(group_id, auth.uid())
     -- A parent may read their children's own rows (20261122000000)
     OR EXISTS (
       SELECT 1 FROM public.connected_accounts ca

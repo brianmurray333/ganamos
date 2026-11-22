@@ -549,6 +549,126 @@ describe('self-dealing approvals are blocked', () => {
     })
   }
 
+  it('blocks a group admin paying themselves on an owner-less group post (NULL-safe)', async () => {
+    const admin = await seedUser()
+    const g = await seedGroup(admin.id)
+    await addMember(g, admin.id, 'admin')
+    const postId = crypto.randomUUID()
+    await queryDB(
+      `INSERT INTO posts (id, title, description, reward, fixed, user_id, group_id, under_review, submitted_fix_by_id, submitted_fix_at)
+       VALUES ($1, 'Ownerless', 'Ownerless', 0, false, NULL, $2, true, $3, now())`,
+      [postId, g, admin.id]
+    )
+    createdPosts.push(postId)
+
+    const client = getAuthenticatedClient(admin.id)
+    const approve = await client.rpc('review_submitted_fix_atomic' as any, { p_post_id: postId, p_approve: true, p_rejection_reason: null })
+    expect(approve.error).not.toBeNull()
+    const close = await client.rpc('close_issue_atomic' as any, { p_post_id: postId, p_fixer_username: admin.username })
+    expect(close.error).not.toBeNull()
+    expect((await postState(postId))?.fixed).toBe(false)
+
+    const service = getServiceClient() as any
+    const access = await authorizePostReview(service, admin.id, { user_id: null, group_id: g })
+    expect(access).toMatchObject({ allowed: true, via: 'group_admin' })
+    expect(await isSelfDealingReview(service, admin.id, access, admin.id)).toBe(true)
+  })
+
+  describe('anonymous fixes (the reviewer could have submitted it logged out)', () => {
+    async function seedAnonymousPendingPost(ownerId: string, groupId: string | null) {
+      const id = crypto.randomUUID()
+      await queryDB(
+        `INSERT INTO posts (id, title, description, reward, fixed, user_id, group_id, under_review,
+           submitted_fix_by_id, submitted_fix_at, anonymous_claim_token_hash)
+         VALUES ($1, 'Anon fix', 'Anon fix', 0, false, $2, $3, true, NULL, now(), 'test-claim-hash')`,
+        [id, ownerId, groupId]
+      )
+      createdPosts.push(id)
+      return id
+    }
+
+    it("blocks a group admin approving an anonymous fix on someone else's post", async () => {
+      const owner = await seedUser()
+      const admin = await seedUser()
+      const g = await seedGroup(admin.id)
+      await addMember(g, admin.id, 'admin')
+      const postId = await seedAnonymousPendingPost(owner.id, g)
+
+      const { error } = await getAuthenticatedClient(admin.id).rpc('review_submitted_fix_atomic' as any, {
+        p_post_id: postId, p_approve: true, p_rejection_reason: null,
+      })
+      expect(error).not.toBeNull()
+      expect((await postState(postId))?.fixed).toBe(false)
+
+      const service = getServiceClient() as any
+      const access = await authorizePostReview(service, admin.id, { user_id: owner.id, group_id: g })
+      expect(await isSelfDealingReview(service, admin.id, access, null)).toBe(true)
+    })
+
+    it('blocks a parent (via an admin child) approving an anonymous fix', async () => {
+      const owner = await seedUser()
+      const parent = await seedUser()
+      const child = await seedUser()
+      await seedConnectedAccount(parent.id, child.id)
+      const g = await seedGroup(child.id)
+      await addMember(g, child.id, 'admin')
+      const postId = await seedAnonymousPendingPost(owner.id, g)
+
+      const { error } = await getAuthenticatedClient(parent.id).rpc('review_submitted_fix_atomic' as any, {
+        p_post_id: postId, p_approve: true, p_rejection_reason: null,
+      })
+      expect(error).not.toBeNull()
+      expect((await postState(postId))?.fixed).toBe(false)
+    })
+
+    it('still lets the owner approve an anonymous fix', async () => {
+      const owner = await seedUser()
+      const postId = await seedAnonymousPendingPost(owner.id, null)
+
+      const { error } = await getAuthenticatedClient(owner.id).rpc('review_submitted_fix_atomic' as any, {
+        p_post_id: postId, p_approve: true, p_rejection_reason: null,
+      })
+      expect(error).toBeNull()
+      expect((await postState(postId))?.fixed).toBe(true)
+    })
+
+    it('still lets a group admin send an anonymous fix back', async () => {
+      const owner = await seedUser()
+      const admin = await seedUser()
+      const g = await seedGroup(admin.id)
+      await addMember(g, admin.id, 'admin')
+      const postId = await seedAnonymousPendingPost(owner.id, g)
+
+      const { error } = await getAuthenticatedClient(admin.id).rpc('review_submitted_fix_atomic' as any, {
+        p_post_id: postId, p_approve: false, p_rejection_reason: null,
+      })
+      expect(error).toBeNull()
+      expect((await postState(postId))?.under_review).toBe(false)
+    })
+  })
+
+  it("lets a reviewer who is both a group admin and the owner's parent pay their other child (owner rights win)", async () => {
+    const parent = await seedUser()
+    const ownerKid = await seedUser()
+    const fixerKid = await seedUser()
+    await seedConnectedAccount(parent.id, ownerKid.id)
+    await seedConnectedAccount(parent.id, fixerKid.id)
+    const g = await seedGroup(parent.id)
+    await addMember(g, parent.id, 'admin')
+    const postId = await seedPendingPost(ownerKid.id, g, fixerKid.id, 0)
+
+    const service = getServiceClient() as any
+    const access = await authorizePostReview(service, parent.id, { user_id: ownerKid.id, group_id: g })
+    expect(access).toMatchObject({ allowed: true, via: 'parent_of_owner' })
+    expect(await isSelfDealingReview(service, parent.id, access, fixerKid.id)).toBe(false)
+
+    const { error } = await getAuthenticatedClient(parent.id).rpc('review_submitted_fix_atomic' as any, {
+      p_post_id: postId, p_approve: true, p_rejection_reason: null,
+    })
+    expect(error).toBeNull()
+    expect((await postState(postId))?.fixed).toBe(true)
+  })
+
   it('keeps ganamos_review_is_self_dealing off-limits to user sessions', async () => {
     const u = await seedUser()
     const { error } = await getAuthenticatedClient(u.id).rpc('ganamos_review_is_self_dealing' as any, {
