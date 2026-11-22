@@ -1,19 +1,20 @@
 /**
  * Review reminder limits, mirrored for display from the SQL that enforces
- * them (public.record_fix_review_reminder, 20261122020000): a fixer may
+ * them (public.record_fix_review_reminder, 20261122030000): a fixer may
  * remind reviewers once the fix has waited 1 hour, then at most once every
- * 24 hours, up to 3 times per submission.
+ * 24 hours, up to 3 times in any 30 days. The server counts from a log users
+ * can't write; posts.review_reminder_count/last_at are its display copy.
  */
 
 export const REMINDER_MIN_WAIT_MS = 60 * 60 * 1000
 export const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000
 export const REMINDER_MAX = 3
+export const REMINDER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
 
 export type ReminderFields = {
   submitted_fix_at: string | null
   review_reminder_count?: number | null
   review_reminder_last_at?: string | null
-  review_reminder_for?: string | null
 }
 
 /** Parse a timestamp; zone-less values (submitted_fix_at) are UTC. */
@@ -30,16 +31,14 @@ export type ReminderAvailability =
   | { canRemind: false; sent: number; reason: "limit_reached" }
 
 export function reminderAvailability(row: ReminderFields, now = new Date()): ReminderAvailability {
-  const sameSubmission =
-    (row.review_reminder_for ?? null) !== null &&
-    parseDbTime(row.review_reminder_for)?.getTime() === parseDbTime(row.submitted_fix_at)?.getTime()
-  const sent = sameSubmission ? Math.max(0, row.review_reminder_count ?? 0) : 0
+  const last = parseDbTime(row.review_reminder_last_at)
+  const recent = !!last && now.getTime() - last.getTime() < REMINDER_WINDOW_MS
+  const sent = recent ? Math.max(0, row.review_reminder_count ?? 0) : 0
   if (sent >= REMINDER_MAX) return { canRemind: false, sent, reason: "limit_reached" }
 
   const submitted = parseDbTime(row.submitted_fix_at) ?? now
   let next = submitted.getTime() + REMINDER_MIN_WAIT_MS
-  const last = parseDbTime(row.review_reminder_last_at)
-  if (sent > 0 && last) next = Math.max(next, last.getTime() + REMINDER_INTERVAL_MS)
+  if (last) next = Math.max(next, last.getTime() + REMINDER_INTERVAL_MS)
   if (next > now.getTime()) return { canRemind: false, sent, reason: "too_soon", nextAt: new Date(next) }
   return { canRemind: true, sent }
 }

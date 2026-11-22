@@ -18,29 +18,27 @@ describe('reminderAvailability (display mirror of record_fix_review_reminder)', 
     expect(reminderAvailability({ submitted_fix_at: hoursAgo(2) }, now)).toEqual({ canRemind: true, sent: 0 })
   })
 
-  it('waits 24h after the last reminder of this submission', () => {
+  it('waits 24h after the last reminder', () => {
     const sub = hoursAgo(30)
-    expect(
-      reminderAvailability({ submitted_fix_at: sub, review_reminder_for: sub, review_reminder_count: 1, review_reminder_last_at: hoursAgo(10, false) }, now)
-    ).toMatchObject({ canRemind: false, reason: 'too_soon', sent: 1 })
-    expect(
-      reminderAvailability({ submitted_fix_at: sub, review_reminder_for: sub, review_reminder_count: 1, review_reminder_last_at: hoursAgo(25, false) }, now)
-    ).toEqual({ canRemind: true, sent: 1 })
+    expect(reminderAvailability({ submitted_fix_at: sub, review_reminder_count: 1, review_reminder_last_at: hoursAgo(10, false) }, now)).toMatchObject({
+      canRemind: false,
+      reason: 'too_soon',
+      sent: 1,
+    })
+    expect(reminderAvailability({ submitted_fix_at: sub, review_reminder_count: 1, review_reminder_last_at: hoursAgo(25, false) }, now)).toEqual({ canRemind: true, sent: 1 })
   })
 
-  it('stops at the maximum', () => {
-    const sub = hoursAgo(100)
+  it('stops at the maximum within 30 days', () => {
     expect(
-      reminderAvailability({ submitted_fix_at: sub, review_reminder_for: sub, review_reminder_count: REMINDER_MAX, review_reminder_last_at: hoursAgo(48, false) }, now)
+      reminderAvailability({ submitted_fix_at: hoursAgo(100), review_reminder_count: REMINDER_MAX, review_reminder_last_at: hoursAgo(48, false) }, now)
     ).toMatchObject({ canRemind: false, reason: 'limit_reached' })
   })
 
-  it('ignores counters from an earlier submission, and negative counts', () => {
+  it('forgets reminders older than 30 days, and negative counts', () => {
     expect(
-      reminderAvailability({ submitted_fix_at: hoursAgo(2), review_reminder_for: hoursAgo(50), review_reminder_count: 3, review_reminder_last_at: hoursAgo(1, false) }, now)
+      reminderAvailability({ submitted_fix_at: hoursAgo(24 * 60), review_reminder_count: 3, review_reminder_last_at: hoursAgo(24 * 31, false) }, now)
     ).toEqual({ canRemind: true, sent: 0 })
-    const sub = hoursAgo(2)
-    expect(reminderAvailability({ submitted_fix_at: sub, review_reminder_for: sub, review_reminder_count: -5 }, now)).toEqual({ canRemind: true, sent: 0 })
+    expect(reminderAvailability({ submitted_fix_at: hoursAgo(2), review_reminder_count: -5, review_reminder_last_at: hoursAgo(30, false) }, now)).toEqual({ canRemind: true, sent: 0 })
   })
 })
 

@@ -3,9 +3,10 @@
  * (20261122020000_fix_review_reminders + app/actions/review-reminder-actions.ts),
  * against the real local database.
  *
- * Limits (enforced atomically in record_fix_review_reminder): not until the fix
- * has waited 1 hour, then at most once every 24 hours, max 3 per submission;
- * a new submission starts fresh. Only the submitter (or the parent of a child
+ * Limits (enforced atomically in record_fix_review_reminder, counted from the
+ * server-only fix_review_reminders log): not until the fix has waited 1 hour,
+ * then at most once every 24 hours, max 3 in any 30 days. Nothing a user can
+ * edit on the post resets them. Only the submitter (or the parent of a child
  * submitter) may send one, and emails go only to the post's reviewers.
  *
  * Run: npm run test:integration
@@ -74,9 +75,9 @@ async function seedPending(ownerId: string, fixerId: string, hoursAgo = 2, group
 const record = (postId: string, senderId: string) =>
   getServiceClient().rpc('record_fix_review_reminder' as any, { p_post_id: postId, p_sender_id: senderId })
 
-/** Move the last reminder back in time (test-only, as postgres) */
+/** Move this post's logged reminders back in time (test-only, as postgres) */
 const ageLastReminder = (postId: string, hours: number) =>
-  queryDB(`UPDATE posts SET review_reminder_last_at = now() - make_interval(hours => $2) WHERE id = $1`, [postId, hours])
+  queryDB(`UPDATE fix_review_reminders SET created_at = created_at - make_interval(hours => $2) WHERE post_id = $1`, [postId, hours])
 
 describe('record_fix_review_reminder (database limits)', () => {
   it('refuses before the fix has waited an hour, and says when', async () => {
@@ -120,28 +121,65 @@ describe('record_fix_review_reminder (database limits)', () => {
     expect((await queryOne<{ review_reminder_count: number }>('SELECT review_reminder_count FROM posts WHERE id = $1', [postId]))?.review_reminder_count).toBe(1)
   })
 
-  it('starts fresh for a new submission of the same post', async () => {
+  it("can't be reset by a group admin fixer editing the post (submitted_fix_at, display counters)", async () => {
+    const owner = await seedUser()
+    const adminFixer = await seedUser()
+    const g = crypto.randomUUID()
+    const code = g.replace(/-/g, '').slice(0, 10)
+    await queryDB('INSERT INTO groups (id, name, created_by, invite_code, group_code) VALUES ($1, $2, $3, $4, $5)', [g, 'G', adminFixer.id, `inv${code}`, `g${code}`])
+    createdGroups.push(g)
+    await queryDB("INSERT INTO group_members (group_id, user_id, role, status) VALUES ($1, $2, 'admin', 'approved')", [g, adminFixer.id])
+    const postId = await seedPending(owner.id, adminFixer.id, 2, g)
+
+    expect((await record(postId, adminFixer.id)).data).toMatchObject({ ok: true, count: 1 })
+
+    // As an admin they CAN rewrite the post's columns (RLS lets admins edit group posts)...
+    const { error: editError } = await getAuthenticatedClient(adminFixer.id)
+      .from('posts')
+      .update({ submitted_fix_at: '2020-01-01 00:00:00', review_reminder_count: 0, review_reminder_last_at: '2020-01-01T00:00:00Z' } as any)
+      .eq('id', postId)
+    expect(editError).toBeNull()
+
+    // ...but the limit comes from the log, so it still holds
+    expect((await record(postId, adminFixer.id)).data).toMatchObject({ ok: false, reason: 'too_soon' })
+  })
+
+  it('ignores the display counters on the post', async () => {
     const owner = await seedUser()
     const fixer = await seedUser()
     const postId = await seedPending(owner.id, fixer.id, 2)
-    await queryDB(
-      `UPDATE posts SET review_reminder_count = 3, review_reminder_for = submitted_fix_at, review_reminder_last_at = now() - interval '48 hours' WHERE id = $1`,
-      [postId]
-    )
-    expect((await record(postId, fixer.id)).data).toMatchObject({ ok: false, reason: 'limit_reached' })
+    await queryDB(`UPDATE posts SET review_reminder_count = 99 WHERE id = $1`, [postId])
 
-    // Rejected and resubmitted: a new submitted_fix_at
-    await queryDB(`UPDATE posts SET submitted_fix_at = (now() AT TIME ZONE 'UTC') - interval '3 hours' WHERE id = $1`, [postId])
+    expect((await record(postId, fixer.id)).data).toMatchObject({ ok: true, count: 1, remaining: 2 })
+  })
+
+  it('counts the 3-reminder cap over 30 days', async () => {
+    const owner = await seedUser()
+    const fixer = await seedUser()
+    const postId = await seedPending(owner.id, fixer.id, 24 * 40)
+    for (let i = 0; i < 3; i++) {
+      expect((await record(postId, fixer.id)).data).toMatchObject({ ok: true })
+      await ageLastReminder(postId, 25)
+    }
+    expect((await record(postId, fixer.id)).data).toMatchObject({ ok: false, reason: 'limit_reached' })
+    // Once they're older than 30 days they no longer count
+    await ageLastReminder(postId, 24 * 30)
     expect((await record(postId, fixer.id)).data).toMatchObject({ ok: true, count: 1 })
   })
 
-  it('ignores a negative counter preset by the submitter', async () => {
+  it('keeps the reminder log unreadable and unwritable from user sessions', async () => {
     const owner = await seedUser()
     const fixer = await seedUser()
     const postId = await seedPending(owner.id, fixer.id, 2)
-    await queryDB(`UPDATE posts SET review_reminder_count = -100, review_reminder_for = submitted_fix_at WHERE id = $1`, [postId])
+    await record(postId, fixer.id)
+    const client = getAuthenticatedClient(fixer.id)
 
-    expect((await record(postId, fixer.id)).data).toMatchObject({ ok: true, count: 1, remaining: 2 })
+    const read = await client.from('fix_review_reminders' as any).select('id').eq('post_id', postId)
+    expect(read.data ?? []).toHaveLength(0)
+    await client.from('fix_review_reminders' as any).delete().eq('post_id', postId)
+    await client.from('fix_review_reminders' as any).insert({ post_id: postId, submitter_id: fixer.id } as any)
+    const rows = await queryDB('SELECT id FROM fix_review_reminders WHERE post_id = $1', [postId])
+    expect(rows).toHaveLength(1)
   })
 
   it('refuses anyone but the submitter, and posts not under review', async () => {

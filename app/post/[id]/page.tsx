@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { formatDistanceToNow } from "date-fns"
@@ -69,6 +69,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [fixProofText, setFixProofText] = useState("")
   const router = useRouter()
   const { user, profile, updateBalance, activeUserId, refreshProfile, connectedAccounts, mainAccountProfile, sessionLoaded } = useAuth() // user can be null for anonymous
+  // The signed-in parent's child accounts: a parent may review for a child who
+  // owns the post or admins its group (enforced server-side too)
+  const myChildIds = useMemo(() => (connectedAccounts || []).map((a) => a.id), [connectedAccounts])
+  const myChildIdsKey = myChildIds.join(",")
   const supabase = createBrowserSupabaseClient()
   const [displayLocation, setDisplayLocation] = useState<string>("")
   const [isReviewing, setIsReviewing] = useState(false)
@@ -145,24 +149,27 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         return
       }
       
-      const effectiveUser = activeUserId || user.id
+      // The account in view, the signed-in account, or (acting for them) the
+      // signed-in parent's children: same rule the server enforces
+      const candidates = [...new Set([activeUserId || user.id, user.id, ...myChildIds])]
       
       const { data, error } = await supabase
         .from('group_members')
         .select('role')
         .eq('group_id', post.group_id)
-        .eq('user_id', effectiveUser)
+        .in('user_id', candidates)
         .eq('status', 'approved')
-        .single()
+        .eq('role', 'admin')
+        .limit(1)
       
-      if (!error && data?.role === 'admin') {
+      if (!error && data && data.length > 0) {
         setIsGroupAdmin(true)
       }
       setGroupAdminCheckComplete(true)
     }
     
     checkGroupAdminStatus()
-  }, [user, activeUserId, post?.group_id, supabase])
+  }, [user, activeUserId, post?.group_id, supabase, myChildIdsKey])
 
   // Handle ?verify=true&fixer=username query params (from SatoshiPet device email)
   useEffect(() => {
@@ -219,7 +226,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     if (!post || loading || !user || !groupAdminCheckComplete) return
     if (post.fixed || !post.under_review || !post.submitted_fix_by_id) return
     if (post.submitted_fix_image_url || post.submitted_fix_proof_text) return
-    const isOwner = post.user_id === user.id || post.user_id === activeUserId
+    const isOwner = post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id))
     if (!isOwner && !isGroupAdmin) return
     if (autoOpenedDeviceReview.current === post.id) return
     autoOpenedDeviceReview.current = post.id
@@ -444,7 +451,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
     // If user is logged in but not the post owner or group admin, show them an error
     // Wait for groupAdminCheckComplete to avoid race condition with async group admin check
     if (review === 'true' && sessionLoaded && user && post && !loading && groupAdminCheckComplete) {
-      const isOwner = post.user_id === user.id || post.user_id === activeUserId
+      const isOwner = post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id))
       const canReview = isOwner || isGroupAdmin
       
       if (!canReview) {
@@ -1300,7 +1307,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
 
   // Check if current user is the original poster or a group admin
   // Group admins have the same authority as post owners for posts in their group
-  const isOriginalPoster = post && user && (post.user_id === user.id || post.user_id === activeUserId)
+  const isOriginalPoster = post && user && (post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)))
   const canManagePost = isOriginalPoster || isGroupAdmin
   const canCloseIssue = canManagePost && !post?.fixed && !post?.under_review && !post?.deleted_at
 
@@ -2027,7 +2034,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             (post.submitted_fix_image_url || post.submitted_fix_proof_text) &&
             user &&
             post.user_id != null &&
-            (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin))) ? (
+            (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)) || isGroupAdmin))) ? (
             (post.fixed ? (!post.fixed_image_url && post.fix_proof_text) : (!post.submitted_fix_image_url && post.submitted_fix_proof_text)) ? (
             <div className="mb-4">
               <div 
@@ -2474,7 +2481,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           post.ai_analysis &&
           user &&
           post.user_id != null &&
-          (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) && (
+          (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)) || isGroupAdmin) && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-6">
               <p className="text-sm font-medium mb-1">AI Review</p>
               <p className="text-sm text-muted-foreground whitespace-pre-line">{post.ai_analysis}</p>
@@ -2489,7 +2496,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           (post.submitted_fix_image_url || post.submitted_fix_proof_text) &&
           user &&
           post.user_id != null &&
-          (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || isGroupAdmin) ? (
+          (post.userId === user.id || post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)) || isGroupAdmin) ? (
             <div className="space-y-4 mb-6">
               {post.submitted_fix_proof_text && (
                 <div className="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">

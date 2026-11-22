@@ -53,7 +53,6 @@ export type WaitingFix = {
   submitted_fix_at: string | null
   review_reminder_count: number | null
   review_reminder_last_at: string | null
-  review_reminder_for: string | null
 }
 
 type PendingReviewsContextValue = {
@@ -91,7 +90,7 @@ export function refreshPendingReviews() {
 const REVIEW_FIELDS =
   "id, title, description, reward, image_url, user_id, group_id, submitted_fix_by_id, submitted_fix_by_name, submitted_fix_by_avatar, submitted_fix_at, submitted_fix_note, submitted_fix_image_url, submitted_fix_proof_text, review_reminder_last_at"
 const WAITING_FIELDS =
-  "id, title, description, reward, image_url, created_by, submitted_fix_at, review_reminder_count, review_reminder_last_at, review_reminder_for"
+  "id, title, description, reward, image_url, created_by, submitted_fix_at, review_reminder_count, review_reminder_last_at"
 
 function readMap(key: string): Record<string, string> | null {
   try {
