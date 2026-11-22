@@ -2183,8 +2183,19 @@ export async function closeIssueAction(
       return { success: false, error: 'Post not found' }
     }
 
-    // SECURITY: Only the post owner OR a group admin can close the issue
-    const isPostOwner = post.user_id === user.id
+    // SECURITY: Only the post owner OR a group admin can close the issue.
+    // A parent acting for a connected (child) account counts as the owner,
+    // matching the posts UPDATE RLS policy.
+    let isPostOwner = post.user_id === user.id
+    if (!isPostOwner && post.user_id) {
+      const { data: link } = await supabase
+        .from('connected_accounts')
+        .select('connected_user_id')
+        .eq('primary_user_id', user.id)
+        .eq('connected_user_id', post.user_id)
+        .maybeSingle()
+      isPostOwner = !!link
+    }
     
     // Check if user is a group admin for this post's group
     let isGroupAdmin = false

@@ -43,6 +43,8 @@ type PendingReviewsContextValue = {
   reviews: PendingReview[]
   /** False until the first check for this viewer has finished */
   loaded: boolean
+  /** Ids that left review since this viewer's session began: approved or sent back */
+  resolved: Map<string, "approved" | "rejected">
   count: number
   openList: () => void
   refresh: () => void
@@ -51,6 +53,7 @@ type PendingReviewsContextValue = {
 const PendingReviewsContext = createContext<PendingReviewsContextValue>({
   reviews: [],
   loaded: false,
+  resolved: new Map(),
   count: 0,
   openList: () => {},
   refresh: () => {},
@@ -116,32 +119,42 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
 
   const [reviews, setReviews] = useState<PendingReview[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [resolved, setResolved] = useState<Map<string, "approved" | "rejected">>(new Map())
+  const lastReviewIds = useRef<Set<string>>(new Set())
   const [listOpen, setListOpen] = useState(false)
-  const adminGroupIds = useRef<string[] | null>(null)
-  const inFlight = useRef(false)
+  // Group ids are cached per viewer; results from a viewer we've since
+  // switched away from are dropped (see `stale` below)
+  const adminGroupIds = useRef<{ viewer: string; ids: string[] } | null>(null)
+  const inFlight = useRef<string | null>(null)
+  const currentViewer = useRef(viewerId)
+  currentViewer.current = viewerId
 
   // Viewer changed (sign-in, sign-out, account switch): start over
   useEffect(() => {
     adminGroupIds.current = null
     setReviews([])
     setLoaded(false)
+    setResolved(new Map())
+    lastReviewIds.current = new Set()
   }, [viewerId])
 
   const check = useCallback(async () => {
-    if (!viewerId || inFlight.current) return
+    if (!viewerId || inFlight.current === viewerId) return
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return
-    inFlight.current = true
+    inFlight.current = viewerId
+    const stale = () => currentViewer.current !== viewerId
     try {
-      if (adminGroupIds.current === null) {
+      if (adminGroupIds.current?.viewer !== viewerId) {
         const { data } = await supabase
           .from("group_members")
           .select("group_id")
           .eq("user_id", viewerId)
           .eq("role", "admin")
           .eq("status", "approved")
-        adminGroupIds.current = (data || []).map((g: { group_id: string }) => g.group_id)
+        if (stale()) return
+        adminGroupIds.current = { viewer: viewerId, ids: (data || []).map((g: { group_id: string }) => g.group_id) }
       }
-      const groups = adminGroupIds.current
+      const groups = adminGroupIds.current.ids
       const mineOrMyGroups = groups.length
         ? `user_id.eq.${viewerId},group_id.in.(${groups.join(",")})`
         : `user_id.eq.${viewerId}`
@@ -166,8 +179,24 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .limit(50),
       ])
 
+      if (stale()) return
+
       if (!reviewError && toReview) {
         const list = toReview as PendingReview[]
+        const listIds = new Set(list.map((r) => r.id))
+        const left = [...lastReviewIds.current].filter((id) => !listIds.has(id))
+        lastReviewIds.current = listIds
+        if (left.length) {
+          const { data: outcomes } = await supabase.from("posts").select("id, fixed").in("id", left)
+          if (stale()) return
+          setResolved((prev) => {
+            const next = new Map(prev)
+            for (const o of (outcomes || []) as Array<{ id: string; fixed: boolean }>) {
+              next.set(o.id, o.fixed ? "approved" : "rejected")
+            }
+            return next
+          })
+        }
         setReviews(list)
         setLoaded(true)
 
@@ -206,6 +235,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
             .from("posts")
             .select("id, title, reward, fixed, fixed_by")
             .in("id", resolved)
+          if (stale()) return
           for (const p of (outcomes || []) as Array<{ id: string; title: string | null; reward: number; fixed: boolean; fixed_by: string | null }>) {
             if (p.fixed && p.fixed_by === viewerId) {
               toast.success(`Fix approved · +${formatSatsValue(p.reward || 0)}`, {
@@ -226,7 +256,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
     } catch (error) {
       console.error("[PendingReviews] check failed:", error)
     } finally {
-      inFlight.current = false
+      if (inFlight.current === viewerId) inFlight.current = null
     }
   }, [viewerId, supabase, router])
 
@@ -249,8 +279,8 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   }, [viewerId, check])
 
   const value = useMemo<PendingReviewsContextValue>(
-    () => ({ reviews, loaded, count: reviews.length, openList: () => setListOpen(true), refresh: check }),
-    [reviews, loaded, check]
+    () => ({ reviews, loaded, resolved, count: reviews.length, openList: () => setListOpen(true), refresh: check }),
+    [reviews, loaded, resolved, check]
   )
 
   const totalSats = reviews.reduce((sum, r) => sum + (r.reward || 0), 0)

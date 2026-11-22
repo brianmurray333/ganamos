@@ -81,15 +81,25 @@ interface ActiveFilters {
   timestamp?: string
 }
 
+/**
+ * Apply live review state to a feed post: null = drop it from the feed.
+ * A pending fix shows its Review button; once approved the post is fixed and
+ * leaves the feed; once sent back it's an open job again.
+ */
 function withLiveReviewState(
   post: Post,
   pending: Map<string, PendingReview>,
+  resolved: Map<string, "approved" | "rejected">,
   pendingLoaded: boolean
-): Post {
+): Post | null {
   const live = pending.get(post.id)
   if (live) return { ...post, ...live, under_review: true } as Post
-  // Reviewed (approved or sent back) since the feed was fetched
-  if (pendingLoaded && post.under_review) return { ...post, under_review: false }
+  const outcome = resolved.get(post.id)
+  if (outcome === "approved") return null
+  if (outcome === "rejected") return { ...post, under_review: false }
+  // Left review before this session saw it pending: outcome unknown, so
+  // don't offer it as an open job; the next feed fetch settles it
+  if (pendingLoaded && post.under_review) return null
   return post
 }
 
@@ -112,7 +122,7 @@ export default function DashboardPage() {
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
   // Live review state for my own posts, so a card gains (or loses) its
   // Review button as soon as a fix arrives or is handled, between feed fetches
-  const { reviews: pendingReviews, loaded: pendingReviewsLoaded } = usePendingReviews()
+  const { reviews: pendingReviews, loaded: pendingReviewsLoaded, resolved: resolvedReviews } = usePendingReviews()
   const pendingReviewById = useMemo(() => new Map(pendingReviews.map((r) => [r.id, r])), [pendingReviews])
   // The saved feed may hold group-only/assigned posts, so only use it once the
   // session is known and belongs to the same user it was fetched for.
@@ -811,13 +821,17 @@ export default function DashboardPage() {
             <div className="space-y-6">
               {posts.length > 0 ? (
                 <>
-                  {posts.map((post: any) => (
-                    <PostCard
-                      key={post.id}
-                      post={withLiveReviewState(post, pendingReviewById, pendingReviewsLoaded)}
-                      reviewable={!!(activeUserId || user?.id) && (post.user_id || post.userId) === (activeUserId || user?.id)}
-                    />
-                  ))}
+                  {posts.map((post: any) => {
+                    const shown = withLiveReviewState(post, pendingReviewById, resolvedReviews, pendingReviewsLoaded)
+                    if (!shown) return null
+                    return (
+                      <PostCard
+                        key={post.id}
+                        post={shown}
+                        reviewable={!!(activeUserId || user?.id) && (post.user_id || post.userId) === (activeUserId || user?.id)}
+                      />
+                    )
+                  })}
                   {/* Infinite scroll sentinel */}
                   {hasMore && (
                     <div ref={sentinelRef} className="flex justify-center mt-6" style={{ minHeight: 40 }}>
