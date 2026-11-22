@@ -664,6 +664,8 @@ REVOKE ALL ON FUNCTION public.ganamos_can_review_post(UUID, UUID) FROM PUBLIC, a
 REVOKE ALL ON FUNCTION public.ganamos_complete_post_fix(UUID, UUID, BOOLEAN) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.post_reward_is_funded(UUID) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.ganamos_review_is_self_dealing(UUID, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.record_fix_review_reminder(UUID, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.fix_review_reminders FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.is_group_member(UUID, UUID) FROM PUBLIC, anon, authenticated;
 
 -- connected_accounts is written only by the server (see 20261108010000);

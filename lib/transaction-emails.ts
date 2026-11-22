@@ -867,3 +867,49 @@ export async function sendPostExpiredFixerEmail(params: {
     // Don't throw - email failures should not block the cron job
   }
 }
+
+/**
+ * Remind a reviewer (post owner, a parent of a child owner, or a group admin)
+ * that a fix is waiting for their review. Sent when the fixer taps "Remind";
+ * rate limits live in record_fix_review_reminder.
+ */
+export async function sendFixReviewReminderEmail(params: {
+  toEmail: string
+  recipientName: string
+  issueTitle: string
+  fixerName: string
+  rewardAmount: number
+  submittedAt: Date | null
+  postId: string
+}) {
+  const { toEmail, recipientName, issueTitle, fixerName, rewardAmount, submittedAt, postId } = params
+  const firstName = (recipientName || 'there').split(' ')[0]
+  const fixerFirst = (fixerName || 'Someone').split(' ')[0]
+  const reviewUrl = `${EMAIL_BASE_URL}/post/${postId}?review=true`
+
+  const details: Array<[string, string]> = [['Fixed by', escapeHtml(fixerName || 'Someone')]]
+  if (submittedAt) {
+    details.push([
+      'Submitted',
+      submittedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZoneName: 'short' }),
+    ])
+  }
+  if (rewardAmount > 0) details.push(['Reward', `${rewardAmount.toLocaleString()} sats`])
+
+  const html = renderEmail({
+    title: 'Fix waiting for review',
+    preheader: `${fixerFirst} is waiting for you to review "${issueTitle}".`,
+    greeting: escapeHtml(firstName),
+    paragraphs: [
+      `<strong>${escapeHtml(fixerFirst)}</strong> sent a reminder: their fix for <strong>"${escapeHtml(issueTitle)}"</strong> is waiting for your review.`,
+      rewardAmount > 0 ? `Approving it sends the reward. If it isn't done yet, you can send it back.` : `You can approve it or send it back.`,
+    ],
+    details,
+    button: { label: 'Review Fix', href: reviewUrl },
+  })
+
+  return await sendEmail(toEmail, `Reminder: review ${fixerFirst}'s fix`, html, {
+    type: 'fix_review_reminder',
+    metadata: { issueTitle, fixerName, rewardAmount, postId },
+  })
+}

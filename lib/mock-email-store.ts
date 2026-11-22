@@ -19,6 +19,7 @@ export type EmailType =
   | "withdrawal_approval"
   | "withdrawal_failed"
   | "system_threshold_breach"
+  | "fix_review_reminder"
 
 export interface SentEmail {
   id: string
