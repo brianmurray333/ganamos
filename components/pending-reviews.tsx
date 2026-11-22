@@ -19,6 +19,8 @@ import { toast } from "@/components/ui/toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatSatsValue } from "@/lib/utils"
+import { reminderAvailability, waitLabel, REMINDER_MAX } from "@/lib/review-reminders"
+import { sendReviewReminderAction } from "@/app/actions/review-reminder-actions"
 
 const POLL_MS = 30_000
 
@@ -37,6 +39,21 @@ export type PendingReview = {
   submitted_fix_note: string | null
   submitted_fix_image_url: string | null
   submitted_fix_proof_text: string | null
+  review_reminder_last_at: string | null
+}
+
+/** A fix this viewer submitted that's waiting on someone else's review */
+export type WaitingFix = {
+  id: string
+  title: string | null
+  description: string | null
+  reward: number
+  image_url: string | null
+  created_by: string | null
+  submitted_fix_at: string | null
+  review_reminder_count: number | null
+  review_reminder_last_at: string | null
+  review_reminder_for: string | null
 }
 
 type PendingReviewsContextValue = {
@@ -45,7 +62,10 @@ type PendingReviewsContextValue = {
   loaded: boolean
   /** Ids that left review since this viewer's session began: approved or sent back */
   resolved: Map<string, "approved" | "rejected">
+  /** Fixes awaiting my review */
   count: number
+  /** My submitted fixes awaiting someone else's review */
+  waiting: WaitingFix[]
   openList: () => void
   refresh: () => void
 }
@@ -55,6 +75,7 @@ const PendingReviewsContext = createContext<PendingReviewsContextValue>({
   loaded: false,
   resolved: new Map(),
   count: 0,
+  waiting: [],
   openList: () => {},
   refresh: () => {},
 })
@@ -68,7 +89,18 @@ export function refreshPendingReviews() {
 }
 
 const REVIEW_FIELDS =
-  "id, title, description, reward, image_url, user_id, group_id, submitted_fix_by_id, submitted_fix_by_name, submitted_fix_by_avatar, submitted_fix_at, submitted_fix_note, submitted_fix_image_url, submitted_fix_proof_text"
+  "id, title, description, reward, image_url, user_id, group_id, submitted_fix_by_id, submitted_fix_by_name, submitted_fix_by_avatar, submitted_fix_at, submitted_fix_note, submitted_fix_image_url, submitted_fix_proof_text, review_reminder_last_at"
+const WAITING_FIELDS =
+  "id, title, description, reward, image_url, created_by, submitted_fix_at, review_reminder_count, review_reminder_last_at, review_reminder_for"
+
+function readMap(key: string): Record<string, string> | null {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? null : (JSON.parse(raw) as Record<string, string>)
+  } catch {
+    return null
+  }
+}
 
 function readIds(key: string): Set<string> | null {
   try {
@@ -118,6 +150,8 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   const viewerId = activeUserId || user?.id || null
 
   const [reviews, setReviews] = useState<PendingReview[]>([])
+  const [waiting, setWaiting] = useState<WaitingFix[]>([])
+  const [reminding, setReminding] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [resolved, setResolved] = useState<Map<string, "approved" | "rejected">>(new Map())
   const lastReviewIds = useRef<Set<string>>(new Set())
@@ -133,6 +167,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   useEffect(() => {
     adminGroupIds.current = null
     setReviews([])
+    setWaiting([])
     setLoaded(false)
     setResolved(new Map())
     lastReviewIds.current = new Set()
@@ -171,11 +206,12 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .limit(50),
         supabase
           .from("posts")
-          .select("id")
+          .select(WAITING_FIELDS)
           .eq("under_review", true)
           .eq("fixed", false)
           .is("deleted_at", null)
           .eq("submitted_fix_by_id", viewerId)
+          .order("submitted_fix_at", { ascending: true })
           .limit(50),
       ])
 
@@ -206,6 +242,27 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
         const seen = readIds(seenKey)
         const fresh = seen ? list.filter((r) => !seen.has(r.id)) : []
         writeIds(seenKey, list.map((r) => r.id))
+        // Reminders the fixer sent since we last looked (first run records only)
+        const remindKey = `ganamos_seen_reminders_${viewerId}`
+        const seenReminders = readMap(remindKey)
+        const nextReminders: Record<string, string> = {}
+        for (const r of list) if (r.review_reminder_last_at) nextReminders[r.id] = r.review_reminder_last_at
+        try {
+          localStorage.setItem(remindKey, JSON.stringify(nextReminders))
+        } catch {}
+        const freshIds = new Set(fresh.map((r) => r.id))
+        const reminded = seenReminders
+          ? list.filter((r) => r.review_reminder_last_at && seenReminders[r.id] !== r.review_reminder_last_at && !freshIds.has(r.id))
+          : []
+        for (const r of reminded.slice(0, 3)) {
+          toast(`${firstName(r.submitted_fix_by_name)} sent a reminder`, {
+            id: `reminder-${r.id}-${r.review_reminder_last_at}`,
+            description: r.title || undefined,
+            duration: 8000,
+            action: { label: "Review", onClick: () => router.push(`/post/${r.id}`) },
+          })
+        }
+
         if (fresh.length === 1) {
           const r = fresh[0]
           toast.success(`${firstName(r.submitted_fix_by_name)} submitted a fix`, {
@@ -227,6 +284,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
         // approved (paid) or sent back.
         const pendingKey = `ganamos_my_pending_fixes_${viewerId}`
         const before = readIds(pendingKey)
+        setWaiting(mySubmitted as WaitingFix[])
         const now = new Set((mySubmitted as { id: string }[]).map((p) => p.id))
         writeIds(pendingKey, now)
         const resolved = before ? [...before].filter((id) => !now.has(id)) : []
@@ -279,11 +337,32 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   }, [viewerId, check])
 
   const value = useMemo<PendingReviewsContextValue>(
-    () => ({ reviews, loaded, resolved, count: reviews.length, openList: () => setListOpen(true), refresh: check }),
-    [reviews, loaded, resolved, check]
+    () => ({ reviews, loaded, resolved, count: reviews.length, waiting, openList: () => setListOpen(true), refresh: check }),
+    [reviews, loaded, resolved, waiting, check]
   )
 
   const totalSats = reviews.reduce((sum, r) => sum + (r.reward || 0), 0)
+
+  const remind = async (fix: WaitingFix) => {
+    if (reminding) return
+    setReminding(fix.id)
+    try {
+      const result = await sendReviewReminderAction(fix.id)
+      if (result.success) {
+        toast.success("Reminder sent", {
+          description: result.remaining > 0 ? `You can remind again in 24h (${result.remaining} left)` : "That was your last reminder for this fix",
+        })
+      } else {
+        const next = result.nextAllowedAt ? new Date(result.nextAllowedAt) : null
+        toast.error(result.error, next ? { description: `Try again ${waitLabel(next)}` } : undefined)
+      }
+    } catch {
+      toast.error("Couldn't send the reminder. Please try again.")
+    } finally {
+      setReminding(null)
+      check()
+    }
+  }
 
   return (
     <PendingReviewsContext.Provider value={value}>
@@ -291,16 +370,16 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
       <Dialog open={listOpen} onOpenChange={setListOpen}>
         <DialogContent className="max-w-md p-5">
           <DialogHeader className="text-left">
-            <DialogTitle className="text-xl font-bold">To review</DialogTitle>
+            <DialogTitle className="text-xl font-bold">{reviews.length || !waiting.length ? "To review" : "Waiting on review"}</DialogTitle>
             {reviews.length > 0 && (
               <p className="text-sm text-muted-foreground">
                 {reviews.length === 1 ? "1 fix" : `${reviews.length} fixes`} · {formatSatsValue(totalSats)}
               </p>
             )}
           </DialogHeader>
-          {reviews.length === 0 ? (
+          {reviews.length === 0 && waiting.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting on you.</p>
-          ) : (
+          ) : reviews.length === 0 ? null : (
             <ul className="-mx-1 max-h-[60vh] space-y-2 overflow-y-auto px-1">
               {reviews.map((r) => {
                 const device = isDeviceSubmission(r)
@@ -342,6 +421,60 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
               })}
             </ul>
           )}
+          {waiting.length > 0 && (
+            <section aria-label="Your fixes waiting on review" className={reviews.length ? "mt-2 border-t pt-4" : ""}>
+              {reviews.length > 0 && <h3 className="mb-2 text-[15px] font-bold">Waiting on review</h3>}
+              <ul className="-mx-1 max-h-[50vh] space-y-2 overflow-y-auto px-1">
+                {waiting.map((w) => {
+                  const availability = reminderAvailability(w)
+                  const busy = reminding === w.id
+                  const status = availability.canRemind
+                    ? availability.sent > 0
+                      ? `Reminded ${availability.sent}×`
+                      : "Waiting"
+                    : availability.reason === "limit_reached"
+                      ? `Reminded ${REMINDER_MAX}× · no more reminders`
+                      : `Remind ${waitLabel(availability.nextAt)}`
+                  return (
+                    <li key={w.id} className="flex items-center gap-3 rounded-xl border p-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setListOpen(false)
+                          router.push(`/post/${w.id}`)
+                        }}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+                          {w.image_url && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={w.image_url} alt="" className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[15px] font-semibold">{w.title || w.description || "Untitled"}</p>
+                          <p className="truncate text-[13px] text-muted-foreground">
+                            {w.created_by ? `${firstName(w.created_by)} · ` : ""}
+                            {formatSatsValue(w.reward || 0)}
+                            {w.submitted_fix_at && ` · ${timeAgo(parseSubmittedAt(w.submitted_fix_at))}`}
+                          </p>
+                          <p className="truncate text-[12px] text-amber-700 dark:text-amber-400">{status}</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remind(w)}
+                        disabled={!availability.canRemind || !!reminding}
+                        className="h-10 shrink-0 rounded-lg border px-3.5 text-sm font-semibold transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busy ? "Sending…" : "Remind"}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          )}
         </DialogContent>
       </Dialog>
     </PendingReviewsContext.Provider>
@@ -350,18 +483,31 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
 
 /** Round counter button for the home header; renders nothing when empty. */
 export function PendingReviewsButton({ className = "" }: { className?: string }) {
-  const { count, openList } = usePendingReviews()
-  if (!count) return null
+  const { count, waiting, openList } = usePendingReviews()
+  const waitingCount = waiting.length
+  if (!count && !waitingCount) return null
+  // Red: fixes waiting on me (action needed). Amber: my fixes waiting on others.
+  const badge = count || waitingCount
+  const label = [
+    count ? (count === 1 ? "1 fix to review" : `${count} fixes to review`) : null,
+    waitingCount ? (waitingCount === 1 ? "1 of your fixes waiting on review" : `${waitingCount} of your fixes waiting on review`) : null,
+  ]
+    .filter(Boolean)
+    .join(", ")
   return (
     <button
       type="button"
       onClick={openList}
-      aria-label={count === 1 ? "1 fix to review" : `${count} fixes to review`}
+      aria-label={label}
       className={`relative flex h-10 w-10 items-center justify-center rounded-full bg-muted text-foreground transition-transform active:scale-95 animate-in fade-in zoom-in-95 duration-300 ${className}`}
     >
       <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
-      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background bg-red-600 px-1 text-[11px] font-bold leading-none text-white">
-        {count > 9 ? "9+" : count}
+      <span
+        className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background px-1 text-[11px] font-bold leading-none ${
+          count ? "bg-red-600 text-white" : "bg-amber-400 text-amber-950"
+        }`}
+      >
+        {badge > 9 ? "9+" : badge}
       </span>
     </button>
   )
