@@ -385,6 +385,35 @@ describe('who may review a pending fix', () => {
       expect(data).toEqual([])
     })
 
+    it('does not let anyone probe membership with arbitrary ids (is_group_member is server-only)', async () => {
+      const member = await seedUser()
+      const stranger = await seedUser()
+      const g = await seedGroup(member.id)
+      await addMember(g, member.id, 'admin')
+
+      const asStranger = await getAuthenticatedClient(stranger.id).rpc('is_group_member' as any, {
+        check_group_id: g,
+        check_user_id: member.id,
+      })
+      expect(asStranger.error).not.toBeNull()
+      const { getAnonClient } = await import('./helpers/db-client')
+      const asAnon = await getAnonClient().rpc('is_group_member' as any, { check_group_id: g, check_user_id: member.id })
+      expect(asAnon.error).not.toBeNull()
+    })
+
+    it('ganamos_caller_in_group only answers for the caller', async () => {
+      const member = await seedUser()
+      const stranger = await seedUser()
+      const g = await seedGroup(member.id)
+      await addMember(g, member.id, 'admin')
+
+      const mine = await getAuthenticatedClient(member.id).rpc('ganamos_caller_in_group' as any, { p_group_id: g })
+      expect(mine.error).toBeNull()
+      expect(mine.data).toBe(true)
+      const theirs = await getAuthenticatedClient(stranger.id).rpc('ganamos_caller_in_group' as any, { p_group_id: g })
+      expect(theirs.data).toBe(false)
+    })
+
     it('still lets group members see each other', async () => {
       const a = await seedUser()
       const b = await seedUser()
