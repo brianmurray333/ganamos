@@ -14,6 +14,7 @@ import { useDonationModal } from "@/components/donation-modal-provider"
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
 import { useIsDesktop } from "@/hooks/use-is-desktop"
 import { AuthPromptModal } from "@/components/auth-prompt-modal"
+import { PendingReviewsButton } from "@/components/pending-reviews"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -232,6 +233,8 @@ export function DesktopHeader() {
           {user ? (
             // Authenticated user view
             <>
+              {/* Fixes waiting on my review (hidden when there are none) */}
+              <PendingReviewsButton className="shadow-md" />
               {/* Wallet Button */}
               <Button
                 variant="ghost"
