@@ -1169,43 +1169,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             description: "Fix approved! The anonymous fixer can claim the reward by creating an account.",
           })
         } else {
-          // For logged-in users
-          const { error } = await supabase
-            .from("posts")
-            .update({
-              fixed: true,
-              fixed_at: nowIso,
-              fixed_by: post.submitted_fix_by_id,
-              fixed_by_is_anonymous: isAnonymousFixer,
-              fixed_image_url: post.submitted_fix_image_url,
-              fixer_note: post.submitted_fix_note,
-              fix_proof_text: post.submitted_fix_proof_text || null,
-              under_review: false,
-            })
-            .eq("id", post.id)
-          
-          if (error) {
-            console.error("Error approving fix:", error)
-            throw new Error("Failed to approve fix")
-          }
-          
-          setPost((prevPost) =>
-            prevPost
-              ? {
-                  ...prevPost,
-                  fixed: true,
-                  fixed_at: nowIso,
-                  fixed_by: post.submitted_fix_by_id,
-                  fixed_by_is_anonymous: isAnonymousFixer,
-                  fixed_image_url: post.submitted_fix_image_url,
-                  fixer_note: post.submitted_fix_note,
-                  fix_proof_text: post.submitted_fix_proof_text || null,
-                  under_review: false,
-                }
-              : null,
-          )
-          
-          // Handle reward payment for logged-in users
+          // For logged-in users: the server action authorizes the reviewer,
+          // marks the post fixed and pays the submitter atomically. Nothing is
+          // changed here until it succeeds.
           if (post.submitted_fix_by_id) {
             const { createFixRewardAction } = await import("@/app/actions/post-actions")
             const rewardResult = await createFixRewardAction({
@@ -1217,12 +1183,28 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             })
 
             if (!rewardResult.success) {
-              console.error("Error creating fix reward transaction:", rewardResult.error)
-              toast.error("Reward Error", {
-                description: "Fix approved but reward transfer failed. Please contact support.",
+              console.error("Error approving fix:", rewardResult.error)
+              toast.error("Couldn't approve", {
+                description: rewardResult.error || "The fix wasn't approved. Please try again.",
               })
             } else {
               console.log('💰 Fix reward transaction created, balance updated to:', rewardResult.newBalance)
+
+              setPost((prevPost) =>
+                prevPost
+                  ? {
+                      ...prevPost,
+                      fixed: true,
+                      fixed_at: nowIso,
+                      fixed_by: post.submitted_fix_by_id,
+                      fixed_by_is_anonymous: isAnonymousFixer,
+                      fixed_image_url: post.submitted_fix_image_url,
+                      fixer_note: post.submitted_fix_note,
+                      fix_proof_text: post.submitted_fix_proof_text || null,
+                      under_review: false,
+                    }
+                  : null,
+              )
               
               // If the fixer is viewing this page, manually refresh their profile
               if (user && post.submitted_fix_by_id === (activeUserId || user.id)) {
@@ -1234,10 +1216,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               })
             }
           } else {
-            // Anonymous user without Lightning address
-            toast.success("Fix Approved", {
-              description: "Fix approved! The anonymous fixer can claim the reward by creating an account.",
-            })
+            // Logged-in branch without a submitter account: nothing to pay
+            toast.error("Couldn't approve", { description: "This fix has no fixer account to pay." })
           }
         }
       }
@@ -1258,19 +1238,14 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         // Store the fixer ID before clearing it (needed for device notification)
         const fixerUserId = post.submitted_fix_by_id
         
-        const { error } = await supabase
-          .from("posts")
-          .update({
-            under_review: false,
-            submitted_fix_by_id: null,
-            submitted_fix_by_name: null,
-            submitted_fix_by_avatar: null,
-            submitted_fix_at: null,
-            submitted_fix_image_url: null,
-            submitted_fix_note: null,
-            submitted_fix_proof_text: null,
-          })
-          .eq("id", post.id)
+        // Server-side, atomic: the DB function checks the caller may review
+        // this post (owner, group admin, or a parent acting for one) and that
+        // a fix is actually pending, then reopens the post.
+        const { error } = await supabase.rpc("review_submitted_fix_atomic", {
+          p_post_id: post.id,
+          p_approve: false,
+          p_rejection_reason: null,
+        })
         if (error) {
           console.error("Error rejecting fix:", error)
           throw new Error("Failed to reject fix")

@@ -575,6 +575,46 @@ describe('createFixRewardAction', () => {
       expect(profile(FIXER_ID).balance).toBe(FIXER_START.balance + POST_REWARD)
     })
 
+    it("rejects a group admin approving their own fix on someone else's post", async () => {
+      setup({ ...submittedByFixer, submitted_fix_by_id: GROUP_ADMIN_ID, group_id: GROUP_ID }, {}, GROUP_ADMIN_ID)
+
+      const result = await ownerApproves(GROUP_ADMIN_ID)
+
+      expect(result.success).toBe(false)
+      expect(payoutRpcs()).toHaveLength(0)
+      expect(post().fixed).toBe(false)
+      expect(profile(GROUP_ADMIN_ID).balance).toBe(0)
+    })
+
+    it("lets a parent approve, via an admin child, an unrelated user's fix", async () => {
+      setup({ ...submittedByFixer, group_id: GROUP_ID }, {
+        group_members: [{ group_id: GROUP_ID, user_id: 'kid-admin', role: 'admin', status: 'approved' }],
+        connected_accounts: [{ id: 'conn-2', primary_user_id: OTHER_ID, connected_user_id: 'kid-admin' }],
+        profiles: [
+          ...world().profiles,
+          { id: 'kid-admin', name: 'Kid', email: 'kid@ganamos.app', balance: 0, pet_coins: 0, fixed_issues_count: 0, status: 'active' },
+        ],
+      }, OTHER_ID)
+
+      const result = await ownerApproves(FIXER_ID)
+
+      expect(result.success).toBe(true)
+      expect(profile(FIXER_ID).balance).toBe(FIXER_START.balance + POST_REWARD)
+    })
+
+    it("rejects a parent approving, via an admin child, their own fix", async () => {
+      setup({ ...submittedByFixer, group_id: GROUP_ID }, {
+        group_members: [{ group_id: GROUP_ID, user_id: CHILD_ID, role: 'admin', status: 'approved' }],
+        profiles: world().profiles.map(p => (p.id === CHILD_ID ? { ...p, status: 'active' } : p)),
+      }, FIXER_ID)
+
+      const result = await ownerApproves(FIXER_ID)
+
+      expect(result.success).toBe(false)
+      expect(payoutRpcs()).toHaveLength(0)
+      expect(profile(FIXER_ID).balance).toBe(FIXER_START.balance)
+    })
+
     it('rejects a group admin whose membership is not approved', async () => {
       setup({ ...submittedByFixer, group_id: GROUP_ID }, {
         group_members: [{ group_id: GROUP_ID, user_id: GROUP_ADMIN_ID, role: 'admin', status: 'pending' }],

@@ -642,8 +642,15 @@ GRANT EXECUTE ON FUNCTION public.is_approved_group_member(uuid, uuid)
 DROP POLICY IF EXISTS "Users can view group members of their groups" ON public.group_members;
 CREATE POLICY "Users can view group members of their groups" ON public.group_members
   FOR SELECT USING (
+    -- Same policy as 20261122010000 (production), so tests exercise it
     user_id = auth.uid()
-    OR public.is_approved_group_member(group_id, auth.uid())
+    OR public.ganamos_caller_in_group(group_id)
+    -- A parent may read their children's own rows (20261122000000)
+    OR EXISTS (
+      SELECT 1 FROM public.connected_accounts ca
+      WHERE ca.primary_user_id = auth.uid()
+        AND ca.connected_user_id = group_members.user_id
+    )
   );
 
 
@@ -651,6 +658,13 @@ CREATE POLICY "Users can view group members of their groups" ON public.group_mem
 -- undo the blanket GRANT above for them so local/CI match production.
 REVOKE ALL ON FUNCTION pay_fix_reward(UUID, UUID, TEXT) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION credit_deposit(UUID, UUID, INTEGER) FROM PUBLIC, anon, authenticated;
+-- Internal review helpers are service_role only (see 20261109000000,
+-- 20261122000000); only the *_atomic RPCs that wrap them are callable.
+REVOKE ALL ON FUNCTION public.ganamos_can_review_post(UUID, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.ganamos_complete_post_fix(UUID, UUID, BOOLEAN) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.post_reward_is_funded(UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.ganamos_review_is_self_dealing(UUID, UUID) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_group_member(UUID, UUID) FROM PUBLIC, anon, authenticated;
 
 -- connected_accounts is written only by the server (see 20261108010000);
 -- undo the blanket GRANT above for it so local/CI match production.
