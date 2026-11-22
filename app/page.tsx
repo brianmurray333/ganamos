@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { useAuth } from "@/components/auth-provider"
 import { useDashboardCache } from "@/components/dashboard-cache-provider"
 import { Button } from "@/components/ui/button"
+import { PendingReviewsButton, usePendingReviews, type PendingReview } from "@/components/pending-reviews"
 import { PostCard } from "@/components/post-card"
 import { getCurrentLocation, saveSelectedLocation } from "@/lib/mock-location"
 import { formatSatsValue } from "@/lib/utils"
@@ -80,6 +81,28 @@ interface ActiveFilters {
   timestamp?: string
 }
 
+/**
+ * Apply live review state to a feed post: null = drop it from the feed.
+ * A pending fix shows its Review button; once approved the post is fixed and
+ * leaves the feed; once sent back it's an open job again.
+ */
+function withLiveReviewState(
+  post: Post,
+  pending: Map<string, PendingReview>,
+  resolved: Map<string, "approved" | "rejected">,
+  pendingLoaded: boolean
+): Post | null {
+  const live = pending.get(post.id)
+  if (live) return { ...post, ...live, under_review: true } as Post
+  const outcome = resolved.get(post.id)
+  if (outcome === "approved") return null
+  if (outcome === "rejected") return { ...post, under_review: false }
+  // Left review before this session saw it pending: outcome unknown, so
+  // don't offer it as an open job; the next feed fetch settles it
+  if (pendingLoaded && post.under_review) return null
+  return post
+}
+
 export default function DashboardPage() {
   const {
     user,
@@ -97,6 +120,10 @@ export default function DashboardPage() {
   const router = useRouter()
   const isDesktop = useIsDesktop()
   const { cache, setCachedPosts, clearCache, isCacheFresh } = useDashboardCache()
+  // Live review state for my own posts, so a card gains (or loses) its
+  // Review button as soon as a fix arrives or is handled, between feed fetches
+  const { reviews: pendingReviews, loaded: pendingReviewsLoaded, resolved: resolvedReviews } = usePendingReviews()
+  const pendingReviewById = useMemo(() => new Map(pendingReviews.map((r) => [r.id, r])), [pendingReviews])
   // The saved feed may hold group-only/assigned posts, so only use it once the
   // session is known and belongs to the same user it was fetched for.
   const cacheOwner = session?.user?.id ?? null
@@ -396,8 +423,14 @@ export default function DashboardPage() {
             )
           `, { count: "exact" })
           .eq("fixed", false)
-          .neq("under_review", true)
           .is("deleted_at", null)
+
+        // Posts with a fix awaiting review are hidden from everyone except
+        // their poster, who sees them with a Review button.
+        const viewerId = activeUserId || session?.user?.id
+        query = viewerId
+          ? query.or(`under_review.is.false,under_review.is.null,user_id.eq.${viewerId}`)
+          : query.neq("under_review", true)
 
         const sortBy = filters?.sortBy || 'proximity'
         if (sortBy === 'recency') {
@@ -486,7 +519,7 @@ export default function DashboardPage() {
       setIsLoading(false)
       fetchingPosts.current = false
     }
-  }, [supabase, session, currentLocation, pageSize, activeFilters])
+  }, [supabase, session, activeUserId, currentLocation, pageSize, activeFilters])
 
   useEffect(() => {
     if (sessionLoaded && activeFilters && !initialDataLoaded.current) {
@@ -597,6 +630,8 @@ export default function DashboardPage() {
 
             // Header content - fades in when ready
             <div className="flex items-center justify-end animate-in fade-in duration-200 fill-mode-both">
+              {/* Fixes waiting on my review (hidden when there are none) */}
+              <PendingReviewsButton className="absolute left-4 top-3" />
               {/* Sats Balance Pill */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -786,9 +821,17 @@ export default function DashboardPage() {
             <div className="space-y-6">
               {posts.length > 0 ? (
                 <>
-                  {posts.map((post: any) => (
-                    <PostCard key={post.id} post={post} />
-                  ))}
+                  {posts.map((post: any) => {
+                    const shown = withLiveReviewState(post, pendingReviewById, resolvedReviews, pendingReviewsLoaded)
+                    if (!shown) return null
+                    return (
+                      <PostCard
+                        key={post.id}
+                        post={shown}
+                        reviewable={!!(activeUserId || user?.id) && (post.user_id || post.userId) === (activeUserId || user?.id)}
+                      />
+                    )
+                  })}
                   {/* Infinite scroll sentinel */}
                   {hasMore && (
                     <div ref={sentinelRef} className="flex justify-center mt-6" style={{ minHeight: 40 }}>

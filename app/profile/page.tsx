@@ -1,5 +1,6 @@
 "use client";
 
+import { MySubmittedFixes } from "@/components/my-submitted-fixes"
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -778,6 +779,9 @@ export default function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Fixes I submitted: waiting on the poster, or recently paid */}
+        <MySubmittedFixes userId={targetUserId || null} className={PROFILE_CARD_CLASS} />
 
         {/* Family Section Card */}
         <Card className={PROFILE_CARD_CLASS}>

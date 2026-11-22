@@ -10,6 +10,7 @@ import { MainContent } from "@/components/main-content"
 import { AuthProvider } from "@/components/auth-provider"
 import { DonationModalProvider } from "@/components/donation-modal-provider"
 import { DashboardCacheProvider } from "@/components/dashboard-cache-provider"
+import { PendingReviewsProvider } from "@/components/pending-reviews"
 import { GlobalLoadingOverlay } from "@/components/global-loading-overlay"
 import { ImageFadeIn } from "@/components/image-fade-in"
 import { LaunchSplash, LAUNCH_SPLASH_CSS, LAUNCH_SPLASH_SCRIPT } from "@/components/launch-splash"
@@ -108,11 +109,13 @@ export default function RootLayout({
                 enableSystem
                 disableTransitionOnChange
               >
-                <DesktopHeader />
-                <MainContent>
-                  {children}
-                </MainContent>
-                <BottomNav />
+                <PendingReviewsProvider>
+                  <DesktopHeader />
+                  <MainContent>
+                    {children}
+                  </MainContent>
+                  <BottomNav />
+                </PendingReviewsProvider>
                 <Toaster />
               </ConditionalThemeProvider>
             </DonationModalProvider>

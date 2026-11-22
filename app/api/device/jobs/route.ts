@@ -90,6 +90,8 @@ export async function GET(request: NextRequest) {
         .in("group_id", groupIds)
         .eq("fixed", false)
         .eq("claimed", false)
+        // Hide jobs with a fix awaiting review; a rejection reopens them
+        .eq("under_review", false)
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(10)
@@ -121,6 +123,8 @@ export async function GET(request: NextRequest) {
       .eq("assigned_to", userId)
       .eq("fixed", false)
       .eq("claimed", false)
+      // Hide jobs with a fix awaiting review; a rejection reopens them
+      .eq("under_review", false)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(10)

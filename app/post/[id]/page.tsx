@@ -24,7 +24,8 @@ import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
 import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
-import { User } from "lucide-react"
+import { PawPrint, User } from "lucide-react"
+import { refreshPendingReviews } from "@/components/pending-reviews"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
 import { saveClaimToken } from "@/lib/anonymous-claim"
 import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submission-modal"
@@ -209,6 +210,31 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       }
     }
   }, [searchParams, post, loading, supabase, router, params.id, user])
+
+  // A fix marked done on a SatoshiPet has no photo or proof text, so the
+  // regular review block never shows: open the device review screen for
+  // whoever can approve it (the poster or a group admin).
+  const autoOpenedDeviceReview = useRef<string | null>(null)
+  useEffect(() => {
+    if (!post || loading || !user || !groupAdminCheckComplete) return
+    if (post.fixed || !post.under_review || !post.submitted_fix_by_id) return
+    if (post.submitted_fix_image_url || post.submitted_fix_proof_text) return
+    const isOwner = post.user_id === user.id || post.user_id === activeUserId
+    if (!isOwner && !isGroupAdmin) return
+    if (autoOpenedDeviceReview.current === post.id) return
+    autoOpenedDeviceReview.current = post.id
+    supabase
+      .from("profiles")
+      .select("id, username, name, avatar_url")
+      .eq("id", post.submitted_fix_by_id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setDeviceFixerProfile(data)
+          setShowDeviceFixReview(true)
+        }
+      })
+  }, [post, loading, user, activeUserId, isGroupAdmin, groupAdminCheckComplete, supabase])
 
   // Fetch Bitcoin price on mount
   useEffect(() => {
@@ -1219,6 +1245,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       console.error("Error during fix approval:", error)
       toast.error("Error", { description: "Could not approve the fix" })
     } finally {
+      refreshPendingReviews()
       setIsReviewing(false)
     }
   }
@@ -1263,6 +1290,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               }
             : null,
         )
+        refreshPendingReviews()
         toast("❌ Fix rejected", {
           description: "The fix has been rejected. The issue is still open for others to fix.",
         })
@@ -1843,6 +1871,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             onClick={() => {
               setShowDeviceFixReview(false)
               setDeviceFixerProfile(null)
+              if (window.history.length > 1) router.back()
+              else router.push("/")
             }} 
             className="mr-2"
           >
@@ -1872,10 +1902,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </div>
 
             {/* Device Submission Notice (replaces "After" photo) */}
-            <div className="relative w-full h-40 overflow-hidden rounded-lg bg-amber-950/30 border border-amber-700/50 flex flex-col items-center justify-center p-3">
-              <div className="text-2xl mb-1">🐾</div>
-              <p className="text-xs font-medium text-amber-200 text-center">SatoshiPet</p>
-              <p className="text-[10px] text-amber-300/70 text-center mt-1">No photo taken</p>
+            <div className="relative w-full h-40 overflow-hidden rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-700/50 flex flex-col items-center justify-center gap-1 p-3">
+              <PawPrint className="h-7 w-7 text-amber-600 dark:text-amber-300" aria-hidden="true" />
+              <p className="text-xs font-medium text-amber-900 dark:text-amber-200 text-center">Done on SatoshiPet</p>
+              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/70 text-center">No photo taken</p>
               <div className="absolute top-2 left-2">
                 <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">After</span>
               </div>
@@ -1919,7 +1949,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   }
                   const result = await closeIssueAction(post.id, effectiveUserId, deviceFixerProfile.username)
                   if (result.success) {
-                    toast.success("Fix Approved!", {
+                    refreshPendingReviews()
+        toast.success("Fix Approved!", {
                       description: `${formatSatsValue(post.reward || 0)} sent to @${deviceFixerProfile.username}`,
                     })
                     setShowDeviceFixReview(false)
@@ -1940,12 +1971,20 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               disabled={isClosingIssue}
               className="w-full bg-green-600 hover:bg-green-700 text-white"
             >
-              {isClosingIssue ? "Processing..." : `Approve & Pay ${formatSatsValue(post.reward || 0)}`}
+              {isClosingIssue ? "Processing..." : `Approve & pay ${formatSatsValue(post.reward || 0)}`}
             </Button>
             
             <Button
               variant="outline"
               onClick={async () => {
+                // A pending submission: clear it so the job reopens for
+                // everyone (feed and devices), and notify the fixer's pet.
+                if (post.under_review) {
+                  await handleRejectFix()
+                  setShowDeviceFixReview(false)
+                  setDeviceFixerProfile(null)
+                  return
+                }
                 setIsRejectingDeviceFix(true)
                 try {
                   await recordDeviceRejectionAction({
@@ -1963,10 +2002,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   setIsRejectingDeviceFix(false)
                 }
               }}
-              disabled={isRejectingDeviceFix}
-              className="w-full text-orange-500 border-orange-500 hover:bg-orange-500/10"
+              size="xl"
+              disabled={isRejectingDeviceFix || isReviewing}
+              className="w-full text-orange-600 border-orange-500 hover:bg-orange-500/10 dark:text-orange-400"
             >
-              {isRejectingDeviceFix ? "Sending..." : "Not Fixed Yet"}
+              {isRejectingDeviceFix || isReviewing ? "Sending..." : "Not done yet"}
             </Button>
             
             <button
