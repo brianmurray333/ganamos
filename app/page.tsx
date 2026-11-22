@@ -629,9 +629,12 @@ export default function DashboardPage() {
               ) : (
 
             // Header content - fades in when ready
-            <div className="flex items-center justify-end animate-in fade-in duration-200 fill-mode-both">
-              {/* Fixes waiting on my review (hidden when there are none) */}
-              <PendingReviewsButton className="absolute left-4 top-3" />
+            <div className="flex items-center gap-3 animate-in fade-in duration-200 fill-mode-both">
+              {/* Left of the balance pill, same row and height: fixes waiting on
+                  my review / my fixes waiting on others (hidden when none) */}
+              <div className="flex-1">
+                <PendingReviewsButton />
+              </div>
               {/* Sats Balance Pill */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

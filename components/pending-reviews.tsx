@@ -87,6 +87,14 @@ export function refreshPendingReviews() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(PENDING_REVIEWS_REFRESH_EVENT))
 }
 
+/** Fired with { ids } when a check sees posts change review state (open post pages reload). */
+export const POSTS_CHANGED_EVENT = "ganamos:posts-changed"
+function announcePostsChanged(ids: string[]) {
+  if (ids.length && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(POSTS_CHANGED_EVENT, { detail: { ids } }))
+  }
+}
+
 const REVIEW_FIELDS =
   "id, title, description, reward, image_url, user_id, group_id, submitted_fix_by_id, submitted_fix_by_name, submitted_fix_by_avatar, submitted_fix_at, submitted_fix_note, submitted_fix_image_url, submitted_fix_proof_text, review_reminder_last_at"
 const WAITING_FIELDS =
@@ -154,6 +162,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   const [loaded, setLoaded] = useState(false)
   const [resolved, setResolved] = useState<Map<string, "approved" | "rejected">>(new Map())
   const lastReviewIds = useRef<Set<string>>(new Set())
+  const lastSeenForPages = useRef<Set<string>>(new Set())
   const [listOpen, setListOpen] = useState(false)
   // Group ids are cached per viewer; results from a viewer we've since
   // switched away from are dropped (see `stale` below)
@@ -234,6 +243,10 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
         }
         setReviews(list)
         setLoaded(true)
+        // Newly submitted or no longer pending: tell any open post page
+        const arrived = list.filter((r) => !lastSeenForPages.current.has(r.id)).map((r) => r.id)
+        lastSeenForPages.current = new Set(list.map((r) => r.id))
+        announcePostsChanged([...arrived, ...left])
 
         // Toast fixes we haven't told this user about yet. The first run on a
         // device only records what's there, so an old backlog doesn't toast.
@@ -287,6 +300,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
         const now = new Set((mySubmitted as { id: string }[]).map((p) => p.id))
         writeIds(pendingKey, now)
         const resolved = before ? [...before].filter((id) => !now.has(id)) : []
+        announcePostsChanged(resolved)
         if (resolved.length) {
           const { data: outcomes } = await supabase
             .from("posts")
