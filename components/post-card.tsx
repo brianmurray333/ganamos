@@ -7,7 +7,8 @@ import type { Post } from "@/lib/types"
 import { formatTimeAgo } from "@/lib/utils"
 import { renderTextWithLinks } from "@/lib/linkify"
 import { reverseGeocode, getTravelTimes, getCurrentLocationWithName, type TravelTimes } from "@/lib/geocoding"
-import { Car, Footprints, CheckCircle, Clock, Circle, Timer } from "lucide-react"
+import { Car, Footprints, CheckCircle, Clock, Circle, Timer, PawPrint, User } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 
 // State abbreviation mapping
@@ -105,7 +106,16 @@ const statusConfig = {
   },
 }
 
-export function PostCard({ post, showStatusBadge = false }: { post: Post; showStatusBadge?: boolean }) {
+export function PostCard({
+  post,
+  showStatusBadge = false,
+  reviewable = false,
+}: {
+  post: Post
+  showStatusBadge?: boolean
+  /** The viewer can approve this post's pending fix (it's their post) */
+  reviewable?: boolean
+}) {
   const router = useRouter()
   const [imageError, setImageError] = useState(false)
   const [userId, setUserId] = useState<string>("")
@@ -358,11 +368,26 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
       .toUpperCase()
   }
 
+  const awaitingMyReview = reviewable && !!post.under_review && !post.fixed
+  // submitted_fix_at is a UTC timestamp without a zone ("2026-11-22 17:27:27");
+  // Safari can't parse that form, so normalize it first.
+  const submittedAt = (() => {
+    const raw = post.submitted_fix_at
+    if (!raw) return null
+    const iso = raw.includes("T") ? raw : raw.replace(" ", "T")
+    const d = new Date(/[zZ]|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
+    return Number.isNaN(d.getTime()) ? null : d
+  })()
+  const submittedFromDevice =
+    !post.submitted_fix_image_url && !post.submitted_fix_proof_text && post.submitted_fix_note === "Submitted via device"
+
   return (
     <>
       <Card 
         ref={cardRef}
-        className="overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border border-gray-100 dark:border-gray-700/50 bg-white dark:bg-card cursor-pointer active:scale-[0.98] active:opacity-90 transition-[transform,opacity] touch-manipulation" 
+        className={`overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.08),0_4px_12px_rgba(0,0,0,0.05)] dark:shadow-[0_4px_12px_rgba(255,255,255,0.03),0_1px_3px_rgba(255,255,255,0.06)] rounded-2xl border bg-white dark:bg-card cursor-pointer active:scale-[0.98] active:opacity-90 transition-[transform,opacity] touch-manipulation ${
+          awaitingMyReview ? "border-amber-300 ring-2 ring-amber-200 dark:border-amber-700/70 dark:ring-amber-900/60" : "border-gray-100 dark:border-gray-700/50"
+        }`} 
         onClick={handleClick} 
         onMouseEnter={handleMouseEnter}
       >
@@ -401,8 +426,14 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
               onError={() => setImageError(true)}
             />
           )}
+          {awaitingMyReview && (
+            <span className="absolute top-2 left-2 flex items-center gap-1 h-7 px-2.5 rounded-full bg-amber-500 text-amber-950 text-xs font-bold shadow-sm">
+              <Clock size={13} strokeWidth={2.5} aria-hidden="true" />
+              Fix submitted
+            </span>
+          )}
           {/* Status Badge */}
-          {showStatusBadge && (() => {
+          {!awaitingMyReview && showStatusBadge && (() => {
             const status = getPostStatus(post)
             const config = statusConfig[status]
             const Icon = config.icon
@@ -668,6 +699,36 @@ export function PostCard({ post, showStatusBadge = false }: { post: Post; showSt
             </div>
           </div>
         </CardFooter>
+        {awaitingMyReview && (
+          <div className="mx-4 mb-4 -mt-1 flex items-center gap-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 p-2.5">
+            <Avatar className="h-8 w-8 shrink-0">
+              {post.submitted_fix_by_avatar && (
+                <AvatarImage src={post.submitted_fix_by_avatar} alt={post.submitted_fix_by_name || "Fixer"} />
+              )}
+              <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">
+                {(post.submitted_fix_by_name || "Someone").split(" ")[0]} marked this done
+              </p>
+              <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                {submittedFromDevice && <PawPrint className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                {submittedFromDevice ? "From their SatoshiPet" : "With proof"}
+                {submittedAt && ` · ${formatTimeAgo(submittedAt)}`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                router.push(`/post/${post.id}`)
+              }}
+              className="h-9 shrink-0 rounded-lg bg-green-600 px-3.5 text-sm font-bold text-white hover:bg-green-700 active:scale-[0.97] transition-transform"
+            >
+              Review
+            </button>
+          </div>
+        )}
       </Card>
 
       <style>{`

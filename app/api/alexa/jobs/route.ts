@@ -86,6 +86,8 @@ export async function GET(request: NextRequest) {
       .eq('group_id', linkedAccount.selected_group_id)
       .eq('fixed', false)
       .eq('claimed', false)
+      // Hide jobs with a fix awaiting review; a rejection reopens them
+      .eq('under_review', false)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(20)
