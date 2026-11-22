@@ -24,8 +24,9 @@ import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
 import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
-import { PawPrint, User } from "lucide-react"
-import { refreshPendingReviews } from "@/components/pending-reviews"
+import { Clock, MoreHorizontal, PawPrint, Share, User } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { POSTS_CHANGED_EVENT, refreshPendingReviews } from "@/components/pending-reviews"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
 import { saveClaimToken } from "@/lib/anonymous-claim"
 import { AnonymousFixSubmissionModal } from "@/components/anonymous-fix-submission-modal"
@@ -34,7 +35,6 @@ import dynamic from "next/dynamic"
 import PostDetailSkeleton from "@/components/post-detail-skeleton"
 import { usePendingPost, consumePendingPost, watchPendingPost, claimFailedPendingPost } from "@/lib/pending-post-store"
 import { StaticMapWidget } from "@/components/static-map-widget"
-import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 
 // Dynamically import the map to avoid SSR issues with Google Maps
 const PostDetailMap = dynamic(
@@ -84,6 +84,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [fullscreenImageSrc, setFullscreenImageSrc] = useState<string | null>(null)
   const [bitcoinPrice, setBitcoinPrice] = useState<number | null>(null)
   const [deadline, setDeadline] = useState<Date | null>(null)
+  // Bumped to reload the post when its status changes elsewhere
+  const [postVersion, setPostVersion] = useState(0)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
   
   // Close issue dialog state
@@ -545,7 +547,53 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       }
     }
     fetchPost()
-  }, [params.id, toast, supabase, awaitingSubmission])
+  }, [params.id, toast, supabase, awaitingSubmission, postVersion])
+
+  // Keep the page live: when this post's status changes elsewhere (a fix is
+  // submitted, approved or sent back, the post is deleted) reload it, so e.g.
+  // the poster lands in the review state without refreshing. Checks a few
+  // fields every 20s while visible, and right away when the review counter
+  // reports a change to this post.
+  const liveStatusRef = useRef<string | null>(null)
+  useEffect(() => {
+    liveStatusRef.current = post
+      ? [post.under_review, post.fixed, post.deleted_at, post.submitted_fix_by_id, post.submitted_fix_at].join("|")
+      : null
+  }, [post])
+  useEffect(() => {
+    if (awaitingSubmission || !supabase) return
+    let cancelled = false
+    const checkStatus = async () => {
+      if (document.visibilityState === "hidden" || liveStatusRef.current === null) return
+      const { data } = await supabase
+        .from("posts")
+        .select("under_review, fixed, deleted_at, submitted_fix_by_id, submitted_fix_at")
+        .eq("id", params.id)
+        .maybeSingle()
+      if (cancelled || !data) return
+      const latest = [data.under_review, data.fixed, data.deleted_at, data.submitted_fix_by_id, data.submitted_fix_at].join("|")
+      if (liveStatusRef.current !== null && latest !== liveStatusRef.current) {
+        liveStatusRef.current = latest
+        setPostVersion((v) => v + 1)
+      }
+    }
+    const interval = window.setInterval(checkStatus, 20_000)
+    const onVisible = () => {
+      if (document.visibilityState === "visible") checkStatus()
+    }
+    const onPostsChanged = (e: Event) => {
+      const ids = (e as CustomEvent<{ ids?: string[] }>).detail?.ids
+      if (!ids || ids.includes(params.id)) checkStatus()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    window.addEventListener(POSTS_CHANGED_EVENT, onPostsChanged)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+      document.removeEventListener("visibilitychange", onVisible)
+      window.removeEventListener(POSTS_CHANGED_EVENT, onPostsChanged)
+    }
+  }, [params.id, supabase, awaitingSubmission])
 
 
   useEffect(() => {
@@ -1310,6 +1358,37 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const isOriginalPoster = post && user && (post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)))
   const canManagePost = isOriginalPoster || isGroupAdmin
   const canCloseIssue = canManagePost && !post?.fixed && !post?.under_review && !post?.deleted_at
+  // Deadlines only matter while a post is open
+  const canEditDeadline = !!isOriginalPoster && !!post && !post.fixed && !post.deleted_at
+
+  // Header "⋯" menu: Share, plus rarely used actions like the deadline
+  const renderMoreMenu = (buttonClassName: string) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={(e) => e.stopPropagation()}
+          className={buttonClassName}
+          aria-label="More actions"
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52 p-1.5">
+        <DropdownMenuItem onClick={() => handleShare()} className="gap-2.5 py-2.5">
+          <Share className="h-4 w-4" aria-hidden="true" />
+          Share
+        </DropdownMenuItem>
+        {canEditDeadline && (
+          <DropdownMenuItem onClick={() => setShowDeadlinePicker(true)} className="gap-2.5 py-2.5">
+            <Clock className="h-4 w-4" aria-hidden="true" />
+            {deadline ? "Change deadline" : "Add deadline"}
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 
   // Get available fixers (family members, excluding self)
   const getAvailableFixers = () => {
@@ -2109,32 +2188,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </div>
                   {/* Action buttons overlaid on top-right */}
                   <div className="absolute top-2 right-2 flex gap-2">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleShare()
-                      }}
-                      className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                        <polyline points="16 6 12 2 8 6" />
-                        <line x1="12" x2="12" y1="2" y2="15" />
-                      </svg>
-                      <span className="sr-only">Share</span>
-                    </Button>
+                    {renderMoreMenu("bg-black/50 hover:bg-black/70 text-white border-0 p-2")}
                     <Button 
                       variant="ghost" 
                       size="icon" 
@@ -2168,32 +2222,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             <div className="mb-4">
               {/* Action buttons row - not overlaid since there's no image */}
               <div className="flex justify-end gap-2 mb-3">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleShare()
-                  }}
-                  className="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 p-2"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" x2="12" y1="2" y2="15" />
-                  </svg>
-                  <span className="sr-only">Share</span>
-                </Button>
+                {renderMoreMenu("bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 p-2")}
                 <Button 
                   variant="ghost" 
                   size="icon" 
@@ -2240,32 +2269,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               />
               {/* Action buttons overlaid on top-right */}
               <div className="absolute top-2 right-2 flex gap-2">
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleShare()
-                  }}
-                  className="bg-black/50 hover:bg-black/70 text-white border-0 p-2"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
-                    <polyline points="16 6 12 2 8 6" />
-                    <line x1="12" x2="12" y1="2" y2="15" />
-                  </svg>
-                  <span className="sr-only">Share</span>
-                </Button>
+                {renderMoreMenu("bg-black/50 hover:bg-black/70 text-white border-0 p-2")}
                 <Button 
                   variant="ghost" 
                   size="icon" 
@@ -2662,58 +2666,6 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             }}>Start</Button>
           )}
           
-          {/* Deadline control directly above Mark Complete */}
-          {isOriginalPoster ? (
-            <Popover open={showDeadlinePicker} onOpenChange={setShowDeadlinePicker}>
-              <PopoverTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  className="w-full h-12 mt-4 text-lg font-semibold"
-                >
-                  {deadline ? `Expires ${formatAbbreviatedTimeRemaining(deadline)}` : 'Add deadline'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent side="top" align="center" collisionPadding={8} className="w-auto p-1">
-                <div className="flex flex-col">
-                  {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
-                    { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={() => { handleUpdateDeadline(new Date(Date.now() + hrs * 3600_000)); setShowDeadlinePicker(false) }}
-                      className={`flex items-center px-3 py-2 text-sm rounded-sm transition-colors ${
-                        deadline && Math.abs(deadline.getTime() - Date.now() - hrs * 3600_000) < 60_000
-                          ? 'bg-accent text-accent-foreground'
-                          : 'hover:bg-accent hover:text-accent-foreground'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  {deadline && (
-                    <>
-                      <div className="h-px bg-muted my-1" />
-                      <button
-                        type="button"
-                        onClick={() => { handleUpdateDeadline(null); setShowDeadlinePicker(false) }}
-                        className="flex items-center px-3 py-2 text-sm rounded-sm text-red-500 hover:bg-accent transition-colors"
-                      >
-                        Remove deadline
-                      </button>
-                    </>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          ) : (
-            !!deadline && (
-              <Button variant="outline" className="w-full h-12 mt-4 text-lg font-semibold" disabled>
-                {`Expires ${formatAbbreviatedTimeRemaining(deadline)}`}
-              </Button>
-            )
-          )}
-          
-          
           {/* Mark Complete button - only visible to original poster */}
           {canCloseIssue && (
             <Button 
@@ -2729,6 +2681,55 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               Mark complete
             </Button>
           )}
+
+          {/* Deadline: set from the ⋯ menu (rarely used); shown here only when one exists */}
+          {!!deadline && !post.fixed && !post.deleted_at && (
+            <button
+              type="button"
+              disabled={!canEditDeadline}
+              onClick={() => setShowDeadlinePicker(true)}
+              className="mt-4 flex w-full items-center justify-center gap-1.5 text-sm text-muted-foreground enabled:hover:text-foreground disabled:cursor-default"
+            >
+              <Clock className="h-4 w-4" aria-hidden="true" />
+              {`Expires ${formatAbbreviatedTimeRemaining(deadline)}`}
+              {canEditDeadline && <span className="sr-only">. Change deadline</span>}
+            </button>
+          )}
+
+          <Dialog open={showDeadlinePicker && canEditDeadline} onOpenChange={setShowDeadlinePicker}>
+            <DialogContent className="max-w-sm p-5">
+              <DialogHeader className="text-left">
+                <DialogTitle className="text-xl font-bold">{deadline ? "Change deadline" : "Add deadline"}</DialogTitle>
+                <p className="text-sm text-muted-foreground">The post closes and the reward is refunded if nobody fixes it in time.</p>
+              </DialogHeader>
+              <div className="grid grid-cols-2 gap-2">
+                {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
+                  { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
+                  <Button
+                    key={label}
+                    type="button"
+                    variant="outline"
+                    onClick={() => { handleUpdateDeadline(new Date(Date.now() + hrs * 3600_000)); setShowDeadlinePicker(false) }}
+                    className={`h-12 text-base font-semibold ${
+                      deadline && Math.abs(deadline.getTime() - Date.now() - hrs * 3600_000) < 60_000 ? 'border-green-600 text-green-700 dark:text-green-400' : ''
+                    }`}
+                  >
+                    {label}
+                  </Button>
+                ))}
+                {deadline && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { handleUpdateDeadline(null); setShowDeadlinePicker(false) }}
+                    className="h-12 text-base font-semibold text-red-600 dark:text-red-400"
+                  >
+                    Remove
+                  </Button>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
 
           {/* Deleted post banner */}
           {post.deleted_at && (
