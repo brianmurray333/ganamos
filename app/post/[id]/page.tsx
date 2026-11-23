@@ -1369,14 +1369,20 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           variant="ghost"
           size="icon"
           onClick={(e) => e.stopPropagation()}
-          className={buttonClassName}
+          className={`${buttonClassName} focus-visible:ring-0 focus-visible:ring-offset-0`}
           aria-label="More actions"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       {/* Portaled, but React still bubbles its clicks to the photo (which opens fullscreen) */}
-      <DropdownMenuContent align="end" className="w-52 p-1.5" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenuContent
+        align="end"
+        className="w-52 p-1.5"
+        onClick={(e) => e.stopPropagation()}
+        // Don't hand focus back to ⋯ on close (it showed a focus ring after tapping)
+        onCloseAutoFocus={(e) => e.preventDefault()}
+      >
         <DropdownMenuItem onClick={() => handleShare()} className="gap-2.5 py-2.5">
           <Share className="h-4 w-4" aria-hidden="true" />
           Share
