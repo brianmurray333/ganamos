@@ -86,6 +86,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [deadline, setDeadline] = useState<Date | null>(null)
   // Bumped to reload the post when its status changes elsewhere
   const [postVersion, setPostVersion] = useState(0)
+  // Was the ⋯ menu opened by a tap/click (vs the keyboard)?
+  const moreMenuOpenedByPointer = useRef(false)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
   
   // Close issue dialog state
@@ -1369,7 +1371,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           variant="ghost"
           size="icon"
           onClick={(e) => e.stopPropagation()}
-          className={`${buttonClassName} focus-visible:ring-0 focus-visible:ring-offset-0`}
+          className={buttonClassName}
+          onPointerDown={() => { moreMenuOpenedByPointer.current = true }}
+          onKeyDown={() => { moreMenuOpenedByPointer.current = false }}
           aria-label="More actions"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -1380,8 +1384,11 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         align="end"
         className="w-52 p-1.5"
         onClick={(e) => e.stopPropagation()}
-        // Don't hand focus back to ⋯ on close (it showed a focus ring after tapping)
-        onCloseAutoFocus={(e) => e.preventDefault()}
+        // After a tap, don't hand focus back to ⋯ (Safari then shows its focus
+        // ring); keyboard users still get focus restored to it
+        onCloseAutoFocus={(e) => {
+          if (moreMenuOpenedByPointer.current) e.preventDefault()
+        }}
       >
         <DropdownMenuItem onClick={() => handleShare()} className="gap-2.5 py-2.5">
           <Share className="h-4 w-4" aria-hidden="true" />

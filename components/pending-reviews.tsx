@@ -67,6 +67,8 @@ type PendingReviewsContextValue = {
   count: number
   /** My submitted fixes awaiting someone else's review */
   waiting: WaitingFix[]
+  /** Anything at all in the sheet, including items older than 30 days */
+  hasAny: boolean
   openList: () => void
   refresh: () => void
 }
@@ -77,6 +79,7 @@ const PendingReviewsContext = createContext<PendingReviewsContextValue>({
   resolved: new Map(),
   count: 0,
   waiting: [],
+  hasAny: false,
   openList: () => {},
   refresh: () => {},
 })
@@ -212,7 +215,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .eq("fixed", false)
           .is("deleted_at", null)
           .or(mineOrMyGroups)
-          .order("submitted_fix_at", { ascending: true })
+          .order("submitted_fix_at", { ascending: false, nullsFirst: false })
           .limit(50),
         supabase
           .from("posts")
@@ -221,7 +224,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .eq("fixed", false)
           .is("deleted_at", null)
           .eq("submitted_fix_by_id", viewerId)
-          .order("submitted_fix_at", { ascending: true })
+          .order("submitted_fix_at", { ascending: false, nullsFirst: false })
           .limit(50),
       ])
 
@@ -355,7 +358,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   const recentWaiting = byNewest(waiting).filter(isRecentSubmission)
 
   const value = useMemo<PendingReviewsContextValue>(
-    () => ({ reviews, loaded, resolved, count: recentReviews.length, waiting: recentWaiting, openList: () => setListOpen(true), refresh: check }),
+    () => ({ reviews, loaded, resolved, count: recentReviews.length, waiting: recentWaiting, hasAny: reviews.length > 0 || waiting.length > 0, openList: () => setListOpen(true), refresh: check }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [reviews, loaded, resolved, waiting, check]
   )
@@ -527,9 +530,13 @@ export function ReviewsSheet({
       <Dialog open={open} onOpenChange={onOpenChange}>
         {/* One scrolling sheet; minmax(0,1fr) keeps long titles from widening it past the screen */}
         <DialogContent
-          className="flex max-h-[85vh] max-w-md flex-col gap-0 overflow-hidden p-0"
-          // Don't focus (and ring) the first row on open; taps don't need it
-          onOpenAutoFocus={(e) => e.preventDefault()}
+          className="flex max-h-[85vh] max-w-md flex-col gap-0 overflow-hidden p-0 focus:outline-none"
+          // Move focus into the dialog (for keyboard / screen readers) without
+          // ringing the first row: focus the dialog itself
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus()
+          }}
         >
           <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-5 text-left">
             <DialogTitle className="pr-10 text-xl font-bold">
@@ -587,9 +594,10 @@ export function ReviewsSheet({
 
 /** Round counter button for the home header; renders nothing when empty. */
 export function PendingReviewsButton({ className = "" }: { className?: string }) {
-  const { count, waiting, openList } = usePendingReviews()
+  const { count, waiting, hasAny, openList } = usePendingReviews()
   const waitingCount = waiting.length
-  if (!count && !waitingCount) return null
+  // Stays reachable for older items too; only recent ones get a badge
+  if (!count && !waitingCount && !hasAny) return null
   // Red: fixes waiting on me (action needed). Amber: my fixes waiting on others.
   const badge = count || waitingCount
   const label = [
@@ -597,7 +605,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
     waitingCount ? (waitingCount === 1 ? "1 of your fixes waiting on review" : `${waitingCount} of your fixes waiting on review`) : null,
   ]
     .filter(Boolean)
-    .join(", ")
+    .join(", ") || "Fixes"
   return (
     <button
       type="button"
@@ -606,6 +614,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
       className={`relative flex h-10 w-10 items-center justify-center rounded-full bg-muted text-foreground transition-transform active:scale-95 animate-in fade-in zoom-in-95 duration-300 ${className}`}
     >
       <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
+      {badge > 0 && (
       <span
         className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background px-1 text-[11px] font-bold leading-none ${
           count ? "bg-red-600 text-white" : "bg-amber-400 text-amber-950"
@@ -613,6 +622,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
       >
         {badge > 9 ? "9+" : badge}
       </span>
+      )}
     </button>
   )
 }
