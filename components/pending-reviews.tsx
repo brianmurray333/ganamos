@@ -539,7 +539,7 @@ export function ReviewsSheet({
           }}
           aria-describedby={undefined}
           header={
-            <div className="border-b px-5 pb-3 pt-1 text-left">
+            <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
               <BottomSheetTitle className="pr-10 text-xl font-bold">
                 {recentReviews.length || !recentWaiting.length ? "To review" : "Waiting on review"}
               </BottomSheetTitle>

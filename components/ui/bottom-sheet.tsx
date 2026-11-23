@@ -4,8 +4,9 @@
  * iOS-style bottom sheet on Radix Dialog (focus trap, Escape, outside tap,
  * screen-reader semantics come from Dialog). Edge to edge, anchored to the
  * bottom of the screen, rounded top corners, grab handle, slides up; drag the
- * handle/header down to dismiss. Pads for the home indicator. On wider
- * screens it stays a centered column.
+ * handle/header down to dismiss. Pads for the home indicator.
+ * On desktop (lg, where the desktop header shows) it becomes a full-height
+ * drawer that slides in from the right.
  */
 
 import * as React from "react"
@@ -32,6 +33,8 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
 
     const onPointerDown = (e: React.PointerEvent) => {
       if (e.pointerType === "mouse" && e.button !== 0) return
+      // Drag-to-dismiss is a bottom-sheet gesture; not for the desktop drawer
+      if (window.matchMedia("(min-width: 1024px)").matches) return
       start.current = e.clientY
       ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
     }
@@ -52,9 +55,13 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
+            // Phone: bottom sheet
             "fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[88dvh] w-full flex-col rounded-t-[20px] border-t bg-background shadow-2xl outline-none sm:max-w-md sm:border-x",
             "pb-[env(safe-area-inset-bottom)]",
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-bottom data-[state=closed]:slide-out-to-bottom data-[state=open]:duration-300 data-[state=closed]:duration-200 ease-out",
+            // Desktop: right-hand drawer
+            "lg:inset-y-0 lg:left-auto lg:right-0 lg:mx-0 lg:h-[100dvh] lg:max-h-none lg:w-[420px] lg:max-w-[420px] lg:rounded-none lg:border-y-0 lg:border-l lg:border-r-0 lg:pb-0",
+            "lg:data-[state=open]:slide-in-from-bottom-0 lg:data-[state=open]:slide-in-from-right lg:data-[state=closed]:slide-out-to-bottom-0 lg:data-[state=closed]:slide-out-to-right",
             className
           )}
           style={{
@@ -71,7 +78,7 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
             onPointerUp={onPointerEnd}
             onPointerCancel={onPointerEnd}
           >
-            <div className="flex justify-center pb-1 pt-2" aria-hidden="true">
+            <div className="flex justify-center pb-1 pt-2 lg:hidden" aria-hidden="true">
               <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
             </div>
             {header}
