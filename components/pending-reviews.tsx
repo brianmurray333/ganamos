@@ -17,7 +17,7 @@ import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { useAuth } from "@/components/auth-provider"
 import { toast } from "@/components/ui/toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { formatSatsValue } from "@/lib/utils"
 import { reminderAvailability, waitLabel, REMINDER_MAX } from "@/lib/review-reminders"
 import { sendReviewReminderAction } from "@/app/actions/review-reminder-actions"
@@ -527,27 +527,30 @@ export function ReviewsSheet({
 
 
   return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        {/* One scrolling sheet; minmax(0,1fr) keeps long titles from widening it past the screen */}
-        <DialogContent
-          className="flex max-h-[85vh] max-w-md flex-col gap-0 overflow-hidden p-0 focus:outline-none"
-          // Move focus into the dialog (for keyboard / screen readers) without
-          // ringing the first row: focus the dialog itself
+      <BottomSheet open={open} onOpenChange={onOpenChange}>
+        {/* iOS-style sheet: edge to edge, from the bottom of the screen */}
+        <BottomSheetContent
+          onDismiss={() => onOpenChange(false)}
+          // Move focus into the sheet (for keyboard / screen readers) without
+          // ringing the first row: focus the sheet itself
           onOpenAutoFocus={(e) => {
             e.preventDefault()
             ;(e.currentTarget as HTMLElement | null)?.focus()
           }}
+          aria-describedby={undefined}
+          header={
+            <div className="border-b px-5 pb-3 pt-1 text-left">
+              <BottomSheetTitle className="pr-10 text-xl font-bold">
+                {recentReviews.length || !recentWaiting.length ? "To review" : "Waiting on review"}
+              </BottomSheetTitle>
+              {recentReviews.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {recentReviews.length === 1 ? "1 fix" : `${recentReviews.length} fixes`} · {formatSatsValue(totalSats)}
+                </p>
+              )}
+            </div>
+          }
         >
-          <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-5 text-left">
-            <DialogTitle className="pr-10 text-xl font-bold">
-              {recentReviews.length || !recentWaiting.length ? "To review" : "Waiting on review"}
-            </DialogTitle>
-            {recentReviews.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {recentReviews.length === 1 ? "1 fix" : `${recentReviews.length} fixes`} · {formatSatsValue(totalSats)}
-              </p>
-            )}
-          </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
             {!reviews.length && !waiting.length && (
               <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting on you.</p>
@@ -587,8 +590,8 @@ export function ReviewsSheet({
               </details>
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </BottomSheetContent>
+      </BottomSheet>
   )
 }
 
