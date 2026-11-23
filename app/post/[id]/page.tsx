@@ -86,6 +86,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   const [deadline, setDeadline] = useState<Date | null>(null)
   // Bumped to reload the post when its status changes elsewhere
   const [postVersion, setPostVersion] = useState(0)
+  // Was the ⋯ menu opened by a tap/click (vs the keyboard)?
+  const moreMenuOpenedByPointer = useRef(false)
   const [showDeadlinePicker, setShowDeadlinePicker] = useState(false)
   
   // Close issue dialog state
@@ -1370,13 +1372,24 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
           size="icon"
           onClick={(e) => e.stopPropagation()}
           className={buttonClassName}
+          onPointerDown={() => { moreMenuOpenedByPointer.current = true }}
+          onKeyDown={() => { moreMenuOpenedByPointer.current = false }}
           aria-label="More actions"
         >
           <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       {/* Portaled, but React still bubbles its clicks to the photo (which opens fullscreen) */}
-      <DropdownMenuContent align="end" className="w-52 p-1.5" onClick={(e) => e.stopPropagation()}>
+      <DropdownMenuContent
+        align="end"
+        className="w-52 p-1.5"
+        onClick={(e) => e.stopPropagation()}
+        // After a tap, don't hand focus back to ⋯ (Safari then shows its focus
+        // ring); keyboard users still get focus restored to it
+        onCloseAutoFocus={(e) => {
+          if (moreMenuOpenedByPointer.current) e.preventDefault()
+        }}
+      >
         <DropdownMenuItem onClick={() => handleShare()} className="gap-2.5 py-2.5">
           <Share className="h-4 w-4" aria-hidden="true" />
           Share

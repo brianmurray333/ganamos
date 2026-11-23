@@ -23,6 +23,8 @@ import { reminderAvailability, waitLabel, REMINDER_MAX } from "@/lib/review-remi
 import { sendReviewReminderAction } from "@/app/actions/review-reminder-actions"
 
 const POLL_MS = 30_000
+/** Submissions older than this are folded under "Older" and left out of the badge */
+const RECENT_MS = 30 * 24 * 60 * 60 * 1000
 
 export type PendingReview = {
   id: string
@@ -65,6 +67,8 @@ type PendingReviewsContextValue = {
   count: number
   /** My submitted fixes awaiting someone else's review */
   waiting: WaitingFix[]
+  /** Anything at all in the sheet, including items older than 30 days */
+  hasAny: boolean
   openList: () => void
   refresh: () => void
 }
@@ -75,6 +79,7 @@ const PendingReviewsContext = createContext<PendingReviewsContextValue>({
   resolved: new Map(),
   count: 0,
   waiting: [],
+  hasAny: false,
   openList: () => {},
   refresh: () => {},
 })
@@ -210,7 +215,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .eq("fixed", false)
           .is("deleted_at", null)
           .or(mineOrMyGroups)
-          .order("submitted_fix_at", { ascending: true })
+          .order("submitted_fix_at", { ascending: false, nullsFirst: false })
           .limit(50),
         supabase
           .from("posts")
@@ -219,7 +224,7 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
           .eq("fixed", false)
           .is("deleted_at", null)
           .eq("submitted_fix_by_id", viewerId)
-          .order("submitted_fix_at", { ascending: true })
+          .order("submitted_fix_at", { ascending: false, nullsFirst: false })
           .limit(50),
       ])
 
@@ -349,12 +354,14 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
     }
   }, [viewerId, check])
 
+  const recentReviews = byNewest(reviews).filter(isRecentSubmission)
+  const recentWaiting = byNewest(waiting).filter(isRecentSubmission)
+
   const value = useMemo<PendingReviewsContextValue>(
-    () => ({ reviews, loaded, resolved, count: reviews.length, waiting, openList: () => setListOpen(true), refresh: check }),
+    () => ({ reviews, loaded, resolved, count: recentReviews.length, waiting: recentWaiting, hasAny: reviews.length > 0 || waiting.length > 0, openList: () => setListOpen(true), refresh: check }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [reviews, loaded, resolved, waiting, check]
   )
-
-  const totalSats = reviews.reduce((sum, r) => sum + (r.reward || 0), 0)
 
   const remind = async (fix: WaitingFix) => {
     if (reminding) return
@@ -380,125 +387,217 @@ export function PendingReviewsProvider({ children }: { children: React.ReactNode
   return (
     <PendingReviewsContext.Provider value={value}>
       {children}
-      <Dialog open={listOpen} onOpenChange={setListOpen}>
-        <DialogContent className="max-w-md p-5">
-          <DialogHeader className="text-left">
-            <DialogTitle className="text-xl font-bold">{reviews.length || !waiting.length ? "To review" : "Waiting on review"}</DialogTitle>
-            {reviews.length > 0 && (
+      <ReviewsSheet
+        open={listOpen}
+        onOpenChange={setListOpen}
+        reviews={reviews}
+        waiting={waiting}
+        reminding={reminding}
+        onRemind={remind}
+        onOpenPost={(id) => {
+          setListOpen(false)
+          router.push(`/post/${id}`)
+        }}
+      />
+    </PendingReviewsContext.Provider>
+  )
+}
+
+/** Newest submission first */
+function byNewest<T extends { submitted_fix_at: string | null }>(list: T[]) {
+  return [...list].sort(
+    (a, b) => (parseSubmittedAt(b.submitted_fix_at)?.getTime() ?? 0) - (parseSubmittedAt(a.submitted_fix_at)?.getTime() ?? 0)
+  )
+}
+function isRecentSubmission(r: { submitted_fix_at: string | null }) {
+  const at = parseSubmittedAt(r.submitted_fix_at)
+  return !!at && Date.now() - at.getTime() < RECENT_MS
+}
+
+/** The "To review" / "Waiting on review" sheet opened from the counter. */
+export function ReviewsSheet({
+  open,
+  onOpenChange,
+  reviews,
+  waiting,
+  reminding,
+  onRemind,
+  onOpenPost,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  reviews: PendingReview[]
+  waiting: WaitingFix[]
+  reminding: string | null
+  onRemind: (fix: WaitingFix) => void
+  onOpenPost: (postId: string) => void
+}) {
+  // Newest first; anything older than 30 days (long-abandoned submissions)
+  // is folded away and left out of the badge
+  const isRecent = isRecentSubmission
+  const sortedReviews = byNewest(reviews)
+  const recentReviews = sortedReviews.filter(isRecent)
+  const olderReviews = sortedReviews.filter((r) => !isRecent(r))
+  const sortedWaiting = byNewest(waiting)
+  const recentWaiting = sortedWaiting.filter(isRecent)
+  const olderWaiting = sortedWaiting.filter((w) => !isRecent(w))
+
+  const totalSats = recentReviews.reduce((sum, r) => sum + (r.reward || 0), 0)
+
+  const renderReviewRow = (r: PendingReview) => {
+    const device = isDeviceSubmission(r)
+    return (
+      <li key={r.id}>
+        <button
+          type="button"
+          onClick={() => onOpenPost(r.id)}
+          className="flex w-full min-w-0 items-center gap-3 rounded-xl border p-2.5 text-left transition-colors hover:bg-muted/60 active:bg-muted"
+        >
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+            {r.image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={r.image_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <Avatar className="h-full w-full rounded-lg">
+                {r.submitted_fix_by_avatar && <AvatarImage src={r.submitted_fix_by_avatar} alt="" />}
+                <AvatarFallback className="rounded-lg"><User className="h-5 w-5" /></AvatarFallback>
+              </Avatar>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold">{r.title || r.description || "Untitled"}</p>
+            <p className="flex min-w-0 items-center gap-1 text-[13px] text-muted-foreground">
+              {device && <PawPrint className="h-3 w-3 shrink-0" aria-hidden="true" />}
+              <span className="truncate">
+                {firstName(r.submitted_fix_by_name)} · {device ? "from SatoshiPet" : "with proof"}
+                {r.submitted_fix_at && ` · ${timeAgo(parseSubmittedAt(r.submitted_fix_at))}`}
+              </span>
+            </p>
+          </div>
+          <span className="shrink-0 text-[13px] font-bold text-amber-700 dark:text-amber-400">{formatSatsValue(r.reward || 0)}</span>
+        </button>
+      </li>
+    )
+  }
+
+  const renderWaitingRow = (w: WaitingFix) => {
+    const availability = reminderAvailability(w)
+    const busy = reminding === w.id
+    const status = availability.canRemind
+      ? availability.sent > 0
+        ? `Reminded ${availability.sent}×`
+        : "Waiting"
+      : availability.reason === "limit_reached"
+        ? `Reminded ${REMINDER_MAX}×`
+        : `Remind ${waitLabel(availability.nextAt)}`
+    return (
+      <li key={w.id} className="flex min-w-0 items-center gap-3 rounded-xl border p-2.5">
+        <button
+          type="button"
+          onClick={() => onOpenPost(w.id)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+            {w.image_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={w.image_url} alt="" className="h-full w-full object-cover" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold">{w.title || w.description || "Untitled"}</p>
+            <p className="truncate text-[13px] text-muted-foreground">
+              {w.created_by ? `${firstName(w.created_by)} · ` : ""}
+              {formatSatsValue(w.reward || 0)}
+              {w.submitted_fix_at && ` · ${timeAgo(parseSubmittedAt(w.submitted_fix_at))}`}
+            </p>
+            <p className="truncate text-[12px] text-amber-700 dark:text-amber-400">{status}</p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onRemind(w)}
+          disabled={!availability.canRemind || !!reminding}
+          className="h-10 shrink-0 rounded-lg border px-3 text-sm font-semibold transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy ? "Sending…" : "Remind"}
+        </button>
+      </li>
+    )
+  }
+
+
+  return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        {/* One scrolling sheet; minmax(0,1fr) keeps long titles from widening it past the screen */}
+        <DialogContent
+          className="flex max-h-[85vh] max-w-md flex-col gap-0 overflow-hidden p-0 focus:outline-none"
+          // Move focus into the dialog (for keyboard / screen readers) without
+          // ringing the first row: focus the dialog itself
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus()
+          }}
+        >
+          <DialogHeader className="shrink-0 border-b px-5 pb-3 pt-5 text-left">
+            <DialogTitle className="pr-10 text-xl font-bold">
+              {recentReviews.length || !recentWaiting.length ? "To review" : "Waiting on review"}
+            </DialogTitle>
+            {recentReviews.length > 0 && (
               <p className="text-sm text-muted-foreground">
-                {reviews.length === 1 ? "1 fix" : `${reviews.length} fixes`} · {formatSatsValue(totalSats)}
+                {recentReviews.length === 1 ? "1 fix" : `${recentReviews.length} fixes`} · {formatSatsValue(totalSats)}
               </p>
             )}
           </DialogHeader>
-          {reviews.length === 0 && waiting.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting on you.</p>
-          ) : reviews.length === 0 ? null : (
-            <ul className="-mx-1 max-h-[60vh] space-y-2 overflow-y-auto px-1">
-              {reviews.map((r) => {
-                const device = isDeviceSubmission(r)
-                return (
-                  <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setListOpen(false)
-                        router.push(`/post/${r.id}`)
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl border p-2.5 text-left transition-colors hover:bg-muted/60 active:bg-muted"
-                    >
-                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-muted">
-                        {r.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={r.image_url} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <Avatar className="h-full w-full rounded-lg">
-                            {r.submitted_fix_by_avatar && <AvatarImage src={r.submitted_fix_by_avatar} alt="" />}
-                            <AvatarFallback className="rounded-lg"><User className="h-5 w-5" /></AvatarFallback>
-                          </Avatar>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[15px] font-semibold">{r.title || r.description || "Untitled"}</p>
-                        <p className="flex items-center gap-1 truncate text-[13px] text-muted-foreground">
-                          {device && <PawPrint className="h-3 w-3 shrink-0" aria-hidden="true" />}
-                          {firstName(r.submitted_fix_by_name)} · {device ? "from SatoshiPet" : "with proof"}
-                          {r.submitted_fix_at && ` · ${timeAgo(parseSubmittedAt(r.submitted_fix_at))}`}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-[13px] font-bold text-amber-700 dark:text-amber-400">
-                        {formatSatsValue(r.reward || 0)}
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-          {waiting.length > 0 && (
-            <section aria-label="Your fixes waiting on review" className={reviews.length ? "mt-2 border-t pt-4" : ""}>
-              {reviews.length > 0 && <h3 className="mb-2 text-[15px] font-bold">Waiting on review</h3>}
-              <ul className="-mx-1 max-h-[50vh] space-y-2 overflow-y-auto px-1">
-                {waiting.map((w) => {
-                  const availability = reminderAvailability(w)
-                  const busy = reminding === w.id
-                  const status = availability.canRemind
-                    ? availability.sent > 0
-                      ? `Reminded ${availability.sent}×`
-                      : "Waiting"
-                    : availability.reason === "limit_reached"
-                      ? `Reminded ${REMINDER_MAX}× · no more reminders`
-                      : `Remind ${waitLabel(availability.nextAt)}`
-                  return (
-                    <li key={w.id} className="flex items-center gap-3 rounded-xl border p-2.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setListOpen(false)
-                          router.push(`/post/${w.id}`)
-                        }}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                      >
-                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-muted">
-                          {w.image_url && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={w.image_url} alt="" className="h-full w-full object-cover" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] font-semibold">{w.title || w.description || "Untitled"}</p>
-                          <p className="truncate text-[13px] text-muted-foreground">
-                            {w.created_by ? `${firstName(w.created_by)} · ` : ""}
-                            {formatSatsValue(w.reward || 0)}
-                            {w.submitted_fix_at && ` · ${timeAgo(parseSubmittedAt(w.submitted_fix_at))}`}
-                          </p>
-                          <p className="truncate text-[12px] text-amber-700 dark:text-amber-400">{status}</p>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => remind(w)}
-                        disabled={!availability.canRemind || !!reminding}
-                        className="h-10 shrink-0 rounded-lg border px-3.5 text-sm font-semibold transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {busy ? "Sending…" : "Remind"}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
+            {!reviews.length && !waiting.length && (
+              <p className="py-6 text-center text-sm text-muted-foreground">Nothing waiting on you.</p>
+            )}
+            {recentReviews.length > 0 && <ul className="space-y-2">{recentReviews.map(renderReviewRow)}</ul>}
+            {!recentReviews.length && (reviews.length > 0) && !recentWaiting.length && (
+              <p className="pb-2 text-sm text-muted-foreground">Nothing new to review.</p>
+            )}
+
+            {recentWaiting.length > 0 && (
+              <section aria-label="Your fixes waiting on review" className={recentReviews.length ? "mt-5" : ""}>
+                {recentReviews.length > 0 && <h3 className="mb-2 text-[15px] font-bold">Waiting on review</h3>}
+                <ul className="space-y-2">{recentWaiting.map(renderWaitingRow)}</ul>
+              </section>
+            )}
+
+            {(olderReviews.length > 0 || olderWaiting.length > 0) && (
+              <details className="group mt-5">
+                <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-1 text-sm font-semibold text-muted-foreground hover:text-foreground">
+                  Older than 30 days ({olderReviews.length + olderWaiting.length})
+                  <span aria-hidden="true" className="transition-transform group-open:rotate-180">⌄</span>
+                </summary>
+                <div className="mt-2 space-y-4">
+                  {olderReviews.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-[13px] font-semibold text-muted-foreground">To review</h4>
+                      <ul className="space-y-2">{olderReviews.map(renderReviewRow)}</ul>
+                    </div>
+                  )}
+                  {olderWaiting.length > 0 && (
+                    <div>
+                      <h4 className="mb-2 text-[13px] font-semibold text-muted-foreground">Your fixes waiting</h4>
+                      <ul className="space-y-2">{olderWaiting.map(renderWaitingRow)}</ul>
+                    </div>
+                  )}
+                </div>
+              </details>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
-    </PendingReviewsContext.Provider>
   )
 }
 
 /** Round counter button for the home header; renders nothing when empty. */
 export function PendingReviewsButton({ className = "" }: { className?: string }) {
-  const { count, waiting, openList } = usePendingReviews()
+  const { count, waiting, hasAny, openList } = usePendingReviews()
   const waitingCount = waiting.length
-  if (!count && !waitingCount) return null
+  // Stays reachable for older items too; only recent ones get a badge
+  if (!count && !waitingCount && !hasAny) return null
   // Red: fixes waiting on me (action needed). Amber: my fixes waiting on others.
   const badge = count || waitingCount
   const label = [
@@ -506,7 +605,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
     waitingCount ? (waitingCount === 1 ? "1 of your fixes waiting on review" : `${waitingCount} of your fixes waiting on review`) : null,
   ]
     .filter(Boolean)
-    .join(", ")
+    .join(", ") || "Fixes"
   return (
     <button
       type="button"
@@ -515,6 +614,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
       className={`relative flex h-10 w-10 items-center justify-center rounded-full bg-muted text-foreground transition-transform active:scale-95 animate-in fade-in zoom-in-95 duration-300 ${className}`}
     >
       <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
+      {badge > 0 && (
       <span
         className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-background px-1 text-[11px] font-bold leading-none ${
           count ? "bg-red-600 text-white" : "bg-amber-400 text-amber-950"
@@ -522,6 +622,7 @@ export function PendingReviewsButton({ className = "" }: { className?: string })
       >
         {badge > 9 ? "9+" : badge}
       </span>
+      )}
     </button>
   )
 }
