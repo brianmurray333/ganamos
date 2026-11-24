@@ -2718,7 +2718,9 @@ export async function recordDeviceRejectionAction(params: {
     const { error: updateError } = await supabase
       .from('devices')
       .update({
-        last_rejection_id: postId,
+        // A fresh id per rejection, so the device shows each one exactly once
+        // (re-rejecting the same post would otherwise look already seen)
+        last_rejection_id: crypto.randomUUID(),
         rejection_message: truncatedMessage,
       })
       .eq('id', device.id)
