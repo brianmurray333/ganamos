@@ -229,7 +229,10 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   // regular review block never shows: open the device review screen for
   // whoever can approve it (the poster or a group admin).
   const autoOpenedDeviceReview = useRef<string | null>(null)
+  // Mirrors deviceReviewClosed for async callbacks (they see stale state)
+  const deviceReviewClosedRef = useRef(false)
   const closeDeviceFixReview = () => {
+    deviceReviewClosedRef.current = true
     setShowDeviceFixReview(false)
     setDeviceReviewClosed(true)
   }
@@ -248,11 +251,14 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
       .eq("id", post.submitted_fix_by_id)
       .single()
       .then(({ data }) => {
+        // The viewer left the review screen while this loaded: don't reopen it
+        if (deviceReviewClosedRef.current) return
         if (data) {
           setDeviceFixerProfile(data)
           setShowDeviceFixReview(true)
         } else {
           // Fixer not found: fall back to the issue page rather than a review screen that can't approve
+          deviceReviewClosedRef.current = true
           setDeviceReviewClosed(true)
         }
       })
