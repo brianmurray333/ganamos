@@ -35,6 +35,7 @@ import dynamic from "next/dynamic"
 import PostDetailSkeleton from "@/components/post-detail-skeleton"
 import { usePendingPost, consumePendingPost, watchPendingPost, claimFailedPendingPost } from "@/lib/pending-post-store"
 import { StaticMapWidget } from "@/components/static-map-widget"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription } from "@/components/ui/bottom-sheet"
 
 // Dynamically import the map to avoid SSR issues with Google Maps
 const PostDetailMap = dynamic(
@@ -2023,7 +2024,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             <h3 className="font-semibold">{post.title}</h3>
             
             {/* Fixer and Reward in a row */}
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fixed by</p>
+            <div className="-mt-1.5 flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2">
                 <Avatar className="h-8 w-8">
                   <AvatarImage src={fixer?.avatar_url ?? undefined} alt={fixer?.name || "User"} />
@@ -2132,7 +2134,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               }}
               className="w-full text-sm text-muted-foreground hover:text-foreground py-2"
             >
-              Wrong person? Select a different fixer
+              Wrong person?{" "}
+              <span className="underline decoration-dotted decoration-1 underline-offset-4">Select a different fixer</span>
             </button>
           </div>
         </div>
@@ -2808,140 +2811,141 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         )}
       </div>
 
-      {/* Close Issue Dialog */}
-      {showCloseIssueDialog && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-background border rounded-lg p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Close issue</h3>
-                <button
-                  onClick={() => setShowCloseIssueDialog(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
-                >
-                  ✕
-                </button>
-              </div>
-              
-              <p className="text-sm text-muted-foreground">
+      {/* Close Issue sheet: who fixed it (or delete instead) */}
+      <BottomSheet open={showCloseIssueDialog} onOpenChange={setShowCloseIssueDialog}>
+        <BottomSheetContent
+          onDismiss={() => setShowCloseIssueDialog(false)}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus()
+          }}
+          header={
+            <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+              <BottomSheetTitle className="pr-10 text-xl font-bold">Close issue</BottomSheetTitle>
+              <BottomSheetDescription className="text-sm text-muted-foreground">
                 Who fixed it? They will get the {formatSatsValue(post?.reward || 0)} reward.
-              </p>
-              
-              {/* Family member quick select - horizontal scroll */}
-              {getAvailableFixers().length > 0 && (
-                <div 
-                  className="flex overflow-x-auto scrollbar-hide gap-3 py-2 -mx-2 px-2"
-                  style={{ 
-                    scrollbarWidth: 'none', 
-                    msOverflowStyle: 'none'
-                  }}
-                >
-                  {getAvailableFixers().map((account) => (
-                    <button
-                      key={account.id}
-                      onClick={() => {
-                        // Toggle selection - deselect if already selected
-                        if (selectedFixerUsername === account.username) {
-                          setSelectedFixerUsername("")
-                        } else {
-                          setSelectedFixerUsername(account.username || "")
-                        }
-                        setFixerSearchQuery("")
-                        setUsernameSearchResults([])
-                        setHasSearchedUsername(false)
-                      }}
-                      className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all flex-shrink-0 min-w-[68px] ${
-                        selectedFixerUsername === account.username 
-                          ? 'bg-green-100 dark:bg-green-900/30 ring-2 ring-green-500' 
-                          : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                      title={`Assign to ${account.name}`}
-                    >
-                      <Avatar className="h-12 w-12">
-                        <AvatarImage
-                          src={account.avatar_url ?? undefined}
-                          alt={account.name || "User"}
-                        />
-                        <AvatarFallback>
-                          <User className="h-5 w-5" />
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="text-xs text-gray-600 dark:text-gray-400 truncate max-w-[60px]">
-                        {account.name?.split(' ')[0]}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              {/* Username search */}
-              <div className="space-y-2">
-                <input
-                  type="search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  placeholder="Or search by @username"
-                  value={fixerSearchQuery}
-                  onChange={(e) => setFixerSearchQuery(e.target.value)}
-                  className="w-full p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm"
-                />
-                
-                {/* Search results / feedback */}
-                {fixerSearchQuery.length >= 2 && (
-                  <div className="space-y-1">
-                    {isSearchingUsername ? (
-                      <p className="text-sm text-muted-foreground px-1">Searching...</p>
-                    ) : hasSearchedUsername && usernameSearchResults.length === 0 ? (
-                      <p className="text-sm text-muted-foreground px-1">No matching users</p>
-                    ) : usernameSearchResults.length > 0 ? (
-                      <div className="space-y-1">
-                        {usernameSearchResults.map((result) => (
-                          <button
-                            key={result.id}
-                            onClick={() => {
-                              setSelectedFixerUsername(result.username)
-                              setFixerSearchQuery('')
-                              setUsernameSearchResults([])
-                              setHasSearchedUsername(false)
-                            }}
-                            className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
-                              selectedFixerUsername === result.username 
-                                ? 'bg-green-100 dark:bg-green-900/30 ring-2 ring-green-500' 
-                                : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
-                            }`}
-                          >
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage
-                                src={result.avatar_url ?? undefined}
-                                alt={result.name || "User"}
-                              />
-                              <AvatarFallback>
-                                <User className="h-4 w-4" />
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="text-left min-w-0 flex-1">
-                              <p className="font-medium text-sm truncate">{result.name}</p>
-                              <p className="text-xs text-muted-foreground truncate">@{result.username}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
+              </BottomSheetDescription>
+            </div>
+          }
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
+            <div className="space-y-4">
+                {/* Family member quick select - horizontal scroll */}
+                {getAvailableFixers().length > 0 && (
+                  <div 
+                    className="flex overflow-x-auto scrollbar-hide gap-3 py-2 -mx-2 px-2"
+                    style={{ 
+                      scrollbarWidth: 'none', 
+                      msOverflowStyle: 'none'
+                    }}
+                  >
+                    {getAvailableFixers().map((account) => (
+                      <button
+                        key={account.id}
+                        onClick={() => {
+                          // Toggle selection - deselect if already selected
+                          if (selectedFixerUsername === account.username) {
+                            setSelectedFixerUsername("")
+                          } else {
+                            setSelectedFixerUsername(account.username || "")
+                          }
+                          setFixerSearchQuery("")
+                          setUsernameSearchResults([])
+                          setHasSearchedUsername(false)
+                        }}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all flex-shrink-0 min-w-[68px] ${
+                          selectedFixerUsername === account.username 
+                            ? 'bg-green-100 dark:bg-green-900/30 ring-2 ring-green-500' 
+                            : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }`}
+                        title={`Assign to ${account.name}`}
+                      >
+                        <Avatar className="h-12 w-12">
+                          <AvatarImage
+                            src={account.avatar_url ?? undefined}
+                            alt={account.name || "User"}
+                          />
+                          <AvatarFallback>
+                            <User className="h-5 w-5" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 truncate max-w-[60px]">
+                          {account.name?.split(' ')[0]}
+                        </span>
+                      </button>
+                    ))}
                   </div>
                 )}
-              </div>
               
-              {/* Selected fixer display */}
-              {selectedFixerUsername && (
-                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <p className="text-sm text-green-700 dark:text-green-300">
-                    <span className="font-medium">@{selectedFixerUsername}</span> will receive {formatSatsValue(post?.reward || 0)}
-                  </p>
+                {/* Username search */}
+                <div className="space-y-2">
+                  <input
+                    type="search"
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder="Or search by @username"
+                    value={fixerSearchQuery}
+                    onChange={(e) => setFixerSearchQuery(e.target.value)}
+                    className="w-full h-11 px-3 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-base"
+                  />
+                
+                  {/* Search results / feedback */}
+                  {fixerSearchQuery.length >= 2 && (
+                    <div className="space-y-1">
+                      {isSearchingUsername ? (
+                        <p className="text-sm text-muted-foreground px-1">Searching...</p>
+                      ) : hasSearchedUsername && usernameSearchResults.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-1">No matching users</p>
+                      ) : usernameSearchResults.length > 0 ? (
+                        <div className="space-y-1">
+                          {usernameSearchResults.map((result) => (
+                            <button
+                              key={result.id}
+                              onClick={() => {
+                                setSelectedFixerUsername(result.username)
+                                setFixerSearchQuery('')
+                                setUsernameSearchResults([])
+                                setHasSearchedUsername(false)
+                              }}
+                              className={`w-full flex items-center gap-3 p-2 rounded-lg transition-all ${
+                                selectedFixerUsername === result.username 
+                                  ? 'bg-green-100 dark:bg-green-900/30 ring-2 ring-green-500' 
+                                  : 'bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600'
+                              }`}
+                            >
+                              <Avatar className="h-8 w-8">
+                                <AvatarImage
+                                  src={result.avatar_url ?? undefined}
+                                  alt={result.name || "User"}
+                                />
+                                <AvatarFallback>
+                                  <User className="h-4 w-4" />
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="text-left min-w-0 flex-1">
+                                <p className="font-medium text-sm truncate">{result.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">@{result.username}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
-              )}
               
+                {/* Selected fixer display */}
+                {selectedFixerUsername && (
+                  <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="text-sm text-green-700 dark:text-green-300">
+                      <span className="font-medium">@{selectedFixerUsername}</span> will receive {formatSatsValue(post?.reward || 0)}
+                    </p>
+                  </div>
+                )}
+              
+
               {/* Action buttons */}
               <div className="space-y-2 pt-2">
                 <Button
@@ -2952,40 +2956,39 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 >
                   {isClosingIssue ? "Processing..." : "Confirm & Send Reward"}
                 </Button>
-                
+
                 {/* Not Fixed Yet button - only show when a fixer is selected (e.g., from device email) */}
                 {selectedFixerUsername && searchedFixerProfile && (
                   <Button
+                    size="xl"
                     variant="outline"
                     onClick={handleRejectDeviceFix}
                     disabled={isRejectingDeviceFix}
-                    className="w-full text-orange-600 border-orange-200 hover:bg-orange-50 dark:border-orange-800 dark:hover:bg-orange-950/30"
+                    className="w-full text-orange-600 border-orange-500 hover:bg-orange-500/10 dark:text-orange-400"
                   >
                     {isRejectingDeviceFix ? "Sending..." : "Not Fixed Yet"}
                   </Button>
                 )}
-                
-                <div className="relative flex items-center py-2">
-                  <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-                  <span className="flex-shrink mx-4 text-xs text-muted-foreground">or</span>
-                  <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
-                </div>
-                
+
+                <p className="py-1 text-center text-sm text-muted-foreground">or</p>
+
+                {/* Asks for confirmation before deleting */}
                 <Button
+                  size="xl"
                   variant="outline"
                   onClick={() => {
                     setShowCloseIssueDialog(false)
                     setShowDeleteConfirm(true)
                   }}
-                  className="w-full text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/30"
+                  className="w-full"
                 >
-                  Delete Post Instead
+                  Delete post instead
                 </Button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Delete Confirmation Dialog */}
       {showDeleteConfirm && (
