@@ -110,6 +110,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   
   // Device fix review - dedicated UI for reviewing device-submitted fixes
   const [showDeviceFixReview, setShowDeviceFixReview] = useState(false)
+  // Set once the device review screen is left (approved, sent back, closed),
+  // so the page doesn't jump back into it while the post refreshes.
+  const [deviceReviewClosed, setDeviceReviewClosed] = useState(false)
   const [deviceFixerProfile, setDeviceFixerProfile] = useState<{ id: string; username: string; name: string; avatar_url: string | null } | null>(null)
   const [isRejectingDeviceFix, setIsRejectingDeviceFix] = useState(false)
 
@@ -226,12 +229,17 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   // regular review block never shows: open the device review screen for
   // whoever can approve it (the poster or a group admin).
   const autoOpenedDeviceReview = useRef<string | null>(null)
+  const closeDeviceFixReview = () => {
+    setShowDeviceFixReview(false)
+    setDeviceReviewClosed(true)
+  }
   useEffect(() => {
-    if (!post || loading || !user || !groupAdminCheckComplete) return
+    if (!post || loading || !user) return
     if (post.fixed || !post.under_review || !post.submitted_fix_by_id) return
     if (post.submitted_fix_image_url || post.submitted_fix_proof_text) return
     const isOwner = post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id))
-    if (!isOwner && !isGroupAdmin) return
+    // The poster can review straight away; a group admin waits for that check
+    if (!isOwner && (!groupAdminCheckComplete || !isGroupAdmin)) return
     if (autoOpenedDeviceReview.current === post.id) return
     autoOpenedDeviceReview.current = post.id
     supabase
@@ -243,9 +251,12 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
         if (data) {
           setDeviceFixerProfile(data)
           setShowDeviceFixReview(true)
+        } else {
+          // Fixer not found: fall back to the issue page rather than a review screen that can't approve
+          setDeviceReviewClosed(true)
         }
       })
-  }, [post, loading, user, activeUserId, isGroupAdmin, groupAdminCheckComplete, supabase])
+  }, [post, loading, user, activeUserId, myChildIds, isGroupAdmin, groupAdminCheckComplete, supabase])
 
   // Fetch Bitcoin price on mount
   useEffect(() => {
@@ -1935,7 +1946,23 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   }
 
   // Device Fix Review - early return when reviewing a device-submitted fix
-  if (showDeviceFixReview && deviceFixerProfile && post && post.user_id != null) {
+  // Device-submitted fix this viewer can review: go straight to the review
+  // screen (the fixer's name fills in when it loads) instead of showing the
+  // issue page first.
+  const deviceSubmittedFix =
+    !!post && !post.fixed && !!post.under_review && !!post.submitted_fix_by_id &&
+    !post.submitted_fix_image_url && !post.submitted_fix_proof_text
+  const viewerOwnsPost =
+    !!post && !!user && (post.user_id === user.id || post.user_id === activeUserId || (!!post.user_id && myChildIds.includes(post.user_id)))
+  const deviceReviewExpected =
+    deviceSubmittedFix && !loading && !!user && !deviceReviewClosed && (viewerOwnsPost || (groupAdminCheckComplete && isGroupAdmin))
+  // Not the poster, but may be a group admin: hold the skeleton until we know
+  if (deviceSubmittedFix && !loading && !!user && !deviceReviewClosed && !viewerOwnsPost && !!post?.group_id && !groupAdminCheckComplete) {
+    return <PostDetailSkeleton />
+  }
+
+  if ((showDeviceFixReview || deviceReviewExpected) && post && post.user_id != null) {
+    const fixer = deviceFixerProfile
     return (
       <div className="container px-4 py-6 mx-auto max-w-md">
         {/* Header: centered title, close on the right (matches the issue page) */}
@@ -1945,7 +1972,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             variant="ghost"
             size="icon"
             onClick={() => {
-              setShowDeviceFixReview(false)
+              closeDeviceFixReview()
               setDeviceFixerProfile(null)
               if (window.history.length > 1) router.back()
               else router.push("/")
@@ -1993,13 +2020,20 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
               <div className="flex items-center gap-2">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src={deviceFixerProfile.avatar_url ?? undefined} alt={deviceFixerProfile.name || "User"} />
+                  <AvatarImage src={fixer?.avatar_url ?? undefined} alt={fixer?.name || "User"} />
                   <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
                 </Avatar>
-                <div>
-                  <p className="text-sm font-medium">{deviceFixerProfile.name}</p>
-                  <p className="text-xs text-muted-foreground">@{deviceFixerProfile.username}</p>
-                </div>
+                {fixer ? (
+                  <div>
+                    <p className="text-sm font-medium">{fixer.name}</p>
+                    <p className="text-xs text-muted-foreground">@{fixer.username}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5" aria-label="Loading fixer">
+                    <div className="h-3.5 w-24 rounded bg-muted animate-pulse" />
+                    <div className="h-3 w-16 rounded bg-muted animate-pulse" />
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/30 px-3 py-1.5 rounded-full">
                 <BitcoinLogo size={14} />
@@ -2013,6 +2047,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             <Button
               size="xl"
               onClick={async () => {
+                if (!fixer) return
                 setIsClosingIssue(true)
                 try {
                   const effectiveUserId = activeUserId || user?.id
@@ -2020,13 +2055,13 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                     toast.error("Error", { description: "You must be logged in" })
                     return
                   }
-                  const result = await closeIssueAction(post.id, effectiveUserId, deviceFixerProfile.username)
+                  const result = await closeIssueAction(post.id, effectiveUserId, fixer.username)
                   if (result.success) {
                     refreshPendingReviews()
         toast.success("Fix Approved!", {
-                      description: `${formatSatsValue(post.reward || 0)} sent to @${deviceFixerProfile.username}`,
+                      description: `${formatSatsValue(post.reward || 0)} sent to @${fixer.username}`,
                     })
-                    setShowDeviceFixReview(false)
+                    closeDeviceFixReview()
                     setDeviceFixerProfile(null)
                     const { data: updatedPost } = await supabase.from("posts").select("*").eq("id", post.id).single()
                     if (updatedPost) setPost(updatedPost as Post)
@@ -2041,7 +2076,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   setIsClosingIssue(false)
                 }
               }}
-              disabled={isClosingIssue}
+              disabled={isClosingIssue || !fixer}
               className="w-full bg-green-600 hover:bg-green-700 text-white"
             >
               {isClosingIssue ? "Processing..." : `Approve & pay ${formatSatsValue(post.reward || 0)}`}
@@ -2054,19 +2089,20 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                 // everyone (feed and devices), and notify the fixer's pet.
                 if (post.under_review) {
                   await handleRejectFix()
-                  setShowDeviceFixReview(false)
+                  closeDeviceFixReview()
                   setDeviceFixerProfile(null)
                   return
                 }
+                if (!fixer) return
                 setIsRejectingDeviceFix(true)
                 try {
                   await recordDeviceRejectionAction({
-                    fixerUserId: deviceFixerProfile.id,
+                    fixerUserId: fixer.id,
                     postId: post.id,
                     message: `"${post.title?.substring(0, 30) || 'Issue'}" was rejected`,
                   })
                   toast("❌ Fix Rejected", { description: "The fixer has been notified. The issue is still open." })
-                  setShowDeviceFixReview(false)
+                  closeDeviceFixReview()
                   setDeviceFixerProfile(null)
                 } catch (error) {
                   console.error("Error rejecting fix:", error)
@@ -2084,7 +2120,7 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             
             <button
               onClick={() => {
-                setShowDeviceFixReview(false)
+                closeDeviceFixReview()
                 setDeviceFixerProfile(null)
                 setShowCloseIssueDialog(true)
               }}
