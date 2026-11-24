@@ -4,6 +4,7 @@ import { Database } from './database.types'
 import { sendEmail } from './email'
 import { renderEmail, escapeHtml, EMAIL_BASE_URL } from './email-layout'
 import { lndRequest } from './lightning'
+import { getNodeTelemetry, type NodeTelemetry } from './node-telemetry'
 
 let supabase: SupabaseClient<Database> | null = null
 
@@ -600,6 +601,8 @@ export interface DailySummaryData {
   }
   /** Set when the node balance couldn't be read (total_balance is then 0, not real) */
   nodeBalanceError?: string
+  /** Where the node balance moved on its own since the last reconciliation */
+  nodeTelemetry?: NodeTelemetry
   // Balance breakdown - all sats in the system
   balanceBreakdown: BalanceBreakdown
   // Legacy field for backwards compatibility
@@ -691,6 +694,23 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
   
   const balanceBreakdown = await getAppBalanceBreakdown(supabaseClient)
 
+  // Node telemetry since the last operator reconciliation (or the last 7 days)
+  let nodeTelemetry: NodeTelemetry | undefined
+  if (nodeBalanceData.success) {
+    try {
+      const { data: lastAdj } = await (supabaseClient as SupabaseClient<any>)
+        .from('node_balance_adjustments')
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const since = lastAdj?.created_at ? new Date(lastAdj.created_at) : new Date(Date.now() - 7 * 86400_000)
+      nodeTelemetry = await getNodeTelemetry(since)
+    } catch (error) {
+      console.error('[NODE TELEMETRY] Failed:', error)
+    }
+  }
+
   // Legacy field for backwards compatibility
   const appTotalBalance = balanceBreakdown.userBalances
 
@@ -747,6 +767,7 @@ export async function getDailySummaryData(): Promise<DailySummaryData> {
   return {
     nodeBalance: nodeBalanceData.balances,
     nodeBalanceError: nodeBalanceData.success ? undefined : nodeBalanceData.error || 'Could not read the node balance.',
+    nodeTelemetry,
     balanceBreakdown,
     appTotalBalance, // Legacy field
     balanceAudit,
@@ -806,6 +827,22 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   if (b.donationsBalance) details.push(['Donations', sats(b.donationsBalance)])
   if (b.paidOrdersBalance) details.push(['Pet orders', sats(b.paidOrdersBalance)])
   if (b.adjustments) details.push(['Operator credit', signedSats(b.adjustments)])
+
+  // Node-side movement that the app ledger doesn't see
+  const t = data.nodeTelemetry
+  if (t && !nodeUnavailable) {
+    const sinceLabel = new Date(t.since).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
+    details.push(
+      ['Node: channel / on-chain', `${sats(data.nodeBalance.channel_balance)} / ${sats(data.nodeBalance.onchain_balance)}`],
+      [`Routing fees earned since ${sinceLabel}`, `${signedSats(t.routingFeesEarned.sats)} (${t.routingFeesEarned.events} forwards)`],
+      [`Fees paid since ${sinceLabel}`, `${signedSats(-t.paymentFeesPaid.sats)} (${t.paymentFeesPaid.payments} payments)`],
+      [`Payments received since ${sinceLabel}`, `${sats(t.invoicesSettled.sats)} (${t.invoicesSettled.count} invoices)`],
+      ['Closing-fee reserve', `${sats(t.channels.closingFeeReserve)} + ${sats(t.channels.anchorReserve)} anchors (${t.channels.opened} of ${t.channels.count} channels opened by us)`],
+    )
+    if (t.channels.inFlight) details.push(['Payments in flight', sats(t.channels.inFlight)])
+    if (t.onchainUnconfirmed) details.push(['Unconfirmed on-chain', sats(t.onchainUnconfirmed)])
+    if (t.errors.length) details.push(['Telemetry unavailable', escapeHtml(t.errors.join(', '))])
+  }
 
   const callout = nodeUnavailable
     ? { tone: 'warning' as const, title: 'Node unreachable', html: escapeHtml(data.nodeBalanceError) }

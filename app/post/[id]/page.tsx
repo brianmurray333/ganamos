@@ -24,7 +24,7 @@ import { reverseGeocode } from "@/lib/geocoding"
 import { uploadImage, generateImagePath, isBase64Image } from "@/lib/storage"
 // Add the new server actions to imports
 import { markPostFixedAnonymouslyAction, submitAnonymousFixForReviewAction, submitLoggedInFixForReviewAction, closeIssueAction, deletePostAction, recordDeviceRejectionAction } from "@/app/actions/post-actions"
-import { Clock, MoreHorizontal, PawPrint, Share, User } from "lucide-react"
+import { Clock, MoreHorizontal, PawPrint, Share, User, X } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { POSTS_CHANGED_EVENT, refreshPendingReviews } from "@/components/pending-reviews"
 import { LightningInvoiceModal } from "@/components/lightning-invoice-modal"
@@ -1938,25 +1938,23 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
   if (showDeviceFixReview && deviceFixerProfile && post && post.user_id != null) {
     return (
       <div className="container px-4 py-6 mx-auto max-w-md">
-        {/* Header */}
-        <div className="flex items-center mb-4">
-          <Button 
-            variant="ghost" 
-            size="icon" 
+        {/* Header: centered title, close on the right (matches the issue page) */}
+        <div className="relative flex items-center justify-center mb-4 h-10">
+          <h1 className="text-xl font-bold">Review fix</h1>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               setShowDeviceFixReview(false)
               setDeviceFixerProfile(null)
               if (window.history.length > 1) router.back()
               else router.push("/")
-            }} 
-            className="mr-2"
+            }}
+            className="absolute right-0 top-1/2 -translate-y-1/2 h-10 w-10 rounded-full"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="m15 18-6-6 6-6" />
-            </svg>
-            <span className="sr-only">Back</span>
+            <X className="h-5 w-5" aria-hidden="true" />
+            <span className="sr-only">Close</span>
           </Button>
-          <h1 className="text-xl font-bold">Review fix</h1>
         </div>
 
         <div className="space-y-4">
@@ -1978,9 +1976,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
 
             {/* Device Submission Notice (replaces "After" photo) */}
             <div className="relative w-full h-40 overflow-hidden rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-700/50 flex flex-col items-center justify-center gap-1 p-3">
-              <PawPrint className="h-7 w-7 text-amber-600 dark:text-amber-300" aria-hidden="true" />
-              <p className="text-xs font-medium text-amber-900 dark:text-amber-200 text-center">Done on SatoshiPet</p>
-              <p className="text-[11px] text-amber-800/80 dark:text-amber-300/70 text-center">No photo taken</p>
+              <PawPrint className="h-10 w-10 text-amber-600 dark:text-amber-300" aria-hidden="true" />
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200 text-center">Done on SatoshiPet</p>
+              <p className="text-xs text-amber-800/80 dark:text-amber-300/70 text-center">No photo taken</p>
               <div className="absolute top-2 left-2">
                 <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">After</span>
               </div>
