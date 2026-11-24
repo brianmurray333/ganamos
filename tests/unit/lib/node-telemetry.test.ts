@@ -77,6 +77,44 @@ describe('getNodeTelemetry', () => {
   })
 })
 
+describe('getNodeTelemetry history completeness', () => {
+  it('sums forwarding fees in msat before converting (fractional-sat fees are not lost)', async () => {
+    lnd({ '/v1/switch': { success: true, data: { forwarding_events: [
+      { fee: '0', fee_msat: '500' }, { fee: '0', fee_msat: '700' }, { fee: '1', fee_msat: '1300' },
+    ] } } })
+    const t = await getNodeTelemetry(since)
+    expect(t.routingFeesEarned).toEqual({ sats: 2, events: 3 })
+  })
+
+  it('follows pagination offsets until the history runs out', async () => {
+    lnd()
+    const page1 = Array.from({ length: 1000 }, () => ({ status: 'SUCCEEDED', fee_sat: '1', value_sat: '10' }))
+    const page2 = [{ status: 'SUCCEEDED', fee_sat: '5', value_sat: '10' }]
+    const base = lndRequest.getMockImplementation()!
+    lndRequest.mockImplementation(async (endpoint: string, ...rest: any[]) => {
+      if (endpoint.startsWith('/v1/payments')) {
+        return endpoint.includes('index_offset=0')
+          ? { success: true, data: { payments: page1, last_index_offset: '1000' } }
+          : { success: true, data: { payments: page2, last_index_offset: '1001' } }
+      }
+      return base(endpoint, ...rest)
+    })
+    const t = await getNodeTelemetry(since)
+    expect(t.paymentFeesPaid).toEqual({ sats: 1005, payments: 1001, sent: 10010 })
+    expect(t.errors).toEqual([])
+  })
+
+  it('counts invoices created before the window that settled inside it', async () => {
+    lnd({ invoices: { success: true, data: { invoices: [
+      { state: 'SETTLED', amt_paid_sat: '250', creation_date: String(sinceUnix - 3600), settle_date: String(sinceUnix + 10) },
+    ] } } })
+    const t = await getNodeTelemetry(since)
+    expect(t.invoicesSettled).toEqual({ sats: 250, count: 1 })
+    const invCall = lndRequest.mock.calls.find(([e]) => e.startsWith('/v1/invoices'))!
+    expect(invCall[0]).toContain(`creation_date_start=${sinceUnix - 30 * 86400}`)
+  })
+})
+
 describe('daily summary email with telemetry', () => {
   it('shows the node-side movements', async () => {
     lnd()
