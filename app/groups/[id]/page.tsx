@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription } from "@/components/ui/bottom-sheet"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { PostCard } from "@/components/post-card"
@@ -1190,12 +1191,21 @@ export default function GroupPage({ params }: { params: { id: string } }) {
       </div>
 
       {/* Share Group Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Share {group?.name} group</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-4">
+      <BottomSheet open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+        <BottomSheetContent
+          onDismiss={() => setShowInviteDialog(false)}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus()
+          }}
+          aria-describedby={undefined}
+          header={
+            <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+              <BottomSheetTitle className="pr-10 text-xl font-bold">Share {group?.name} group</BottomSheetTitle>
+            </div>
+          }
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3 space-y-4">
             {/* Invite Link */}
             <div>
               <p className="text-sm font-medium mb-2 flex items-center gap-1">
@@ -1327,45 +1337,60 @@ export default function GroupPage({ params }: { params: { id: string } }) {
               </div>
             </div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Rename Group Dialog */}
-      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Rename Group</DialogTitle>
-          </DialogHeader>
-          <div className="py-4">
+      <BottomSheet open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <BottomSheetContent
+          onDismiss={() => setShowRenameDialog(false)}
+          aria-describedby={undefined}
+          header={
+            <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+              <BottomSheetTitle className="pr-10 text-xl font-bold">Rename Group</BottomSheetTitle>
+            </div>
+          }
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3 space-y-4">
             <Input
               value={newGroupName}
               onChange={(e) => setNewGroupName(e.target.value)}
               placeholder="Enter new group name"
             />
+            <div className="space-y-2 pt-2">
+              <Button
+                size="xl"
+                className="w-full text-white"
+                onClick={handleRenameGroup}
+                disabled={isRenamingGroup || !newGroupName.trim()}
+              >
+                {isRenamingGroup ? "Saving..." : "Save"}
+              </Button>
+              <Button size="xl" variant="outline" className="w-full" onClick={() => setShowRenameDialog(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>
-              Cancel
-            </Button>
-            <Button 
-              className="text-white"
-              onClick={handleRenameGroup} 
-              disabled={isRenamingGroup || !newGroupName.trim()}
-            >
-              {isRenamingGroup ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Appoint Admin Dialog */}
-      <Dialog open={showAppointAdminDialog} onOpenChange={setShowAppointAdminDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Appoint Admin</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-3">
-            <p className="text-sm text-muted-foreground">Select a member to make admin:</p>
+      <BottomSheet open={showAppointAdminDialog} onOpenChange={setShowAppointAdminDialog}>
+        <BottomSheetContent
+          onDismiss={() => setShowAppointAdminDialog(false)}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault()
+            ;(e.currentTarget as HTMLElement | null)?.focus()
+          }}
+          header={
+            <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+              <BottomSheetTitle className="pr-10 text-xl font-bold">Appoint Admin</BottomSheetTitle>
+              <BottomSheetDescription className="text-sm text-muted-foreground">Select a member to make admin:</BottomSheetDescription>
+            </div>
+          }
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
+          <div className="space-y-3">
             {members.filter(m => m.role !== "admin" && m.user_id !== effectiveUserId).map((member) => (
               <button
                 key={member.id}
@@ -1393,23 +1418,25 @@ export default function GroupPage({ params }: { params: { id: string } }) {
               </p>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
+          <div className="space-y-2 pt-5">
+            <Button
+              size="xl"
+              className="w-full text-white"
+              onClick={handleAppointAdmin}
+              disabled={isAppointingAdmin || !selectedNewAdmin}
+            >
+              {isAppointingAdmin ? "Appointing..." : "Appoint Admin"}
+            </Button>
+            <Button size="xl" variant="outline" className="w-full" onClick={() => {
               setShowAppointAdminDialog(false)
               setSelectedNewAdmin(null)
             }}>
               Cancel
             </Button>
-            <Button 
-              className="text-white"
-              onClick={handleAppointAdmin} 
-              disabled={isAppointingAdmin || !selectedNewAdmin}
-            >
-              {isAppointingAdmin ? "Appointing..." : "Appoint Admin"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+          </div>
+        </BottomSheetContent>
+      </BottomSheet>
 
       {/* Delete Group Dialog - First confirmation */}
       <Dialog open={showDeleteGroupDialog} onOpenChange={setShowDeleteGroupDialog}>

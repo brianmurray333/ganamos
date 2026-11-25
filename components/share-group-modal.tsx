@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/toast"
@@ -51,18 +51,25 @@ export function ShareGroupModal({ open, onOpenChange, group, onDone }: ShareGrou
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl">
-            <div className="flex items-center gap-2">
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="flex items-center gap-2 pr-10 text-xl font-bold">
               <Users className="w-5 h-5 text-blue-600" />
               Share "{group.name}"
-            </div>
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-6 py-4">
+            </BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
+        <div className="space-y-6 pb-4">
           {/* Group Info */}
           <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
             <p className="text-sm text-muted-foreground mb-1">Your group has been created!</p>
@@ -146,7 +153,7 @@ export function ShareGroupModal({ open, onOpenChange, group, onDone }: ShareGrou
           </div>
         </div>
 
-        <DialogFooter>
+        <div className="pt-2">
           <Button
             size="xl"
             type="button"
@@ -155,8 +162,9 @@ export function ShareGroupModal({ open, onOpenChange, group, onDone }: ShareGrou
           >
             Done - Continue with Post
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
