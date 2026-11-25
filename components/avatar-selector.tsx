@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useState } from "react"
 import Image from "next/image"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth-provider"
@@ -137,12 +137,21 @@ export function AvatarSelector({ isOpen, onOpenChange }: AvatarSelectorProps) {
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Update Profile Picture</DialogTitle>
-        </DialogHeader>
-
+    <BottomSheet open={isOpen} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">Update Profile Picture</BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         <Tabs defaultValue="gallery" value={selectedTab} onValueChange={setSelectedTab}>
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="gallery">Gallery</TabsTrigger>
@@ -227,7 +236,8 @@ export function AvatarSelector({ isOpen, onOpenChange }: AvatarSelectorProps) {
             </div>
           </TabsContent>
         </Tabs>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
