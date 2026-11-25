@@ -10,6 +10,8 @@ vi.mock('@/lib/supabase', () => ({
 
 describe('Leaderboard API - Unit Tests', () => {
   let mockSupabaseClient: any;
+  let lastScoresChain: any;
+  let lastCountChain: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -18,6 +20,7 @@ describe('Leaderboard API - Unit Tests', () => {
   // Helper to setup mock for both score query and count query
   function setupMocks(scoresData: any, scoresError: any, totalCount: number | null, countError: any = null) {
     const mockScoresChain = {
+      eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue({
         data: scoresData,
@@ -25,11 +28,16 @@ describe('Leaderboard API - Unit Tests', () => {
       }),
     };
 
-    const mockCountChain = {
+    const countResult = {
       data: null,
       error: countError,
       count: totalCount,
     };
+    const mockCountChain = {
+      eq: vi.fn().mockResolvedValue(countResult),
+    };
+    lastScoresChain = mockScoresChain;
+    lastCountChain = mockCountChain;
 
     let callCount = 0;
     mockSupabaseClient = {
@@ -53,6 +61,15 @@ describe('Leaderboard API - Unit Tests', () => {
   }
 
   describe('GET /api/leaderboard', () => {
+    it('shows only Flappy scores (other pet games have their own boards)', async () => {
+      setupMocks([], null, 0);
+
+      await GET(new NextRequest('http://localhost:3000/api/leaderboard'));
+
+      expect(lastScoresChain.eq).toHaveBeenCalledWith('game', 'flappy');
+      expect(lastCountChain.eq).toHaveBeenCalledWith('game', 'flappy');
+    });
+
     it('should return top 20 scores with correct structure', async () => {
       const mockScores = Array.from({ length: 20 }, (_, i) => ({
         score: 100 - i * 5,

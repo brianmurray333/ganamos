@@ -567,6 +567,7 @@ export interface Database {
           device_id: string
           user_id: string
           score: number
+          game: string
           created_at: string
         }
         Insert: {
@@ -574,6 +575,7 @@ export interface Database {
           device_id: string
           user_id: string
           score: number
+          game?: string
           created_at?: string
         }
         Update: {
@@ -581,6 +583,7 @@ export interface Database {
           device_id?: string
           user_id?: string
           score?: number
+          game?: string
           created_at?: string
         }
       }

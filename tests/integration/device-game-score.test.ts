@@ -231,6 +231,54 @@ describe('/api/device/game-score', () => {
       })
     })
 
+    describe('Game types', () => {
+      it('should return 400 for an unknown game', async () => {
+        const { id: userId } = await seedUser()
+        const { id: deviceId } = await seedDevice(userId, { status: 'paired' })
+
+        const response = await POST(createScorePostRequest(deviceId, { score: 5, game: 'tetris' }))
+
+        expect(response.status).toBe(400)
+      })
+
+      it('should store a score without a game as a Flappy score', async () => {
+        const { id: userId } = await seedUser()
+        const { id: deviceId } = await seedDevice(userId, { status: 'paired' })
+
+        await POST(createScorePostRequest(deviceId, { score: 12 }))
+
+        const rows = await queryDB<{ game: string }>(
+          'SELECT game FROM flappy_bird_game WHERE device_id = $1',
+          [deviceId],
+        )
+        expect(rows.map((r) => r.game)).toEqual(['flappy'])
+      })
+
+      it('should keep each game\'s personal best and leaderboard separate', async () => {
+        const { id: userId } = await seedUser()
+        const { id: deviceId } = await seedDevice(userId, { status: 'paired' })
+
+        // A high Flappy score must not count against a first Sat Catcher score
+        await seedGameScore(deviceId, userId, 500)
+
+        const response = await POST(createScorePostRequest(deviceId, { score: 7, game: 'satcatcher' }))
+        expect(response.status).toBe(200)
+        const data = await response.json()
+        expect(data.isPersonalBest).toBe(true)
+        expect(data.personalBest).toBe(7)
+        expect(data.leaderboard.every((e: { score: number }) => e.score !== 500)).toBe(true)
+
+        const rows = await queryDB<{ game: string; score: number }>(
+          'SELECT game, score FROM flappy_bird_game WHERE device_id = $1 ORDER BY score',
+          [deviceId],
+        )
+        expect(rows).toEqual([
+          { game: 'satcatcher', score: 7 },
+          { game: 'flappy', score: 500 },
+        ])
+      })
+    })
+
     describe('Leaderboard', () => {
       it('should return leaderboard with top scores', async () => {
         // Create multiple users with scores
