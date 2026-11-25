@@ -1,3 +1,4 @@
+import { issueGameSecret } from "@/lib/game-rooms"
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
@@ -369,36 +370,22 @@ export async function GET(request: NextRequest) {
       console.warn("[Device Config] Error checking for new jobs:", error)
     }
 
-    // Invite only within an approved Ganamos group. Room-code joins happen explicitly.
-    let pickleballInvite: { gameId: string; hostPetName: string; playerCount: number; hostMac: string } | null = null
-    
+    // Game rooms: how many open rooms this pet could join right now (family and
+    // shared groups), and the per-device secret that authenticates bets.
+    let openRooms = 0
     try {
-      const { data: activeGames } = await supabase
-        .from("pickleball_games")
-        .select("id, host_device_id, host_user_id, players, lobby_expires_at, matchmaking_group_id")
-        .in("status", ["lobby", "countdown"])
-        .neq("host_device_id", device.id)
-        .gt("lobby_expires_at", new Date().toISOString())
-        .in("matchmaking_group_id", groupIds.length > 0 ? groupIds : ["00000000-0000-0000-0000-000000000000"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-      
-      if (activeGames && activeGames.length > 0) {
-        const game = activeGames[0]
-        const players = (game.players as any[]) || []
-        const alreadyJoined = players.some((p: any) => p.deviceId === device.id)
-        if (!alreadyJoined && players.length < 4) {
-          const hostPlayer = players[0]
-          pickleballInvite = {
-            gameId: game.id,
-            hostPetName: hostPlayer?.petName || "Someone",
-            playerCount: players.length,
-            hostMac: hostPlayer?.macAddress || "",
-          }
-        }
-      }
+      const { data: roomList } = await supabase.rpc("game_room_list", { p_device: device.id, p_game: null })
+      openRooms = Array.isArray(roomList?.rooms) ? roomList.rooms.length : 0
     } catch (error) {
-      console.warn("[Device Config] Error checking for game invites:", error)
+      console.warn("[Device Config] Error listing game rooms:", error)
+    }
+
+    // A pet running game-room firmware asks for its secret (X-Game-Secret-Request: 1).
+    // It gets one the first time it asks; pairing again (pairing-code auth) replaces it.
+    // The secret is returned only in this response; only its hash is stored.
+    let gameSecret: string | null = null
+    if (request.headers.get("x-game-secret-request") === "1") {
+      gameSecret = await issueGameSecret(supabase, device.id, { rotate: !deviceId && !!pairingCode })
     }
 
     // Build config object - only include rejection fields if there's an actual rejection
@@ -432,13 +419,7 @@ export async function GET(request: NextRequest) {
       hasNewJob: hasNewJob,
       newJobTitle: newJobTitle,
       newJobReward: newJobReward,
-      // Pickleball game invite (if any active lobby from group members)
-      pickleballInvite: pickleballInvite ? {
-        gameId: pickleballInvite.gameId,
-        hostPetName: pickleballInvite.hostPetName,
-        playerCount: pickleballInvite.playerCount,
-        hostMac: pickleballInvite.hostMac,
-      } : null,
+      openRooms,
     }
     
     // Always send rejection fields - empty strings when no rejection to clear Arduino's cached state
@@ -453,6 +434,8 @@ export async function GET(request: NextRequest) {
       config.rejectionMessage = ""
       config.rejectionPostTitle = ""
     }
+
+    if (gameSecret) config.gameSecret = gameSecret
 
     // Return device configuration and user data with explicit no-cache headers
     const response = NextResponse.json({

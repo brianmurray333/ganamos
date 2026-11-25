@@ -41,6 +41,7 @@ function seedRows() {
 function seed() {
   const db = seedRows()
   db.rpcHandlers.post_reward_is_funded = ({ p_post_id }: any) => ({ data: p_post_id !== 'p-anon-unfunded' })
+  db.rpcHandlers.game_rooms_held_sats = () => ({ data: 120 })
   return db
 }
 
@@ -52,7 +53,7 @@ const summary = (breakdown: any, node: number): DailySummaryData =>
   }) as any
 
 describe('getAppBalanceBreakdown', () => {
-  it('sums users (any status), open and funded unclaimed rewards, donations, paid orders and operator credits', async () => {
+  it('sums users (any status), open and funded unclaimed rewards, donations, paid orders, held game bets and operator credits', async () => {
     const b = await getAppBalanceBreakdown(seed().client())
     expect(b).toEqual({
       userBalances: 1500,
@@ -60,8 +61,9 @@ describe('getAppBalanceBreakdown', () => {
       unclaimedRewards: 200,
       donationsBalance: 3000,
       paidOrdersBalance: 50,
+      gamePotsHeld: 120,
       adjustments: 21_550,
-      totalAppBalance: 1500 + 300 + 200 + 3000 + 50 + 21_550,
+      totalAppBalance: 1500 + 300 + 200 + 3000 + 50 + 120 + 21_550,
     })
   })
 
@@ -78,6 +80,7 @@ describe('getAppBalanceBreakdown', () => {
 
   it('counts past the 1000-row page limit', async () => {
     const db = new FakeDb({ profiles: Array.from({ length: 2500 }, (_, i) => ({ id: `u${i}`, balance: 1 })) })
+    db.rpcHandlers.game_rooms_held_sats = () => ({ data: 0 })
     expect((await getAppBalanceBreakdown(db.client())).userBalances).toBe(2500)
   })
 })

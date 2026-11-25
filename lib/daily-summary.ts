@@ -518,6 +518,7 @@ export interface BalanceBreakdown {
   unclaimedRewards: number   // Funded rewards of approved anonymous fixes not yet paid out
   donationsBalance: number   // Completed donations (held by Ganamos, not credited to any user)
   paidOrdersBalance: number  // Paid pet orders
+  gamePotsHeld?: number      // Bets held in live game rooms (owed back to players)
   adjustments: number        // Operator credits/debits (node_balance_adjustments)
   totalAppBalance: number    // Sum of the above; should equal the node balance
 }
@@ -581,14 +582,19 @@ export async function getAppBalanceBreakdown(client: SupabaseClient<Database>): 
     sumRows((f, t) => db.from('pet_orders').select('total_price_sats').eq('payment_status', 'paid').order('id').range(f, t), 'total_price_sats'),
     sumRows((f, t) => db.from('node_balance_adjustments').select('amount').order('id').range(f, t), 'amount'),
   ])
+  // Bets held in live game rooms left the players' balances but are still owed
+  const { data: held, error: heldError } = await db.rpc('game_rooms_held_sats')
+  if (heldError) throw new Error(`[BALANCE] game_rooms_held_sats: ${heldError.message ?? heldError}`)
+  const gamePotsHeld = Number(held) || 0
   return {
     userBalances,
     openIssuesBalance,
     unclaimedRewards,
     donationsBalance,
     paidOrdersBalance,
+    gamePotsHeld,
     adjustments,
-    totalAppBalance: userBalances + openIssuesBalance + unclaimedRewards + donationsBalance + paidOrdersBalance + adjustments,
+    totalAppBalance: userBalances + openIssuesBalance + unclaimedRewards + donationsBalance + paidOrdersBalance + gamePotsHeld + adjustments,
   }
 }
 
@@ -840,6 +846,7 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   if (b.unclaimedRewards) details.push(['Unclaimed rewards', sats(b.unclaimedRewards)])
   if (b.donationsBalance) details.push(['Donations', sats(b.donationsBalance)])
   if (b.paidOrdersBalance) details.push(['Pet orders', sats(b.paidOrdersBalance)])
+  if (b.gamePotsHeld) details.push(['Game bets held', sats(b.gamePotsHeld)])
   if (b.adjustments) details.push(['Operator credit', signedSats(b.adjustments)])
 
   // Node-side movement that the app ledger doesn't see
