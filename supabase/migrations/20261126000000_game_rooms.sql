@@ -388,6 +388,9 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'device_not_found'; END IF;
   IF p_game NOT IN ('pickleball', 'flappy', 'satcatcher') THEN RAISE EXCEPTION 'invalid_game'; END IF;
   IF p_bet IS NULL OR p_bet NOT IN (0, 10, 50, 100, 500) THEN RAISE EXCEPTION 'invalid_bet'; END IF;
+  IF p_game = 'pickleball' AND (p_mac IS NULL OR p_mac !~ '^([0-9A-F]{2}:){5}[0-9A-F]{2}$') THEN
+    RAISE EXCEPTION 'invalid_request';
+  END IF;
 
   -- A device that left a room behind (crash, power off) gets out of it first.
   FOR v_old IN SELECT room_id FROM game_room_players WHERE device_id = p_device AND active LOOP
@@ -471,6 +474,10 @@ BEGIN
   END IF;
   IF r.status <> 'open' OR r.expires_at <= now() THEN RAISE EXCEPTION 'room_closed'; END IF;
   IF NOT game_room_can_see(d.user_id, r.host_user_id) THEN RAISE EXCEPTION 'room_not_found'; END IF;
+  -- Pickleball needs every pet's radio address; refuse before holding a bet
+  IF r.game_type = 'pickleball' AND (p_mac IS NULL OR p_mac !~ '^([0-9A-F]{2}:){5}[0-9A-F]{2}$') THEN
+    RAISE EXCEPTION 'invalid_request';
+  END IF;
 
   FOR v_old IN SELECT room_id FROM game_room_players WHERE device_id = p_device AND active LOOP
     PERFORM _game_room_tick(v_old.room_id);
@@ -737,6 +744,30 @@ RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS 
    WHERE r.status IN ('open', 'playing') AND gp.status = 'joined' AND gp.refund_tx_id IS NULL
 $$;
 
+-- Removing a pet (unpairing) ends any live room it's in and returns every bet
+-- first; otherwise the cascade would delete the room and its held sats.
+CREATE OR REPLACE FUNCTION _game_rooms_before_device_delete()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_room RECORD;
+BEGIN
+  FOR v_room IN
+    SELECT DISTINCT gp.room_id FROM game_room_players gp
+      JOIN game_rooms r ON r.id = gp.room_id
+     WHERE gp.device_id = OLD.id AND r.status IN ('open', 'playing')
+    UNION
+    SELECT id FROM game_rooms WHERE host_device_id = OLD.id AND status IN ('open', 'playing')
+  LOOP
+    PERFORM _game_room_void(v_room.room_id, 'device_removed');
+  END LOOP;
+  RETURN OLD;
+END; $$;
+
+DROP TRIGGER IF EXISTS game_rooms_before_device_delete ON devices;
+CREATE TRIGGER game_rooms_before_device_delete
+  BEFORE DELETE ON devices
+  FOR EACH ROW EXECUTE FUNCTION _game_rooms_before_device_delete();
+
 -- ---------------------------------------------------------------------------
 -- Permissions: service_role only
 -- ---------------------------------------------------------------------------
@@ -766,7 +797,8 @@ BEGIN
     'game_room_state(uuid, uuid)',
     'game_room_current(uuid)',
     'game_rooms_sweep()',
-    'game_rooms_held_sats()'
+    'game_rooms_held_sats()',
+    '_game_rooms_before_device_delete()'
   ] LOOP
     EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f);
     EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f);

@@ -12,7 +12,7 @@
  * authenticate, call them, and translate their errors.
  */
 import { NextRequest, NextResponse } from "next/server"
-import { createHash, timingSafeEqual } from "crypto"
+import { createHash, randomBytes, timingSafeEqual } from "crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { checkRateLimit } from "@/lib/rate-limiter"
 
@@ -43,34 +43,39 @@ function secretsMatch(secret: string, storedHash: string): boolean {
 
 /**
  * A device claims its game secret: the pet generates it and sends it in the
- * config request (X-Game-Secret-Claim). The first claim is stored (as a hash);
- * repeating the same secret is accepted (safe to retry if a response is lost);
- * a different secret is refused unless the device is pairing again
- * (pairing-code auth), which replaces it. The server never sends a secret.
+ * config request (X-Game-Secret-Claim). Only the pet's owner can let a secret
+ * in: a claim is stored only when the same request proves the owner just
+ * linked the pet (`ownerLinked`: the pairing code they entered in the app
+ * matches). Otherwise a claim is accepted only if it repeats the stored
+ * secret, so a retry after a lost response still works and nobody else can
+ * set or replace it. Only the hash is stored; the server never sends a secret.
  */
 export async function claimGameSecret(
   supabase: SupabaseClient,
   deviceId: string,
   secret: string,
-  opts: { rotate: boolean }
+  opts: { ownerLinked: boolean }
 ): Promise<boolean> {
   if (!SECRET_RE.test(secret)) return false
   const hash = hashGameSecret(secret)
-  const { data: device } = await supabase.from("devices").select("game_secret_hash").eq("id", deviceId).maybeSingle()
-  if (!device) return false
-  if (device.game_secret_hash && !opts.rotate) {
-    const a = Buffer.from(hash, "hex")
-    const b = Buffer.from(device.game_secret_hash, "hex")
-    return a.length === b.length && timingSafeEqual(a, b)
+  if (opts.ownerLinked) {
+    const { data, error } = await supabase
+      .from("devices")
+      .update({ game_secret_hash: hash, game_secret_issued_at: new Date().toISOString() })
+      .eq("id", deviceId)
+      .select("id")
+    return !error && !!data && data.length === 1
   }
-  let q = supabase
-    .from("devices")
-    .update({ game_secret_hash: hash, game_secret_issued_at: new Date().toISOString() })
-    .eq("id", deviceId)
-  // Without a new pairing, only the first claim may set it (no race to overwrite)
-  if (!opts.rotate) q = q.is("game_secret_hash", null)
-  const { data, error } = await q.select("id")
-  return !error && !!data && data.length === 1
+  const { data: device } = await supabase.from("devices").select("game_secret_hash").eq("id", deviceId).maybeSingle()
+  if (!device?.game_secret_hash) return false
+  const a = Buffer.from(hash, "hex")
+  const b = Buffer.from(device.game_secret_hash, "hex")
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** A pairing code that has been used to link a pet: random, never shown or guessable. */
+export function consumedPairingCode(): string {
+  return `USED-${randomBytes(9).toString("hex").toUpperCase()}`
 }
 
 export type GameDevice = { id: string; user_id: string; pet_name: string }

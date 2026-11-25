@@ -95,9 +95,9 @@ describe('game rooms: authentication', () => {
     expect(await balance(a.userId)).toBe(1000)
   })
 
-  it('a pet claims its secret through device config; the first claim sticks until it pairs again', async () => {
+  it('only a pet its owner just linked can set a secret; anyone else holding the id cannot', async () => {
     const user = await seedUser()
-    const device = await seedDevice(user.id)
+    const device = await seedDevice(user.id, { pairingCode: 'ABC234' })
     const fetchConfig = async (h: Record<string, string>) => {
       const res = await configGET(new NextRequest('http://localhost/api/device/config', { headers: h }))
       return (await res.json()).config
@@ -107,23 +107,31 @@ describe('game rooms: authentication', () => {
 
     // Old firmware doesn't claim: nothing stored
     expect((await fetchConfig({ 'X-Device-Id': device.id })).gameSecretAccepted).toBeUndefined()
-
-    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
-    // Retrying the same claim (a lost response) is fine
-    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
-    // Someone else holding the device id can't replace it
+    // The device id alone can't set the first secret
     expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': thief })).gameSecretAccepted).toBe(false)
-    const stored = await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])
-    expect(stored.game_secret_hash).toBe(hashGameSecret(mine))
+    // Nor can a wrong pairing code
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Pairing-Code': 'ZZZ999', 'X-Game-Secret-Claim': thief })).gameSecretAccepted).toBe(false)
+
+    // The pet with the code its owner just entered can
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Pairing-Code': 'ABC234', 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
+    const row = await queryOne<{ game_secret_hash: string; pairing_code: string }>(`SELECT game_secret_hash, pairing_code FROM devices WHERE id = $1`, [device.id])
+    expect(row.game_secret_hash).toBe(hashGameSecret(mine))
+    // ...and the code is used up
+    expect(row.pairing_code).toMatch(/^USED-/)
+
+    // A retry of the same claim (lost response) is fine, even with the old code
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Pairing-Code': 'ABC234', 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
+    // A different secret is refused, even with the old code
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Pairing-Code': 'ABC234', 'X-Game-Secret-Claim': thief })).gameSecretAccepted).toBe(false)
+    expect((await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])).game_secret_hash).toBe(hashGameSecret(mine))
     // The config response never carries a secret
     expect(JSON.stringify(await fetchConfig({ 'X-Device-Id': device.id }))).not.toContain(mine)
 
-    // Pairing again (one-shot pairing code) replaces it
+    // The owner linking the pet again (a new code from the app) replaces it
     const fresh = randomBytes(32).toString('hex')
-    await queryDB(`UPDATE devices SET pairing_code = 'PAIR42' WHERE id = $1`, [device.id])
-    expect((await fetchConfig({ 'X-Pairing-Code': 'PAIR42', 'X-Game-Secret-Claim': fresh })).gameSecretAccepted).toBe(true)
-    const rotated = await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])
-    expect(rotated.game_secret_hash).toBe(hashGameSecret(fresh))
+    await queryDB(`UPDATE devices SET pairing_code = 'NEW567' WHERE id = $1`, [device.id])
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Pairing-Code': 'NEW567', 'X-Game-Secret-Claim': fresh })).gameSecretAccepted).toBe(true)
+    expect((await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])).game_secret_hash).toBe(hashGameSecret(fresh))
   })
 })
 
@@ -220,6 +228,36 @@ describe('game rooms: holding and returning bets', () => {
     expect(s.body.room.status).toBe('void')
     expect(s.body.room.voidReason).toBe('expired')
     expect(await balance(host.userId)).toBe(1000)
+    expect(await balance(kid.userId)).toBe(1000)
+  })
+
+  it('removing a pet in a live room returns every bet', async () => {
+    const players = await family(3)
+    const room = (await create(players[0], 'flappy', 100)).body.room
+    await act(players[1], room.roomId, 'join')
+    await act(players[2], room.roomId, 'join')
+    expect(await totalBalance(players)).toBe(2700)
+    await queryDB(`DELETE FROM devices WHERE id = $1`, [players[0].deviceId]) // host unpaired
+    expect(await totalBalance(players)).toBe(3000)
+    // A player (not the host) being removed mid-game also returns every bet
+    const r2 = (await create(players[1], 'satcatcher', 50)).body.room
+    await act(players[2], r2.roomId, 'join')
+    await act(players[1], r2.roomId, 'start')
+    await queryDB(`DELETE FROM devices WHERE id = $1`, [players[2].deviceId])
+    expect(await totalBalance(players)).toBe(3000)
+    expect((await queryOne<{ status: string }>(`SELECT status FROM game_rooms WHERE id = $1`, [r2.roomId])).status).toBe('void')
+  })
+
+  it('a Pickleball join without a radio address is refused before any bet is held', async () => {
+    const [host, kid] = await family(2)
+    const room = (await create(host, 'pickleball', 100)).body.room
+    const res = await roomPOST(
+      new NextRequest(`http://localhost/api/game/rooms/${room.roomId}`, {
+        method: 'POST', headers: headers(kid), body: JSON.stringify({ action: 'join' }),
+      }),
+      { params: Promise.resolve({ roomId: room.roomId }) }
+    )
+    expect(res.status).toBe(400)
     expect(await balance(kid.userId)).toBe(1000)
   })
 

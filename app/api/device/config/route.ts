@@ -1,4 +1,4 @@
-import { claimGameSecret } from "@/lib/game-rooms"
+import { claimGameSecret, consumedPairingCode } from "@/lib/game-rooms"
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
@@ -381,12 +381,23 @@ export async function GET(request: NextRequest) {
     }
 
     // A pet running game-room firmware claims its game secret
-    // (X-Game-Secret-Claim). The first claim sticks; pairing again (pairing-code
-    // auth) replaces it. Only the hash is stored; nothing secret is returned.
+    // (X-Game-Secret-Claim). A new secret is accepted only when the owner has
+    // just linked the pet: the request carries the pet's id AND the pairing
+    // code the owner entered in the app (stored on the device row). That code
+    // is then used up. Otherwise only a repeat of the stored secret is accepted.
     let gameSecretAccepted: boolean | undefined
     const claim = request.headers.get("x-game-secret-claim")?.trim().toLowerCase()
     if (claim) {
-      gameSecretAccepted = await claimGameSecret(supabase, device.id, claim, { rotate: !deviceId && !!pairingCode })
+      const storedCode = typeof device.pairing_code === "string" ? device.pairing_code.toUpperCase() : ""
+      const ownerLinked = !!deviceId && !!pairingCode && storedCode.length === 6 && storedCode === pairingCode
+      gameSecretAccepted = await claimGameSecret(supabase, device.id, claim, { ownerLinked })
+      if (ownerLinked && gameSecretAccepted) {
+        await supabase
+          .from("devices")
+          .update({ pairing_code: consumedPairingCode() })
+          .eq("id", device.id)
+          .eq("pairing_code", device.pairing_code)
+      }
     }
 
     // Build config object - only include rejection fields if there's an actual rejection

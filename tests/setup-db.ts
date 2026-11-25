@@ -121,6 +121,16 @@ afterEach(async () => {
       createdConnections.length = 0
     }
 
+    // Game rooms first: deleting a device in a live room refunds its bets
+    // (a trigger), which would write new transactions after they're cleared
+    if (createdUsers.length > 0) {
+      await client.query(
+        `DELETE FROM game_rooms WHERE host_user_id = ANY($1::uuid[])
+            OR id IN (SELECT room_id FROM game_room_players WHERE user_id = ANY($1::uuid[]))`,
+        [createdUsers]
+      )
+    }
+
     // Delete transactions for tracked users
     if (createdUsers.length > 0) {
       await client.query(`DELETE FROM transactions WHERE user_id = ANY($1::uuid[])`, [createdUsers])

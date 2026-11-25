@@ -228,7 +228,9 @@ export default function PetSettingsPage() {
           </div>
           <div>
             <p className="text-lg font-medium">{petName || "Your Pet"}</p>
-            <p className="text-sm text-muted-foreground">Pairing Code: {device.pairing_code}</p>
+            {device.pairing_code && !device.pairing_code.startsWith("USED-") && (
+              <p className="text-sm text-muted-foreground">Pairing Code: {device.pairing_code}</p>
+            )}
           </div>
         </div>
 
