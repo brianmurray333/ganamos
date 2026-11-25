@@ -26,7 +26,8 @@ import {
 import QRCode from "@/components/qr-code"
 import { getCurrentLocationWithName, getPlaceLabel } from "@/lib/geocoding" // Import the geocoding utility
 import { loadGoogleMaps } from "@/lib/google-maps-loader"
-import { ChevronLeft, Search, User, Users, Globe, Lock, X } from "lucide-react"
+import { ChevronLeft, Search, User, Users, Globe, Lock } from "lucide-react"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/loading-spinner"
 import { LocationEditorModal } from "@/components/location-editor-modal"
@@ -237,6 +238,13 @@ export default function NewPostPage() {
     
     fetchFamilyMembers()
   }, [user, supabase, step])
+
+  // Close the username search the same way from every path (X, drag, Escape, outside tap)
+  const closeUsernameSearch = () => {
+    setShowUsernameSearch(false)
+    setUsernameSearchQuery("")
+    setUsernameSearchResults([])
+  }
 
   // Search for username
   useEffect(() => {
@@ -1224,37 +1232,36 @@ export default function NewPostPage() {
                   </div>
                 )}
                 
-                {/* Username Search Modal */}
-                {showUsernameSearch && (
-                  <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-                    <div className="bg-background w-full max-w-md rounded-t-xl sm:rounded-xl p-4 space-y-4 max-h-[80vh] overflow-hidden flex flex-col">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-semibold">Find by username</h3>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            setShowUsernameSearch(false)
-                            setUsernameSearchQuery("")
-                            setUsernameSearchResults([])
-                          }}
-                          className="p-2 hover:bg-muted rounded-full"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
+                {/* Username Search sheet: X, drag, Escape and outside tap all close and clear */}
+                <BottomSheet
+                  open={showUsernameSearch}
+                  onOpenChange={(open) => {
+                    if (!open) closeUsernameSearch()
+                  }}
+                >
+                  <BottomSheetContent
+                    onDismiss={closeUsernameSearch}
+                    aria-describedby={undefined}
+                    header={
+                      <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+                        <BottomSheetTitle className="pr-10 text-xl font-bold">Find by username</BottomSheetTitle>
                       </div>
-                      
+                    }
+                  >
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3 space-y-4">
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <Input
                           placeholder="Search username..."
+                          aria-label="Search username"
                           value={usernameSearchQuery}
                           onChange={(e) => setUsernameSearchQuery(e.target.value)}
                           className="pl-10"
                           autoFocus
                         />
                       </div>
-                      
-                      <div className="flex-1 overflow-y-auto min-h-[200px]">
+
+                      <div className="min-h-[200px]">
                         {isSearchingUsername ? (
                           <div className="flex items-center justify-center py-8">
                             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
@@ -1309,8 +1316,8 @@ export default function NewPostPage() {
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
+                  </BottomSheetContent>
+                </BottomSheet>
 
               <div className="space-y-6">
                 <div className="flex flex-col items-center space-y-4 py-2">
