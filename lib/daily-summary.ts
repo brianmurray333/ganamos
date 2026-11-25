@@ -851,7 +851,9 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
       [`Routing fees earned since ${sinceLabel}`, `${signedSats(t.routingFeesEarned.sats)} (${t.routingFeesEarned.events} forwards)`],
       [`Fees paid since ${sinceLabel}`, `${signedSats(-t.paymentFeesPaid.sats)} (${t.paymentFeesPaid.payments} payments)`],
       [`Payments received since ${sinceLabel}`, `${sats(t.invoicesSettled.sats)} (${t.invoicesSettled.count} invoices)`],
-      ['Closing-fee reserve', `${sats(t.channels.closingFeeReserve)}, counted in the node balance; ${sats(t.channels.anchorReserve)} in anchors, not counted (${t.channels.opened} of ${t.channels.count} channels opened by us)`],
+      ['Closing-fee reserve', reserve === null
+        ? 'Unknown (channels unreadable), not counted in the node balance'
+        : `${sats(reserve)}, counted in the node balance; ${sats(t.channels.anchorReserve)} in anchors, not counted (${t.channels.opened} of ${t.channels.count} channels opened by us)`],
     )
     if (t.channels.inFlight) details.push(['Payments in flight', sats(t.channels.inFlight)])
     if (t.onchainUnconfirmed) details.push(['Unconfirmed on-chain', sats(t.onchainUnconfirmed)])

@@ -130,6 +130,8 @@ describe('generateEmailHTML', () => {
     const noChannels = { ...d, nodeTelemetry: { ...telemetry, errors: ['channels'] } }
     const html2 = generateEmailHTML(noChannels)
     expect(html2).toContain('closing-fee reserve not counted')
+    expect(html2).toContain('Unknown (channels unreadable), not counted in the node balance')
+    expect(html2).not.toContain('counted in the node balance;')
     expect(html2).toContain('App owes more than the node holds')
   })
 
