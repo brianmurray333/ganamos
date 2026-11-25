@@ -119,8 +119,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/", req.url))
   }
 
-  // Handle /pet redirect on main domain to satoshipet.com
-  if (path === "/pet" && !isSatoshiPetDomain) {
+  // Handle /pet and the retired /pet-store page on main domain: redirect to satoshipet.com
+  if ((path === "/pet" || path === "/pet-store") && !isSatoshiPetDomain) {
     return NextResponse.redirect(new URL("https://satoshipet.com"))
   }
 
