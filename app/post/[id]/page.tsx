@@ -2626,6 +2626,19 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               </div>
             </div>
           ) : null}
+          {/* Closing the sheet below must not strand the reward: until it is
+              withdrawn (onSuccess clears anonymousFixedPostId), keep a way back. */}
+          {anonymousFixedPostId === post.id && !showAnonymousRewardOptions && !showLightningModal && (
+            <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] lg:pb-6">
+              <Button
+                size="xl"
+                className="mx-auto flex w-full max-w-md bg-green-600 text-white shadow-lg hover:bg-green-700"
+                onClick={() => setShowAnonymousRewardOptions(true)}
+              >
+                Claim your {formatSatsValue(post.reward)}
+              </Button>
+            </div>
+          )}
           {/* Fix approved (anonymous fixer): sheet with the standard X and drag-to-close.
               Closing only hides it; the withdraw flow opens on top as before. */}
           <BottomSheet
