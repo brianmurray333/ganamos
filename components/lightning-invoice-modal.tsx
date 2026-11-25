@@ -2,14 +2,14 @@
 
 import { getClaimToken } from "@/lib/anonymous-claim"
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { BitcoinLogo } from "@/components/bitcoin-logo"
 import { formatSatsValue } from "@/lib/utils"
-import { AlertCircle, CheckCircle } from "lucide-react"
+import { AlertCircle, CheckCircle, Lock } from "lucide-react"
 
 interface LightningInvoiceModalProps {
   open: boolean
@@ -126,13 +126,27 @@ export function LightningInvoiceModal({
   }
 
 
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Withdraw Your Reward</DialogTitle>
-        </DialogHeader>
+  // Same condition handleClose uses: while a payment is in flight (and on the
+  // success screen) no dismiss path may close the sheet.
+  const canDismiss = !isProcessing && !paymentComplete
 
+  return (
+    <BottomSheet open={open} onOpenChange={handleClose}>
+      <BottomSheetContent
+        dismissible={canDismiss}
+        onDismiss={handleClose}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">Withdraw Your Reward</BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         {step === "input" && (
           <div className="space-y-4">
             <div className="p-4 bg-amber-50 dark:bg-amber-950/20 rounded-lg">
@@ -185,6 +199,10 @@ export function LightningInvoiceModal({
               </p>
               <p className="text-xs text-muted-foreground mt-2">This usually takes a few seconds</p>
             </div>
+            <p className="flex items-center justify-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+              <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+              Can&apos;t be closed until the payment is done.
+            </p>
           </div>
         )}
 
@@ -204,8 +222,8 @@ export function LightningInvoiceModal({
             </div>
           </div>
         )}
-      </DialogContent>
-
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
