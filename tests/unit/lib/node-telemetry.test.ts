@@ -129,7 +129,10 @@ describe('daily summary email with telemetry', () => {
     expect(html).toContain('+8 sats (2 forwards)')
     expect(html).toContain('−4 sats (1 payments)')
     expect(html).toContain('600 sats (1 invoices)')
-    expect(html).toContain('1,500 sats + 660 sats anchors')
+    expect(html).toContain('1,500 sats, counted in the node balance; 660 sats in anchors, not counted')
+    // 787,000 + the 1,500 sats reserve compared against the app's 787,000
+    expect(html).toContain('788,500 sats')
+    expect(html).toContain('+1,500 sats')
     expect(html).toContain('Payments in flight')
   })
 })
