@@ -387,7 +387,7 @@ export default function SatoshiPetPage() {
         {step === 'landing' && (
           <>
             {/* Hero: the device turning in space */}
-            <section className="relative isolate overflow-hidden md:min-h-[min(100svh,980px)] md:flex md:items-center">
+            <section className="relative isolate overflow-hidden md:min-h-[min(86svh,820px)] md:flex md:items-center">
               <div className="relative -z-10 aspect-[4/5] w-full md:absolute md:inset-0 md:aspect-auto" aria-hidden="true">
                 {/* Still frame underneath: shows before the video starts and for reduced motion */}
                 <picture>
@@ -414,12 +414,7 @@ export default function SatoshiPetPage() {
 
               <div className="relative w-full max-w-6xl mx-auto px-4 -mt-44 pb-14 md:mt-0 md:pt-28 md:pb-24">
                 <div className="max-w-xl">
-                  {PET_PREORDER_ACTIVE && (
-                    <p className="sp-rise inline-flex items-center rounded-full border border-[#F7931A]/40 bg-[#F7931A]/10 px-3 py-1 text-sm font-medium text-[#F7931A] mb-5">
-                      Pre-orders open
-                    </p>
-                  )}
-                  <h1 className="sp-rise text-[2.6rem] leading-[1.05] sm:text-6xl lg:text-7xl font-bold tracking-tight text-balance" style={{ animationDelay: '80ms' }}>
+                  <h1 className="sp-rise text-[2.3rem] leading-[1.05] sm:text-5xl lg:text-6xl font-bold tracking-tight text-balance">
                     A pocket pet that lives <span className="text-[#F7931A] sp-glow-text">on Bitcoin.</span>
                   </h1>
                   <p className="sp-rise mt-5 text-lg text-white/70 max-w-md" style={{ animationDelay: '160ms' }}>
