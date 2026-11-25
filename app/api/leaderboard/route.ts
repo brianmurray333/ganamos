@@ -42,6 +42,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<Leaderboar
           pet_name
         )
       `)
+      .eq('game', 'flappy')
       .order('score', { ascending: false })
       .order('created_at', { ascending: true })
       .limit(20);
@@ -62,7 +63,8 @@ export async function GET(request: NextRequest): Promise<NextResponse<Leaderboar
     // Get total count of entries
     const { count: totalCount, error: countError } = await supabase
       .from('flappy_bird_game')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('game', 'flappy');
 
     if (countError) {
       console.error('Error fetching leaderboard count:', countError);

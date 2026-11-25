@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
 import { getDeviceIdFromRequest, maskDeviceId } from "@/lib/device-identity"
+import { GAME_TYPES, parseGameType } from "@/lib/game-types"
+import type { GameType } from "@/lib/game-types"
 
 export const dynamic = "force-dynamic"
 
@@ -43,12 +45,14 @@ async function fetchDevice(
 
 async function buildLeaderboardResponse(
   supabase: SupabaseClient,
+  game: GameType,
   deviceId?: string,
   fallbackPetName?: string | null,
 ) {
   const leaderboardQuery = supabase
     .from("flappy_bird_game")
     .select("id, score, device_id, created_at, devices!inner(pet_name)")
+    .eq("game", game)
     .order("score", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(5)
@@ -77,6 +81,7 @@ async function buildLeaderboardResponse(
     const { data: bestRows, error: bestError } = await supabase
       .from("flappy_bird_game")
       .select("score")
+      .eq("game", game)
       .eq("device_id", deviceId)
       .order("score", { ascending: false })
       .limit(1)
@@ -91,6 +96,7 @@ async function buildLeaderboardResponse(
       const { count, error: rankError } = await supabase
         .from("flappy_bird_game")
         .select("score", { count: "exact", head: true })
+        .eq("game", game)
         .gt("score", personalBest)
 
       if (rankError) {
@@ -169,6 +175,17 @@ export async function POST(request: NextRequest) {
 
     const score = Math.floor(scoreValue)
 
+    const game = parseGameType(body?.game)
+    if (!game) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Unknown game. Expected one of: ${GAME_TYPES.join(", ")}`,
+        },
+        { status: 400 },
+      )
+    }
+
     const supabase = createServerSupabaseClient()
     const device = await fetchDevice(supabase, deviceId)
 
@@ -185,6 +202,7 @@ export async function POST(request: NextRequest) {
     const { data: previousRows, error: previousError } = await supabase
       .from("flappy_bird_game")
       .select("score")
+      .eq("game", game)
       .eq("device_id", deviceId)
       .order("score", { ascending: false })
       .limit(1)
@@ -210,6 +228,7 @@ export async function POST(request: NextRequest) {
         device_id: device.id,
         user_id: device.user_id,
         score,
+        game,
       })
       .select("id, score, created_at")
 
@@ -228,6 +247,7 @@ export async function POST(request: NextRequest) {
 
     const leaderboardPayload = await buildLeaderboardResponse(
       supabase,
+      game,
       deviceId,
       device.pet_name,
     )
@@ -243,6 +263,7 @@ export async function POST(request: NextRequest) {
     const { count: currentScoreRankCount, error: currentRankError } = await supabase
       .from("flappy_bird_game")
       .select("score", { count: "exact", head: true })
+      .eq("game", game)
       .gt("score", score)
 
     if (currentRankError) {
@@ -287,6 +308,16 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const deviceId = getDeviceIdFromRequest(request) || undefined
+    const game = parseGameType(request.nextUrl.searchParams.get("game"))
+    if (!game) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Unknown game. Expected one of: ${GAME_TYPES.join(", ")}`,
+        },
+        { status: 400 },
+      )
+    }
 
     const supabase = createServerSupabaseClient()
     let fallbackPetName: string | null | undefined = null
@@ -298,6 +329,7 @@ export async function GET(request: NextRequest) {
 
     const leaderboardPayload = await buildLeaderboardResponse(
       supabase,
+      game,
       deviceId,
       fallbackPetName,
     )
