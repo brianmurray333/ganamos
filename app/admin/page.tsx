@@ -99,7 +99,7 @@ export default function AdminDashboardPage() {
     {
       title: "Pet Orders",
       value: stats.totalOrders,
-      subtitle: `${stats.pendingOrders} pending`,
+      subtitle: `${stats.pendingOrders} paid, to ship`,
       icon: Package,
       href: "/admin/orders",
       color: "text-orange-400",
