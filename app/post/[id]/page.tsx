@@ -15,7 +15,6 @@ import { formatSatsValue } from "@/lib/utils"
 import { BitcoinLogo } from "@/components/bitcoin-logo"
 import { createBrowserSupabaseClient } from "@/lib/supabase"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { Post } from "@/lib/types"
@@ -35,7 +34,7 @@ import dynamic from "next/dynamic"
 import PostDetailSkeleton from "@/components/post-detail-skeleton"
 import { usePendingPost, consumePendingPost, watchPendingPost, claimFailedPendingPost } from "@/lib/pending-post-store"
 import { StaticMapWidget } from "@/components/static-map-widget"
-import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription } from "@/components/ui/bottom-sheet"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription, BottomSheetTrigger } from "@/components/ui/bottom-sheet"
 
 // Dynamically import the map to avoid SSR issues with Google Maps
 const PostDetailMap = dynamic(
@@ -1708,8 +1707,8 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">After</span>{" "}
                 </div>
                 <div className="absolute top-2 right-2 flex space-x-1">
-                  <Dialog open={showNoteDialog} onOpenChange={setShowNoteDialog}>
-                    <DialogTrigger asChild>
+                  <BottomSheet open={showNoteDialog} onOpenChange={setShowNoteDialog}>
+                    <BottomSheetTrigger asChild>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -1730,34 +1729,41 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />{" "}
                         </svg>
                       </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        {" "}
-                        <DialogTitle>Add a note</DialogTitle>{" "}
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label htmlFor="note">Note (optional)</Label>
-                          <Textarea
-                            id="note"
-                            placeholder="Add any details about how you fixed this issue..."
-                            value={fixerNote}
-                            onChange={(e) => setFixerNote(e.target.value)}
-                            className="mt-1"
-                            rows={4}
-                          />
+                    </BottomSheetTrigger>
+                    <BottomSheetContent
+                      onDismiss={() => setShowNoteDialog(false)}
+                      aria-describedby={undefined}
+                      header={
+                        <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+                          <BottomSheetTitle className="pr-10 text-xl font-bold">Add a note</BottomSheetTitle>
                         </div>
-                        <div className="flex justify-end space-x-2">
-                          <Button variant="outline" onClick={() => setShowNoteDialog(false)}>
-                            {" "}
-                            Cancel{" "}
-                          </Button>
-                          <Button onClick={handleSaveNote}>Save note</Button>
+                      }
+                    >
+                      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="note">Note (optional)</Label>
+                            <Textarea
+                              id="note"
+                              placeholder="Add any details about how you fixed this issue..."
+                              value={fixerNote}
+                              onChange={(e) => setFixerNote(e.target.value)}
+                              className="mt-1"
+                              rows={4}
+                            />
+                          </div>
+                          <div className="space-y-2 pt-2">
+                            <Button size="xl" onClick={handleSaveNote} className="w-full">
+                              Save note
+                            </Button>
+                            <Button size="xl" variant="outline" onClick={() => setShowNoteDialog(false)} className="w-full">
+                              Cancel
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </DialogContent>
-                  </Dialog>
+                    </BottomSheetContent>
+                  </BottomSheet>
                   <Button
                     size="sm"
                     variant="secondary"
@@ -2753,12 +2759,21 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
             </button>
           )}
 
-          <Dialog open={showDeadlinePicker && canEditDeadline} onOpenChange={setShowDeadlinePicker}>
-            <DialogContent className="max-w-sm p-5">
-              <DialogHeader className="text-left">
-                <DialogTitle className="text-xl font-bold">{deadline ? "Change deadline" : "Add deadline"}</DialogTitle>
-                <p className="text-sm text-muted-foreground">The post closes and the reward is refunded if nobody fixes it in time.</p>
-              </DialogHeader>
+          <BottomSheet open={showDeadlinePicker && canEditDeadline} onOpenChange={setShowDeadlinePicker}>
+            <BottomSheetContent
+              onDismiss={() => setShowDeadlinePicker(false)}
+              onOpenAutoFocus={(e) => {
+                e.preventDefault()
+                ;(e.currentTarget as HTMLElement | null)?.focus()
+              }}
+              header={
+                <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+                  <BottomSheetTitle className="pr-10 text-xl font-bold">{deadline ? "Change deadline" : "Add deadline"}</BottomSheetTitle>
+                  <BottomSheetDescription className="text-sm text-muted-foreground">The post closes and the reward is refunded if nobody fixes it in time.</BottomSheetDescription>
+                </div>
+              }
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
               <div className="grid grid-cols-2 gap-2">
                 {[{ label: '1 hour', hrs: 1 }, { label: '12 hours', hrs: 12 }, { label: '1 day', hrs: 24 },
                   { label: '3 days', hrs: 72 }, { label: '7 days', hrs: 168 }].map(({ label, hrs }) => (
@@ -2785,8 +2800,9 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                   </Button>
                 )}
               </div>
-            </DialogContent>
-          </Dialog>
+              </div>
+            </BottomSheetContent>
+          </BottomSheet>
 
           {/* Deleted post banner */}
           {post.deleted_at && (

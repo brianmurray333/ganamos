@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -225,15 +225,23 @@ export function CreateGroupDialog({ open, onOpenChange, userId, onSuccess }: Cre
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[425px]">
+    <BottomSheet open={open} onOpenChange={handleClose}>
+      <BottomSheetContent
+        onDismiss={handleClose}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">
+              {step === "create" ? "Create New Group" : `Share ${createdGroup?.name} group`}
+            </BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         {step === "create" ? (
           <>
-            <DialogHeader>
-              <DialogTitle>Create New Group</DialogTitle>
-            </DialogHeader>
             <form onSubmit={handleSubmit}>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4 pb-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">Group Name</Label>
                   <Input
@@ -255,11 +263,8 @@ export function CreateGroupDialog({ open, onOpenChange, userId, onSuccess }: Cre
                   />
                 </div>
               </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={handleClose}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
+              <div className="space-y-2 pt-2">
+                <Button size="xl" type="submit" disabled={isSubmitting} className="w-full">
                   {isSubmitting ? (
                     <div className="flex items-center">
                       <svg
@@ -288,15 +293,15 @@ export function CreateGroupDialog({ open, onOpenChange, userId, onSuccess }: Cre
                     "Create Group"
                   )}
                 </Button>
-              </DialogFooter>
+                <Button size="xl" type="button" variant="outline" onClick={handleClose} className="w-full">
+                  Cancel
+                </Button>
+              </div>
             </form>
           </>
         ) : (
           <>
-            <DialogHeader>
-              <DialogTitle>Share {createdGroup?.name} group</DialogTitle>
-            </DialogHeader>
-            <div className="py-4 space-y-4">
+            <div className="pb-4 space-y-4">
               {/* Invite Link */}
               <div>
                 <p className="text-sm font-medium mb-2 flex items-center gap-1">
@@ -392,7 +397,8 @@ export function CreateGroupDialog({ open, onOpenChange, userId, onSuccess }: Cre
             </Button>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }

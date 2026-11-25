@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -59,13 +59,13 @@ export function AmountInputModal({
   }, [currentAmount])
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="sr-only">Add amount</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-6">
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        aria-describedby={undefined}
+        header={<BottomSheetTitle className="sr-only">Add amount</BottomSheetTitle>}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-6 lg:pt-16 space-y-6">
           {/* Display */}
           <div className="text-center" onKeyDown={handleKeyPress} tabIndex={0}>
             <div className="text-4xl font-bold text-foreground mb-2">
@@ -203,8 +203,8 @@ export function AmountInputModal({
             </Button>
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
 

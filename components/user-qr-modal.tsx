@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/components/auth-provider"
@@ -104,17 +104,27 @@ export function UserQRModal({ open, onOpenChange }: UserQRModalProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[320px]">
-        <DialogHeader>
-          <DialogTitle className="text-center">My QR Code</DialogTitle>
-        </DialogHeader>
-        
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">My QR Code</BottomSheetTitle>
+            <BottomSheetDescription className="text-sm text-muted-foreground">
+              Share this QR code to connect accounts
+            </BottomSheetDescription>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         <div className="flex flex-col items-center space-y-6 py-4">
           {/* User Info */}
           <div className="text-center">
             <h3 className="text-lg font-semibold">{profile?.name || "User"}</h3>
-            <p className="text-sm text-gray-500">Share this QR code to connect accounts</p>
           </div>
 
           {/* QR Code */}
@@ -192,7 +202,8 @@ export function UserQRModal({ open, onOpenChange }: UserQRModalProps) {
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
