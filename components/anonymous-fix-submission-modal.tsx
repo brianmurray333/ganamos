@@ -2,7 +2,7 @@
 
 import { getClaimToken } from "@/lib/anonymous-claim"
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -100,21 +100,29 @@ export function AnonymousFixSubmissionModal({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Fix Submitted for Review</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">Fix Submitted for Review</BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3 space-y-4">
           <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg">
             <p className="text-sm text-center text-muted-foreground mb-3">
               Your fix has been submitted for manual review. To receive your reward when approved, please provide a payment method.
             </p>
             <div className="flex items-center justify-center gap-2">
-              <BitcoinLogo size={24} className="mr-2" />
+              <BitcoinLogo size={24} />
+              {/* formatSatsValue already ends in "sats" */}
               <span className="text-2xl font-bold">{formatSatsValue(rewardAmount)}</span>
-              <span className="text-lg font-normal text-muted-foreground">sats</span>
             </div>
           </div>
 
@@ -174,8 +182,8 @@ export function AnonymousFixSubmissionModal({
             Create an account to track your earnings and receive notifications when your fix is approved
           </p>
         </div>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
 
