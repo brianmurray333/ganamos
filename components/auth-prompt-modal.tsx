@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { User, Wallet } from "lucide-react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetDescription, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { useRouter } from "next/navigation"
 
@@ -32,16 +32,22 @@ export function AuthPromptModal({ open, onOpenChange, feature }: AuthPromptModal
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm gap-6 px-6 pb-6 pt-8">
-        <DialogHeader className="items-center space-y-3 text-center sm:text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-600/15">
-            <Icon className="h-7 w-7 text-green-500" />
+    <BottomSheet open={open} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        header={
+          <div className="flex flex-col items-center space-y-3 px-6 pt-4 text-center lg:pt-10">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-600/15">
+              <Icon className="h-7 w-7 text-green-500" />
+            </div>
+            <BottomSheetTitle className="text-xl font-semibold">{title}</BottomSheetTitle>
+            <BottomSheetDescription className="text-sm text-muted-foreground">
+              Earn sats for fixing things nearby.
+            </BottomSheetDescription>
           </div>
-          <DialogTitle className="text-xl">{title}</DialogTitle>
-          <DialogDescription>Earn sats for fixing things nearby.</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3">
+        }
+      >
+        <div className="flex flex-col gap-3 px-6 pb-6 pt-6">
           <Button size="xl" onClick={handleSignUp} className="w-full bg-green-600 text-white hover:bg-green-700">
             Sign Up
           </Button>
@@ -49,7 +55,7 @@ export function AuthPromptModal({ open, onOpenChange, feature }: AuthPromptModal
             Log In
           </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
