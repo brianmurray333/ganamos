@@ -287,6 +287,9 @@ describe('game rooms: Flappy Pet / Sat Catcher turns', () => {
     expect(await totalBalance(players)).toBe(3000)
     const s = await state(players[1], room.roomId)
     expect(s.body.room.yourPayout).toBe(300)
+    // Bets move sats only; pet coins are untouched
+    const coins = await queryDB<{ pet_coins: number }>(`SELECT pet_coins FROM profiles WHERE id = ANY($1)`, [players.map((p) => p.userId)])
+    expect(coins.every((c) => c.pet_coins === 1000)).toBe(true)
   })
 
   it('a tie splits the pot; the odd sat goes to whoever posted the score first', async () => {

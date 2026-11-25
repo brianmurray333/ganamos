@@ -14,8 +14,10 @@
 -- Money rules:
 --   * Every step that moves sats is ONE function call, so a crash can't leave
 --     sats in two places or nowhere. Held sats are debited from the player's
---     balance (and pet_coins, as atomic_transfer does) with a completed
---     'internal' ledger row; payouts and refunds credit with another.
+--     balance with a completed 'internal' ledger row; payouts and refunds
+--     credit with another. Bets move sats only, never pet_coins: the pet's
+--     coin sync only delivers increases, so coin debits and refunds would
+--     drift between the server and the pet.
 --   * Bets can't spend sats reserved by pending withdrawals.
 --   * Only service_role (the API) may call these functions.
 --
@@ -125,11 +127,7 @@ BEGIN
   IF v_balance - v_pending < p_amount THEN
     RAISE EXCEPTION 'insufficient_balance';
   END IF;
-  UPDATE profiles
-     SET balance = balance - p_amount,
-         pet_coins = COALESCE(pet_coins, 0) - p_amount,
-         updated_at = now()
-   WHERE id = p_user;
+  UPDATE profiles SET balance = balance - p_amount, updated_at = now() WHERE id = p_user;
   INSERT INTO transactions (id, user_id, type, amount, status, memo, created_at, updated_at)
   VALUES (v_tx, p_user, 'internal', -p_amount, 'completed', p_memo, now(), now());
   RETURN v_tx;
@@ -144,11 +142,7 @@ BEGIN
   IF p_amount IS NULL OR p_amount <= 0 THEN
     RAISE EXCEPTION 'invalid_amount';
   END IF;
-  UPDATE profiles
-     SET balance = balance + p_amount,
-         pet_coins = COALESCE(pet_coins, 0) + p_amount,
-         updated_at = now()
-   WHERE id = p_user;
+  UPDATE profiles SET balance = balance + p_amount, updated_at = now() WHERE id = p_user;
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 1 THEN
     RAISE EXCEPTION 'profile_not_found';
