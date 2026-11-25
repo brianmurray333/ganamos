@@ -7,6 +7,11 @@
  * handle/header down to dismiss. Pads for the home indicator.
  * On desktop (lg, where the desktop header shows) it becomes a full-height
  * drawer that slides in from the right.
+ *
+ * Only the handle/header area starts a drag; the scrolling body (and anything
+ * in it, e.g. a map) never moves the sheet. Pass `dismissible={false}` to
+ * block every dismiss path (X, drag, Escape, outside tap) while something
+ * must not be interrupted, such as a payment in flight.
  */
 
 import * as React from "react"
@@ -25,14 +30,34 @@ type ContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Conten
   /** Fixed area above the scrolling body (title etc.); also the drag area */
   header?: React.ReactNode
   onDismiss?: () => void
+  /**
+   * false blocks the X, drag-to-dismiss, Escape and outside tap; the handle
+   * and X are dimmed. Default true.
+   */
+  dismissible?: boolean
 }
 
 export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, ContentProps>(
-  ({ className, children, header, onDismiss, style, ...props }, ref) => {
+  (
+    {
+      className,
+      children,
+      header,
+      onDismiss,
+      dismissible = true,
+      style,
+      onEscapeKeyDown,
+      onPointerDownOutside,
+      onInteractOutside,
+      ...props
+    },
+    ref
+  ) => {
     const [dragY, setDragY] = React.useState(0)
     const start = React.useRef<number | null>(null)
 
     const onPointerDown = (e: React.PointerEvent) => {
+      if (!dismissible) return
       if (e.pointerType === "mouse" && e.button !== 0) return
       // Drag-to-dismiss is a bottom-sheet gesture; not for the desktop drawer
       if (window.matchMedia("(min-width: 1024px)").matches) return
@@ -46,7 +71,7 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
     const onPointerEnd = () => {
       if (start.current === null) return
       start.current = null
-      if (dragY > DISMISS_DISTANCE) onDismiss?.()
+      if (dragY > DISMISS_DISTANCE && dismissible) onDismiss?.()
       setDragY(0)
     }
 
@@ -71,6 +96,18 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
             transition: start.current === null ? "transform 200ms ease-out" : "none",
           }}
           {...props}
+          onEscapeKeyDown={(e) => {
+            onEscapeKeyDown?.(e)
+            if (!dismissible) e.preventDefault()
+          }}
+          onPointerDownOutside={(e) => {
+            onPointerDownOutside?.(e)
+            if (!dismissible) e.preventDefault()
+          }}
+          onInteractOutside={(e) => {
+            onInteractOutside?.(e)
+            if (!dismissible) e.preventDefault()
+          }}
         >
           <div
             className="shrink-0 touch-none select-none"
@@ -79,13 +116,16 @@ export const BottomSheetContent = React.forwardRef<React.ElementRef<typeof Dialo
             onPointerUp={onPointerEnd}
             onPointerCancel={onPointerEnd}
           >
-            <div className="flex justify-center pb-1 pt-2 lg:hidden" aria-hidden="true">
-              <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+            <div className="flex justify-center pb-1 pt-2 lg:hidden" aria-hidden="true" data-sheet-handle="">
+              <div className={cn("h-1.5 w-10 rounded-full bg-muted-foreground/30", !dismissible && "opacity-40")} />
             </div>
             {header}
           </div>
           {children}
-          <DialogPrimitive.Close className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full opacity-70 transition-opacity hover:bg-accent hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <DialogPrimitive.Close
+            disabled={!dismissible}
+            className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full opacity-70 transition-opacity hover:bg-accent hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-30"
+          >
             <X className="h-5 w-5" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>

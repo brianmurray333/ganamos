@@ -1,14 +1,16 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import Image from "next/image"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle, BottomSheetDescription } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { createDonationInvoice, checkDonationPayment } from "@/app/actions/donation-actions"
 import QRCode from "@/components/qr-code"
 import { LocationInput } from "@/components/location-input"
 import dynamic from "next/dynamic"
-import { Heart, Bitcoin, Copy, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react"
+import { BitcoinLogo } from "@/components/bitcoin-logo"
+import { Copy, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react"
 
 const MapView = dynamic(
   () => import("@/components/map-view").then((mod) => mod.MapView),
@@ -228,19 +230,33 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-orange-100 rounded-full">
-              <Heart className="w-5 h-5 text-orange-600" />
-            </div>
-            <DialogTitle>Donate Bitcoin to Support Your Community</DialogTitle>
+    <BottomSheet open={open} onOpenChange={handleClose}>
+      {/* Closing at any step (including with an invoice showing) runs
+          handleClose, exactly as the dialog did. */}
+      <BottomSheetContent
+        onDismiss={handleClose}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="flex items-center gap-3 pr-10 text-xl font-bold">
+              {/* Same Bitcoin logo treatment as the wallet balance */}
+              <span className="shrink-0 rounded-full bg-amber-100 p-1.5 dark:bg-amber-950/50">
+                <Image src="/images/bitcoin-logo.png" alt="" width={24} height={24} className="object-contain" />
+              </span>
+              Donate Bitcoin
+            </BottomSheetTitle>
+            <BottomSheetDescription className="mt-1 text-sm text-muted-foreground">
+              Your donation will boost rewards for community issues in your chosen location.
+            </BottomSheetDescription>
           </div>
-          <p className="text-sm text-gray-600">
-            Your donation will boost rewards for community issues in your chosen location.
-          </p>
-        </DialogHeader>
+        }
+      >
+        {/* Only the handle/header drags the sheet; this body (and the map in
+            it) never does. */}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4">
 
         {step === "location" && (
           <div className="space-y-4">
@@ -250,6 +266,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                 value={locationName}
                 onChange={handleLocationChange}
                 placeholder="Search for a city, neighborhood, or region..."
+                inlineResults
               />
             </div>
             <Button size="xl" onClick={handleContinue} disabled={!locationName || !selectedLocation} className="w-full">
@@ -260,7 +277,10 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
 
         {step === "map" && selectedLocation && (
           <div className="space-y-4">
-            <div className="h-64 w-full rounded-lg overflow-hidden">
+            {/* Map guard: touch-action none + greedy gesture handling (MapView)
+                keep pans and pinches on the map, so they never scroll the
+                sheet body; the body is outside the sheet's drag area. */}
+            <div className="h-64 w-full rounded-lg overflow-hidden touch-none overscroll-contain">
               <MapView
                 posts={posts}
                 center={selectedLocation}
@@ -284,7 +304,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                     variant="outline"
                     className="flex items-center gap-2 h-16"
                   >
-                    <Bitcoin className="w-4 h-4" />
+                    <BitcoinLogo size={16} />
                     {amount.label}
                   </Button>
                 ))}
@@ -301,7 +321,7 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                   <CheckCircle className="w-16 h-16 text-green-500" />
                 </div>
                 <p className="text-lg font-semibold text-green-600">Payment Detected!</p>
-                <p className="text-sm text-gray-600">Processing your donation...</p>
+                <p className="text-sm text-muted-foreground">Processing your donation...</p>
               </div>
             ) : (
               <>
@@ -312,8 +332,8 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                 <div className="flex justify-center">
                   <QRCode data={paymentRequest} size={200} />
                 </div>
-                <div className="flex items-center gap-2 text-xs bg-gray-100 p-2 rounded">
-                  <div className="flex-1 font-mono">
+                <div className="flex items-center gap-2 text-xs bg-muted p-2 rounded">
+                  <div className="flex-1 min-w-0 break-all font-mono">
                     {showFullPaymentRequest
                       ? paymentRequest
                       : `${paymentRequest.slice(0, 20)}...${paymentRequest.slice(-20)}`}
@@ -335,11 +355,11 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Donating {selectedAmount.toLocaleString()} sats to {locationName}
                 </p>
                 {isCheckingPayment && <p className="text-xs text-blue-600">Waiting for payment confirmation...</p>}
-                <Button onClick={() => setStep("success")} variant="outline" className="mt-4">
+                <Button size="xl" onClick={() => setStep("success")} variant="outline" className="mt-4 w-full">
                   I've Paid (Manual)
                 </Button>
               </>
@@ -354,20 +374,21 @@ export function DonationModal({ open, onOpenChange, preSelectedLocation }: Donat
               Your {selectedAmount.toLocaleString()} sats will help boost community fixes in {locationName}.
             </p>
 
-            <div className="bg-blue-50 p-4 rounded-lg">
+            <div className="bg-blue-50 dark:bg-blue-950/30 p-4 rounded-lg">
               <p className="text-sm mb-3">Want to be notified when your donation helps fix an issue?</p>
-              <div className="flex gap-2 justify-center">
-                <Button asChild>
+              <div className="flex flex-col gap-2">
+                <Button size="xl" asChild className="w-full">
                   <a href="/auth/register">Create Account</a>
                 </Button>
-                <Button variant="outline" onClick={handleClose}>
+                <Button size="xl" variant="outline" onClick={handleClose} className="w-full">
                   No Thanks
                 </Button>
               </div>
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }

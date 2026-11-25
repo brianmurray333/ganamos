@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { toast } from "@/components/ui/toast"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
@@ -183,13 +183,17 @@ export function LocationEditorModal({
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit Location</DialogTitle>
-        </DialogHeader>
-        
-        <div className="space-y-4">
+    <BottomSheet open={isOpen} onOpenChange={onOpenChange}>
+      <BottomSheetContent
+        onDismiss={() => onOpenChange(false)}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">Edit Location</BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3 space-y-4">
           {/* Search Input */}
           <div className="relative">
             <Input
@@ -225,47 +229,47 @@ export function LocationEditorModal({
                 </svg>
               </div>
             )}
-            
-            {/* Autocomplete Results */}
-            {showResults && searchResults.length > 0 && (
-              <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-                {searchResults.map((result) => (
-                  <button
-                    key={result.place_id}
-                    type="button"
-                    className="w-full text-left px-4 py-3 hover:bg-gray-100 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 last:border-b-0 transition-colors"
-                    onClick={() => handlePlaceSelect(result.place_id, result.description)}
-                  >
-                    <div className="flex items-start gap-2">
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="mt-0.5 text-gray-400 flex-shrink-0"
-                      >
-                        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                        <circle cx="12" cy="10" r="3" />
-                      </svg>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {result.structured_formatting.main_text}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {result.structured_formatting.secondary_text}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
+
+          {/* Autocomplete Results: in-flow under the input; the sheet body scrolls */}
+          {showResults && searchResults.length > 0 && (
+            <div className="-mx-2">
+              {searchResults.map((result) => (
+                <button
+                  key={result.place_id}
+                  type="button"
+                  className="w-full text-left px-2 py-3 rounded-md hover:bg-accent border-b border-border last:border-b-0 transition-colors"
+                  onClick={() => handlePlaceSelect(result.place_id, result.description)}
+                >
+                  <div className="flex items-start gap-2">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="mt-0.5 text-gray-400 flex-shrink-0"
+                    >
+                      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        {result.structured_formatting.main_text}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {result.structured_formatting.secondary_text}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="flex flex-col gap-2">
@@ -275,6 +279,7 @@ export function LocationEditorModal({
                 variant="outline"
                 onClick={handleUseCurrentLocation}
                 disabled={isGettingLocation}
+                size="xl"
                 className="w-full"
               >
                 {isGettingLocation ? (
@@ -333,6 +338,7 @@ export function LocationEditorModal({
                 type="button"
                 variant="outline"
                 onClick={handleRemoveLocation}
+                size="xl"
                 className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
               >
                 <svg
@@ -356,8 +362,8 @@ export function LocationEditorModal({
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
 

@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { BottomSheet, BottomSheetContent, BottomSheetTitle } from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -400,13 +400,28 @@ export function AddConnectedAccountDialog({ open, onOpenChange, onAccountAdded }
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>{getDialogTitle()}</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 py-4">
+    <BottomSheet open={open} onOpenChange={handleClose}>
+      <BottomSheetContent
+        onDismiss={handleClose}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        onEscapeKeyDown={(e) => {
+          // Escape over the full-screen scanner closes the scanner, not the sheet
+          if (showQRScanner) {
+            e.preventDefault()
+            setShowQRScanner(false)
+          }
+        }}
+        aria-describedby={undefined}
+        header={
+          <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+            <BottomSheetTitle className="pr-10 text-xl font-bold">{getDialogTitle()}</BottomSheetTitle>
+          </div>
+        }
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 space-y-4">
           {showChildAccountForm ? (
             <form onSubmit={handleCreateChildAccount} className="space-y-4">
               <div className="space-y-2">
@@ -685,14 +700,16 @@ export function AddConnectedAccountDialog({ open, onOpenChange, onAccountAdded }
             </div>
           )}
         </div>
-      </DialogContent>
-      
-      {/* QR Scanner */}
-      <QRScanner
-        isOpen={showQRScanner}
-        onScan={handleQRScan}
-        onClose={() => setShowQRScanner(false)}
-      />
-    </Dialog>
+
+        {/* QR Scanner: its own full-screen layer (fixed, z-[60]) above the sheet.
+            Rendered inside the sheet content so the sheet's focus trap and
+            outside-tap handling treat it as part of the sheet. */}
+        <QRScanner
+          isOpen={showQRScanner}
+          onScan={handleQRScan}
+          onClose={() => setShowQRScanner(false)}
+        />
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }

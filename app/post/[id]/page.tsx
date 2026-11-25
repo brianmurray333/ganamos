@@ -2626,15 +2626,46 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
               </div>
             </div>
           ) : null}
-          {showAnonymousRewardOptions && anonymousFixedPostId === post.id && (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-              <Card className="w-full max-w-md">
-                <CardContent className="p-8 text-center">
-                  <h2 className="text-2xl font-bold mb-4">Fix Approved!</h2>
+          {/* Closing the sheet below must not strand the reward: until it is
+              withdrawn (onSuccess clears anonymousFixedPostId), keep a way back. */}
+          {anonymousFixedPostId === post.id && !showAnonymousRewardOptions && !showLightningModal && (
+            <div className="fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] lg:pb-6">
+              <Button
+                size="xl"
+                className="mx-auto flex w-full max-w-md bg-green-600 text-white shadow-lg hover:bg-green-700"
+                onClick={() => setShowAnonymousRewardOptions(true)}
+              >
+                Claim your {formatSatsValue(post.reward)}
+              </Button>
+            </div>
+          )}
+          {/* Fix approved (anonymous fixer): sheet with the standard X and drag-to-close.
+              Closing only hides it; the withdraw flow opens on top as before. */}
+          <BottomSheet
+            open={showAnonymousRewardOptions && anonymousFixedPostId === post.id}
+            onOpenChange={(open) => {
+              if (!open) setShowAnonymousRewardOptions(false)
+            }}
+          >
+            <BottomSheetContent
+              onDismiss={() => setShowAnonymousRewardOptions(false)}
+              onOpenAutoFocus={(e) => {
+                e.preventDefault()
+                ;(e.currentTarget as HTMLElement | null)?.focus()
+              }}
+              aria-describedby={undefined}
+              header={
+                <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+                  <BottomSheetTitle className="pr-10 text-xl font-bold">Fix Approved!</BottomSheetTitle>
+                </div>
+              }
+            >
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-5 space-y-6">
+                <div className="text-center">
                   <p className="text-lg mb-6 text-muted-foreground">
                     You earned
                   </p>
-                  
+
                   {/* Prominent reward amount */}
                   <div className="mb-2">
                     <div className="flex items-center justify-center gap-2">
@@ -2648,35 +2679,35 @@ export default function PostDetailPage({ params }: { params: { id: string } }) {
                       </p>
                     )}
                   </div>
-                  
-                  <p className="mb-8 text-sm text-muted-foreground">
+
+                  <p className="mt-6 text-sm text-muted-foreground">
                     Withdraw your sats now or create an account to save your earnings.
                   </p>
-                  
-                  <div className="space-y-3">
-                    <Button size="xl" className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
-                      Withdraw {formatSatsValue(post.reward)}
-                    </Button>
-                    <Button
-                      size="xl"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        // Store anonymous reward info in localStorage for claiming after signup
-                        if (typeof window !== 'undefined') {
-                          localStorage.setItem('pending_anonymous_reward_post', anonymousFixedPostId || '')
-                          localStorage.setItem('pending_anonymous_reward_amount', post.reward.toString())
-                        }
-                        router.push(`/auth/register?postId=${anonymousFixedPostId}`)
-                      }}
-                    >
-                      Create Account & Save Reward
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          )}
+                </div>
+
+                <div className="space-y-3">
+                  <Button size="xl" className="w-full bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowLightningModal(true)}>
+                    Withdraw {formatSatsValue(post.reward)}
+                  </Button>
+                  <Button
+                    size="xl"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      // Store anonymous reward info in localStorage for claiming after signup
+                      if (typeof window !== 'undefined') {
+                        localStorage.setItem('pending_anonymous_reward_post', anonymousFixedPostId || '')
+                        localStorage.setItem('pending_anonymous_reward_amount', post.reward.toString())
+                      }
+                      router.push(`/auth/register?postId=${anonymousFixedPostId}`)
+                    }}
+                  >
+                    Create Account & Save Reward
+                  </Button>
+                </div>
+              </div>
+            </BottomSheetContent>
+          </BottomSheet>
           <LightningInvoiceModal
             open={showLightningModal}
             onOpenChange={setShowLightningModal}

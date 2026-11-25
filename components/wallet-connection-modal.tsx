@@ -2,12 +2,11 @@
 
 import { useState } from "react"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  BottomSheet,
+  BottomSheetContent,
+  BottomSheetDescription,
+  BottomSheetTitle,
+} from "@/components/ui/bottom-sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -109,22 +108,53 @@ export function WalletConnectionModal({
     }
   }
 
+  // One sheet; the header follows the step
+  const header = (
+    <div className="border-b px-5 pb-3 pt-1 text-left lg:pt-6">
+      {step === "intro" && (
+        <>
+          <BottomSheetTitle className="flex items-center gap-2 pr-10 text-xl font-bold">
+            <Wallet className="h-5 w-5 shrink-0 text-amber-500" />
+            Connect Your Lightning Wallet
+          </BottomSheetTitle>
+          <BottomSheetDescription className="text-sm text-muted-foreground">
+            Use your own Lightning wallet for payments instead of the Ganamos custodial wallet.
+          </BottomSheetDescription>
+        </>
+      )}
+      {step === "connect" && (
+        <>
+          <BottomSheetTitle className="pr-10 text-xl font-bold">Enter Connection Details</BottomSheetTitle>
+          <BottomSheetDescription className="text-sm text-muted-foreground">
+            Paste your NWC connection string from your wallet app.
+          </BottomSheetDescription>
+        </>
+      )}
+      {step === "success" && (
+        <BottomSheetTitle className="flex items-center gap-2 pr-10 text-xl font-bold text-green-600 dark:text-green-400">
+          <CheckCircle2 className="h-5 w-5" />
+          Wallet Connected!
+        </BottomSheetTitle>
+      )}
+    </div>
+  )
+
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-md">
+    <BottomSheet open={open} onOpenChange={handleClose}>
+      <BottomSheetContent
+        onDismiss={handleClose}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
+        {...(step === "success" ? { "aria-describedby": undefined } : {})}
+        header={header}
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-3">
         {step === "intro" && (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Wallet className="h-5 w-5 text-amber-500" />
-                Connect Your Lightning Wallet
-              </DialogTitle>
-              <DialogDescription>
-                Use your own Lightning wallet for payments instead of the Ganamos custodial wallet.
-              </DialogDescription>
-            </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 pt-1">
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
                   <Shield className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
@@ -178,14 +208,8 @@ export function WalletConnectionModal({
 
         {step === "connect" && (
           <>
-            <DialogHeader>
-              <DialogTitle>Enter Connection Details</DialogTitle>
-              <DialogDescription>
-                Paste your NWC connection string from your wallet app.
-              </DialogDescription>
-            </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 pt-1">
               <div className="space-y-2">
                 <Label htmlFor="wallet-name">Wallet Name (Optional)</Label>
                 <Input
@@ -263,14 +287,8 @@ export function WalletConnectionModal({
 
         {step === "success" && connectedWallet && (
           <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                <CheckCircle2 className="h-5 w-5" />
-                Wallet Connected!
-              </DialogTitle>
-            </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 pt-1">
               <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-lg text-center">
                 <Wallet className="h-12 w-12 mx-auto text-green-600 dark:text-green-400 mb-2" />
                 <p className="font-medium">{connectedWallet.name}</p>
@@ -297,7 +315,8 @@ export function WalletConnectionModal({
             </div>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+        </div>
+      </BottomSheetContent>
+    </BottomSheet>
   )
 }
