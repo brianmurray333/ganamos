@@ -1,7 +1,8 @@
 import { Metadata, Viewport } from "next"
 
 export const metadata: Metadata = {
-  // Resolves the generated Open Graph image (opengraph-image.tsx) to an absolute URL
+  // Resolves the Open Graph image (opengraph-image.jpg, a 3D render of the
+  // device) and the looping video to absolute URLs
   metadataBase: new URL("https://satoshipet.com"),
   title: "Satoshi Pet - Make Bitcoin Physical & Fun",
   description: "A cute hardware companion that reacts to your Bitcoin activity. Perfect for making Bitcoin tangible for the whole family.",
@@ -17,6 +18,8 @@ export const metadata: Metadata = {
     url: "https://satoshipet.com",
     siteName: "Satoshi Pet",
     type: "website",
+    // A 5 s loop of the same render; iMessage, Discord and Telegram play it, others show the image
+    videos: [{ url: "/satoshi-pet/og-loop.mp4", type: "video/mp4", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",

@@ -30,11 +30,11 @@ export default function PrivacyPage() {
         <Card className="shadow-lg bg-white">
           <CardContent className="p-8 prose prose-lg max-w-none">
             <div className="text-sm text-gray-600 mb-6">
-              <strong>Effective Date:</strong> June 1st, 2025
+              <strong>Effective Date:</strong> June 1st, 2025 · <strong>Last updated:</strong> November 25, 2026
             </div>
 
             <p className="text-gray-700 mb-6">
-              Ganamos ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy describes how we collect, use, and share your personal information when you use our platform, including our website <a href="https://www.ganamos.earth" className="text-emerald-600 hover:text-emerald-700 underline">https://www.ganamos.earth</a> (the "Site") and associated services (collectively, the "Service").
+              Ganamos ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy describes how we collect, use, and share your personal information when you use our platform, including our website <a href="https://www.ganamos.earth" className="text-emerald-600 hover:text-emerald-700 underline">https://www.ganamos.earth</a> (the "Site"), the Satoshi Pet store at <a href="https://satoshipet.com" className="text-emerald-600 hover:text-emerald-700 underline">https://satoshipet.com</a>, Satoshi Pet devices, and associated services (collectively, the "Service").
             </p>
 
             <h2 className="text-2xl font-bold text-gray-900 mt-8 mb-4">1. Information We Collect</h2>
@@ -53,6 +53,24 @@ export default function PrivacyPage() {
               IP address, browser type, device type, and login timestamp are automatically recorded when you use our service.
             </p>
 
+            <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">c. Satoshi Pet Orders</h3>
+            <p className="text-gray-700 mb-4">
+              When you order a Satoshi Pet at satoshipet.com, we collect what we need to process the order, ship it and contact you about it:
+            </p>
+            <ul className="list-disc pl-6 mb-4 text-gray-700 space-y-2">
+              <li><strong>Contact and shipping details:</strong> your name, email address and shipping address.</li>
+              <li><strong>Order and payment details:</strong> order number, items, prices in sats, the Lightning invoice and whether it was paid. Payment is made over the Bitcoin Lightning Network; we never receive card or bank details.</li>
+              <li><strong>Abuse prevention:</strong> a keyed hash of your IP address (not the address itself), used only to limit how many orders can be placed from one network.</li>
+            </ul>
+            <p className="text-gray-700 mb-4">
+              Each order has a private link that shows its details. Without that link, the order page shows only the order status, amount, city and state, and a masked email address. Don't share your order link.
+            </p>
+
+            <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">d. Satoshi Pet Devices</h3>
+            <p className="text-gray-700 mb-4">
+              A paired Satoshi Pet sends us a device ID, its pet name and type, coin spending, and game scores. Game leaderboards show the pet's name and score to other Satoshi Pet owners.
+            </p>
+
             <h2 className="text-2xl font-bold text-gray-900 mt-8 mb-4">2. How We Use Your Information</h2>
             <p className="text-gray-700 mb-4">We use your information to:</p>
             <ul className="list-disc pl-6 mb-4 text-gray-700 space-y-2">
@@ -61,6 +79,7 @@ export default function PrivacyPage() {
               <li>Ensure the integrity and security of the login process.</li>
               <li>Prevent fraud or unauthorized access.</li>
               <li>Improve and maintain the functionality and reliability of our platform.</li>
+              <li>Process, ship and support Satoshi Pet orders, including refunds, and send order confirmations and shipping updates.</li>
             </ul>
 
             <h2 className="text-2xl font-bold text-gray-900 mt-8 mb-4">3. Communications</h2>
@@ -75,7 +94,8 @@ export default function PrivacyPage() {
             <p className="text-gray-700 mb-4">We do not sell or rent your information.</p>
             <p className="text-gray-700 mb-4">We only share it with:</p>
             <ul className="list-disc pl-6 mb-4 text-gray-700 space-y-2">
-              <li>Service providers (e.g., Twilio, for SMS delivery; Supabase or similar platforms for identity management).</li>
+              <li>Service providers (e.g., Twilio, for SMS delivery; Supabase or similar platforms for identity management and data storage; Resend, for email delivery).</li>
+              <li>The shipping carrier that delivers your Satoshi Pet order, which receives your name and shipping address.</li>
               <li>Government authorities if legally required, such as in response to valid subpoenas or court orders.</li>
             </ul>
 
@@ -90,6 +110,7 @@ export default function PrivacyPage() {
             <h2 className="text-2xl font-bold text-gray-900 mt-8 mb-4">6. Your Choices</h2>
             <ul className="list-disc pl-6 mb-4 text-gray-700 space-y-2">
               <li><strong>Opt-out of messaging:</strong> You may reply "STOP" to any SMS message to prevent further delivery.</li>
+              <li><strong>Orders:</strong> We keep order records for as long as needed to fulfil, support and refund orders and to meet our legal and accounting obligations. To correct a shipping address before your order ships, email <a href="mailto:support@ganamos.earth" className="text-emerald-600 hover:text-emerald-700 underline">support@ganamos.earth</a>.</li>
               <li><strong>Delete your data:</strong> Contact us at <a href="mailto:support@ganamos.earth" className="text-emerald-600 hover:text-emerald-700 underline">support@ganamos.earth</a> to request account deletion or data export.</li>
             </ul>
 

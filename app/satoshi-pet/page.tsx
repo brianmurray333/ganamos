@@ -259,7 +259,6 @@ export default function SatoshiPetPage() {
       a: `You pay now in sats over Lightning and we ship when devices are ready. ${PREORDER_SHIP_ESTIMATE_SENTENCE} You'll get a shipping confirmation with tracking when it's on its way.`,
     },
     {
-      // NEEDS OWNER CONFIRMATION: refund policy wording (draft).
       q: "Can I get a refund?",
       a: `Changed your mind before it ships? Email ${SUPPORT_EMAIL} for a refund in sats.`,
     },
