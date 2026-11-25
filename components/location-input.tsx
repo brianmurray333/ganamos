@@ -8,6 +8,11 @@ interface LocationInputProps {
   onChange: (value: string, placeDetails?: google.maps.places.PlaceResult) => void
   placeholder?: string
   className?: string
+  /**
+   * Render suggestions as a list under the input (for use inside a bottom
+   * sheet) instead of the floating, screen-centered dropdown.
+   */
+  inlineResults?: boolean
 }
 
 declare global {
@@ -16,7 +21,7 @@ declare global {
   }
 }
 
-export function LocationInput({ value, onChange, placeholder, className }: LocationInputProps) {
+export function LocationInput({ value, onChange, placeholder, className, inlineResults = false }: LocationInputProps) {
   const [searchResults, setSearchResults] = useState<google.maps.places.AutocompletePrediction[]>([])
   const [showResults, setShowResults] = useState(false)
   const [autocompleteService, setAutocompleteService] = useState<google.maps.places.AutocompleteService | null>(null)
@@ -149,8 +154,25 @@ export function LocationInput({ value, onChange, placeholder, className }: Locat
         className={className}
       />
 
+      {/* In-flow suggestions (inside a sheet) */}
+      {inlineResults && showResults && searchResults.length > 0 && (
+        <div className="mt-2 -mx-2">
+          {searchResults.map((result) => (
+            <button
+              key={result.place_id}
+              type="button"
+              onClick={() => handlePlaceSelect(result.place_id, result.description)}
+              className="w-full rounded-md border-b border-border px-2 py-3 text-left text-sm transition-colors last:border-b-0 hover:bg-accent"
+            >
+              <div className="font-medium text-foreground">{result.structured_formatting.main_text}</div>
+              <div className="text-xs text-muted-foreground">{result.structured_formatting.secondary_text}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Search Results Dropdown with higher z-index and portal-like positioning */}
-      {showResults && searchResults.length > 0 && (
+      {!inlineResults && showResults && searchResults.length > 0 && (
         <div className="fixed inset-0 z-[9999] pointer-events-none">
           <div
             className="absolute bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto pointer-events-auto"
