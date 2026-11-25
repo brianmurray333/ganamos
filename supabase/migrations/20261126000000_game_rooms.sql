@@ -581,12 +581,17 @@ BEGIN
   RETURN _game_room_view(p_room, p_device);
 END; $$;
 
--- Highest plausible score for a run of p_seconds (server-measured).
+-- Highest plausible score for a run of p_seconds (server-measured), from the
+-- firmware's game constants, with headroom:
+--   Flappy Pet: walls 120 px apart; speed 0.9 px/frame at 60 fps, +0.025 per
+--     wall, so reaching N walls takes ~80*ln(1 + 0.0278N) s. Inverted with a
+--     10% faster clock: N <= (exp(s / 72) - 1) / 0.0278.
+--   Sat Catcher: one item spawns every >= 320 ms, so <= 3.2 catches/s; allow 4.
 CREATE OR REPLACE FUNCTION game_room_score_cap(p_game TEXT, p_seconds NUMERIC)
 RETURNS INTEGER LANGUAGE sql IMMUTABLE AS $$
   SELECT CASE p_game
-    WHEN 'flappy' THEN floor(p_seconds * 1.5)::INTEGER + 3
-    WHEN 'satcatcher' THEN floor(p_seconds * 3)::INTEGER + 3
+    WHEN 'flappy' THEN LEAST(100000, floor((exp(LEAST(p_seconds, 1200) / 72.0) - 1) / 0.0278))::INTEGER + 5
+    WHEN 'satcatcher' THEN floor(p_seconds * 4)::INTEGER + 3
     ELSE 0 END
 $$;
 
@@ -662,6 +667,25 @@ BEGIN
      WHERE room_id = p_room AND status = 'joined'
        AND (CASE WHEN seat IN (0, 3) THEN 'left' ELSE 'right' END) = p_winner;
     PERFORM _game_room_settle(p_room, v_seats);
+  END IF;
+  RETURN _game_room_view(p_room, p_device);
+END; $$;
+
+-- Pickleball: a pet whose match didn't finish (couldn't connect, host lost)
+-- ends it: every bet goes back. Same outcome as a pet that never reports.
+CREATE OR REPLACE FUNCTION game_room_abandon(p_room UUID, p_device UUID)
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  r game_rooms%ROWTYPE;
+BEGIN
+  SELECT * INTO r FROM game_rooms WHERE id = p_room FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'room_not_found'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM game_room_players WHERE room_id = p_room AND device_id = p_device AND status = 'joined') THEN
+    RAISE EXCEPTION 'not_in_room';
+  END IF;
+  IF r.game_type <> 'pickleball' THEN RAISE EXCEPTION 'invalid_game'; END IF;
+  IF r.status = 'playing' THEN
+    PERFORM _game_room_void(p_room, 'unfinished');
   END IF;
   RETURN _game_room_view(p_room, p_device);
 END; $$;
@@ -744,6 +768,7 @@ BEGIN
     'game_room_turn_begin(uuid, uuid)',
     'game_room_turn_submit(uuid, uuid, integer)',
     'game_room_report(uuid, uuid, text, integer, integer)',
+    'game_room_abandon(uuid, uuid)',
     'game_room_state(uuid, uuid)',
     'game_room_current(uuid)',
     'game_rooms_sweep()',

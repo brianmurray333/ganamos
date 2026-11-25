@@ -385,6 +385,13 @@ describe('game rooms: Pickleball results', () => {
     expect(await balance(players[1].userId)).toBe(1000)
   })
 
+  it('a pet whose match did not finish abandons it: every bet goes back at once', async () => {
+    const { players, roomId } = await startPickleball(3)
+    const res = await act(players[2], roomId, 'abandon')
+    expect(res.body.room.status).toBe('void')
+    expect(await totalBalance(players)).toBe(3000)
+  })
+
   it('rejects an impossible result', async () => {
     const { players, roomId } = await startPickleball(2)
     expect((await act(players[0], roomId, 'report', { winner: 'left', left: 2, right: 6 })).status).toBe(400)

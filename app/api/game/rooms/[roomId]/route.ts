@@ -27,6 +27,7 @@ export async function GET(request: NextRequest, { params }: Params) {
  *   turn_begin                      Flappy / Sat Catcher: your turn's run starts now
  *   turn_submit { score }           Flappy / Sat Catcher: your run's score
  *   report { winner, left, right }  Pickleball: the result your pet saw
+ *   abandon                         Pickleball: the match didn't finish; every bet goes back
  */
 export async function POST(request: NextRequest, { params }: Params) {
   const { roomId } = await params
@@ -66,6 +67,8 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
       return callGameRpc(supabase, "game_room_report", { ...base, p_winner: winner, p_left: left, p_right: right })
     }
+    case "abandon":
+      return callGameRpc(supabase, "game_room_abandon", base)
     default:
       return gameError("invalid_request")
   }
