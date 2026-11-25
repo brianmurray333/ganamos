@@ -1,4 +1,4 @@
-import { issueGameSecret } from "@/lib/game-rooms"
+import { claimGameSecret } from "@/lib/game-rooms"
 import { NextRequest, NextResponse } from "next/server"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limiter"
@@ -380,12 +380,13 @@ export async function GET(request: NextRequest) {
       console.warn("[Device Config] Error listing game rooms:", error)
     }
 
-    // A pet running game-room firmware asks for its secret (X-Game-Secret-Request: 1).
-    // It gets one the first time it asks; pairing again (pairing-code auth) replaces it.
-    // The secret is returned only in this response; only its hash is stored.
-    let gameSecret: string | null = null
-    if (request.headers.get("x-game-secret-request") === "1") {
-      gameSecret = await issueGameSecret(supabase, device.id, { rotate: !deviceId && !!pairingCode })
+    // A pet running game-room firmware claims its game secret
+    // (X-Game-Secret-Claim). The first claim sticks; pairing again (pairing-code
+    // auth) replaces it. Only the hash is stored; nothing secret is returned.
+    let gameSecretAccepted: boolean | undefined
+    const claim = request.headers.get("x-game-secret-claim")?.trim().toLowerCase()
+    if (claim) {
+      gameSecretAccepted = await claimGameSecret(supabase, device.id, claim, { rotate: !deviceId && !!pairingCode })
     }
 
     // Build config object - only include rejection fields if there's an actual rejection
@@ -435,7 +436,7 @@ export async function GET(request: NextRequest) {
       config.rejectionPostTitle = ""
     }
 
-    if (gameSecret) config.gameSecret = gameSecret
+    if (gameSecretAccepted !== undefined) config.gameSecretAccepted = gameSecretAccepted
 
     // Return device configuration and user data with explicit no-cache headers
     const response = NextResponse.json({

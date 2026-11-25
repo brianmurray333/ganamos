@@ -95,29 +95,35 @@ describe('game rooms: authentication', () => {
     expect(await balance(a.userId)).toBe(1000)
   })
 
-  it('device config issues the secret once, and again only on a new pairing', async () => {
+  it('a pet claims its secret through device config; the first claim sticks until it pairs again', async () => {
     const user = await seedUser()
     const device = await seedDevice(user.id)
     const fetchConfig = async (h: Record<string, string>) => {
       const res = await configGET(new NextRequest('http://localhost/api/device/config', { headers: h }))
       return (await res.json()).config
     }
-    // Old firmware doesn't ask: nothing issued
-    expect((await fetchConfig({ 'X-Device-Id': device.id })).gameSecret).toBeUndefined()
+    const mine = randomBytes(32).toString('hex')
+    const thief = randomBytes(32).toString('hex')
 
-    const first = await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Request': '1' })
-    expect(first.gameSecret).toMatch(/^[0-9a-f]{64}$/)
+    // Old firmware doesn't claim: nothing stored
+    expect((await fetchConfig({ 'X-Device-Id': device.id })).gameSecretAccepted).toBeUndefined()
+
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
+    // Retrying the same claim (a lost response) is fine
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': mine })).gameSecretAccepted).toBe(true)
+    // Someone else holding the device id can't replace it
+    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Claim': thief })).gameSecretAccepted).toBe(false)
     const stored = await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])
-    expect(stored.game_secret_hash).toBe(hashGameSecret(first.gameSecret))
-
-    // Someone else holding the device id can't get a second one
-    expect((await fetchConfig({ 'X-Device-Id': device.id, 'X-Game-Secret-Request': '1' })).gameSecret).toBeUndefined()
+    expect(stored.game_secret_hash).toBe(hashGameSecret(mine))
+    // The config response never carries a secret
+    expect(JSON.stringify(await fetchConfig({ 'X-Device-Id': device.id }))).not.toContain(mine)
 
     // Pairing again (one-shot pairing code) replaces it
+    const fresh = randomBytes(32).toString('hex')
     await queryDB(`UPDATE devices SET pairing_code = 'PAIR42' WHERE id = $1`, [device.id])
-    const repaired = await fetchConfig({ 'X-Pairing-Code': 'PAIR42', 'X-Game-Secret-Request': '1' })
-    expect(repaired.gameSecret).toMatch(/^[0-9a-f]{64}$/)
-    expect(repaired.gameSecret).not.toBe(first.gameSecret)
+    expect((await fetchConfig({ 'X-Pairing-Code': 'PAIR42', 'X-Game-Secret-Claim': fresh })).gameSecretAccepted).toBe(true)
+    const rotated = await queryOne<{ game_secret_hash: string }>(`SELECT game_secret_hash FROM devices WHERE id = $1`, [device.id])
+    expect(rotated.game_secret_hash).toBe(hashGameSecret(fresh))
   })
 })
 
