@@ -107,9 +107,9 @@ export async function middleware(req: NextRequest) {
     if (path === "/setup") {
       return NextResponse.redirect(new URL("/#setup", req.url))
     }
-    // If at /order/*, rewrite to /satoshi-pet/order/*
+    // If at /order/*, rewrite to /satoshi-pet/order/* (keep the query: it carries the ?t= access token)
     if (path.startsWith("/order/")) {
-      return NextResponse.rewrite(new URL(`/satoshi-pet${path}`, req.url))
+      return NextResponse.rewrite(new URL(`/satoshi-pet${path}${req.nextUrl.search}`, req.url))
     }
     // Already on /satoshi-pet paths, continue normally
     if (path.startsWith("/satoshi-pet")) {

@@ -1,37 +1,68 @@
 "use server"
 
+import { headers } from "next/headers"
 import { createServerSupabaseClient } from "@/lib/supabase"
 import { createInvoice, checkInvoice } from "@/lib/lightning"
-import { Resend } from "resend"
-import { 
-  PET_DEVICE_LIST_PRICE_SATS, 
-  PET_DEVICE_PREORDER_PRICE_SATS,
+import { checkRateLimit } from "@/lib/rate-limiter"
+import {
   SHIPPING_BASE_SATS,
   SHIPPING_AK_HI_SATS,
   VALID_US_STATES,
+  PET_PREORDER_ACTIVE,
+  PET_INVOICE_EXPIRY_SECONDS,
+  currentPetDevicePriceSats,
 } from "@/lib/pet-order-constants"
+import { validatePetOrderShipping, type PetOrderShippingInput } from "@/lib/pet-order-validation"
+import {
+  PET_ORDER_COLUMNS,
+  ORDER_NUMBER_REGEX,
+  accessTokenMatches,
+  generateAccessToken,
+  generateOrderNumber,
+  hashClientIp,
+  invoiceExpiresAt,
+  isInvoiceDead,
+  maskEmail,
+  markPetOrderPaid,
+  syncPetOrderPayment,
+} from "@/lib/pet-orders"
 
-interface CreateOrderParams {
-  email: string
-  fullName: string
-  addressLine1: string
-  addressLine2?: string
-  city: string
-  state: string
-  postalCode: string
-  isPreorder?: boolean
-}
+// Durable (DB-backed) limits on order creation: they hold across Vercel instances.
+const MAX_ORDERS_PER_EMAIL_PER_HOUR = 5
+const MAX_ORDERS_PER_IP_PER_HOUR = 10
+// A reused pending invoice must have at least this long left, so the buyer can still pay it.
+const REUSE_MIN_REMAINING_MS = 10 * 60_000
+
+export type CreateOrderParams = PetOrderShippingInput
 
 interface CreateOrderResult {
   success: boolean
-  orderId?: string
   orderNumber?: string
-  paymentRequest?: string
-  paymentHash?: string
+  accessToken?: string
   totalSats?: number
-  devicePriceSats?: number
-  shippingPriceSats?: number
   error?: string
+  fieldErrors?: Record<string, string>
+}
+
+// Untyped: the generated DB types don't include pet_orders' newer columns, and
+// select(PET_ORDER_COLUMNS) is a runtime string.
+function adminClient(): any {
+  return createServerSupabaseClient({ supabaseKey: process.env.SUPABASE_SECRET_API_KEY })
+}
+
+function clientIp(): string {
+  try {
+    const h = headers()
+    const forwarded = h.get("x-forwarded-for")
+    return (forwarded && forwarded.split(",")[0].trim()) || h.get("x-real-ip") || "unknown"
+  } catch {
+    return "unknown"
+  }
+}
+
+/** Per-instance limiter for cheap first-line throttling (the DB checks are the durable ones). */
+function allowRequest(kind: string, maxRequests: number, windowMs: number): boolean {
+  return checkRateLimit(`pet-order:${kind}:${hashClientIp(clientIp())}`, { maxRequests, windowMs }).allowed
 }
 
 /**
@@ -44,13 +75,12 @@ export async function calculateShippingCost(state: string, postalCode: string): 
   estimatedDays?: string
   error?: string
 }> {
-  const stateUpper = state.toUpperCase()
+  const stateUpper = String(state || "").toUpperCase()
   if (!VALID_US_STATES.includes(stateUpper)) {
     return { success: false, error: "Invalid US state. We currently only ship within the United States." }
   }
 
-  // Shipping tiers based on distance from fulfillment center (simplified)
-  // Alaska and Hawaii get higher shipping
+  // Alaska and Hawaii get higher shipping. estimatedDays is transit time once shipped.
   let shippingSats = SHIPPING_BASE_SATS
   let estimatedDays = "5-7 business days"
 
@@ -67,48 +97,78 @@ export async function calculateShippingCost(state: string, postalCode: string): 
 }
 
 /**
- * Create a new pet device order with Lightning invoice
+ * Create a new pet device order with Lightning invoice.
+ * Price and pre-order status are decided here, never by the client.
  */
 export async function createPetOrder(params: CreateOrderParams): Promise<CreateOrderResult> {
-  const {
-    email,
-    fullName,
-    addressLine1,
-    addressLine2,
-    city,
-    state,
-    postalCode,
-    isPreorder = true,
-  } = params
-
   try {
-    // Validate inputs
-    if (!email || !fullName || !addressLine1 || !city || !state || !postalCode) {
-      return { success: false, error: "All fields are required" }
+    const validation = validatePetOrderShipping(params || ({} as CreateOrderParams))
+    if (!validation.ok) {
+      const first = Object.values(validation.errors)[0]
+      return { success: false, error: first || "Please check your shipping details", fieldErrors: validation.errors as Record<string, string> }
+    }
+    const ship = validation.value
+
+    if (!allowRequest("create", 20, 3600_000)) {
+      return { success: false, error: "Too many orders from this network. Please try again later." }
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      return { success: false, error: "Invalid email address" }
-    }
-
-    // Calculate shipping
-    const shippingResult = await calculateShippingCost(state, postalCode)
+    const shippingResult = await calculateShippingCost(ship.state, ship.postalCode)
     if (!shippingResult.success) {
       return { success: false, error: shippingResult.error }
     }
 
-    // Calculate total
-    const devicePriceSats = isPreorder ? PET_DEVICE_PREORDER_PRICE_SATS : PET_DEVICE_LIST_PRICE_SATS
+    const isPreorder = PET_PREORDER_ACTIVE
+    const devicePriceSats = currentPetDevicePriceSats()
     const shippingPriceSats = shippingResult.shippingSats!
     const totalPriceSats = devicePriceSats + shippingPriceSats
 
-    // Get current Bitcoin price for USD reference
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
+    const adminSupabase = adminClient()
+    const now = Date.now()
+    const ipHash = hashClientIp(clientIp())
 
+    // Reuse an open pending order for the same buyer and address instead of minting a new invoice.
+    let reuseQuery = adminSupabase
+      .from("pet_orders")
+      .select(PET_ORDER_COLUMNS)
+      .eq("email", ship.email)
+      .eq("full_name", ship.fullName)
+      .eq("address_line1", ship.addressLine1)
+      .eq("city", ship.city)
+      .eq("state", ship.state)
+      .eq("postal_code", ship.postalCode)
+      .eq("payment_status", "pending")
+      .eq("total_price_sats", totalPriceSats)
+      .gt("invoice_expires_at", new Date(now + REUSE_MIN_REMAINING_MS).toISOString())
+    reuseQuery = ship.addressLine2 === null
+      ? reuseQuery.is("address_line2", null)
+      : reuseQuery.eq("address_line2", ship.addressLine2)
+    const { data: reusable } = await reuseQuery.order("created_at", { ascending: false }).limit(1)
+    const existing = reusable?.[0]
+    if (existing?.access_token && existing.payment_request) {
+      return {
+        success: true,
+        orderNumber: existing.order_number,
+        accessToken: existing.access_token,
+        totalSats: existing.total_price_sats,
+      }
+    }
+
+    // Durable rate limits: recent orders by email and by (hashed) IP.
+    const hourAgo = new Date(now - 3600_000).toISOString()
+    const [byEmail, byIp] = await Promise.all([
+      adminSupabase.from("pet_orders").select("id").eq("email", ship.email).gte("created_at", hourAgo).limit(MAX_ORDERS_PER_EMAIL_PER_HOUR),
+      adminSupabase.from("pet_orders").select("id").eq("client_ip_hash", ipHash).gte("created_at", hourAgo).limit(MAX_ORDERS_PER_IP_PER_HOUR),
+    ])
+    if (byEmail.error || byIp.error) {
+      console.error("Failed to check order rate limits:", byEmail.error || byIp.error)
+      return { success: false, error: "Failed to create order. Please try again." }
+    }
+    if ((byEmail.data?.length ?? 0) >= MAX_ORDERS_PER_EMAIL_PER_HOUR || (byIp.data?.length ?? 0) >= MAX_ORDERS_PER_IP_PER_HOUR) {
+      return { success: false, error: "Too many orders in the last hour. Please try again later or email support@ganamos.earth." }
+    }
+
+    // Get current Bitcoin price for USD reference (record only; never affects the invoice amount)
     let bitcoinPriceUsd: number | null = null
     try {
       const { data: priceData } = await adminSupabase
@@ -118,7 +178,7 @@ export async function createPetOrder(params: CreateOrderParams): Promise<CreateO
         .order("created_at", { ascending: false })
         .limit(1)
         .single()
-      
+
       if (priceData?.price) {
         bitcoinPriceUsd = Number(priceData.price)
       }
@@ -126,33 +186,37 @@ export async function createPetOrder(params: CreateOrderParams): Promise<CreateO
       console.warn("Could not fetch Bitcoin price for order record")
     }
 
-    // Calculate USD equivalents
     const satsToUsd = (sats: number) => {
       if (!bitcoinPriceUsd) return null
       return Number((sats / 100000000 * bitcoinPriceUsd).toFixed(2))
     }
 
-    // Create Lightning invoice with distinct memo for order tracking
-    // Format: "SATOSHI-PET-ORDER: [details]" - this allows easy filtering
-    const memo = `SATOSHI-PET-ORDER: ${isPreorder ? 'Pre-order' : 'Order'} for ${fullName} (${totalPriceSats} sats)`
-    const invoiceResult = await createInvoice(totalPriceSats, memo)
+    const orderNumber = generateOrderNumber()
+    const accessToken = generateAccessToken()
+
+    // Memo carries the order number only (no buyer details). Expiry is measured from
+    // before the invoice is created, so ours is never later than the node's.
+    const expiresAt = new Date(Date.now() + PET_INVOICE_EXPIRY_SECONDS * 1000)
+    const invoiceResult: any = await createInvoice(totalPriceSats, `SATOSHI-PET-ORDER: ${orderNumber}`)
 
     if (!invoiceResult.success) {
       console.error("Failed to create Lightning invoice:", invoiceResult.error)
       return { success: false, error: "Failed to create payment invoice. Please try again." }
     }
 
-    // Store order in database
     const { data: order, error: orderError } = await adminSupabase
       .from("pet_orders")
       .insert({
-        email: email.toLowerCase(),
-        full_name: fullName,
-        address_line1: addressLine1,
-        address_line2: addressLine2 || null,
-        city,
-        state: state.toUpperCase(),
-        postal_code: postalCode,
+        order_number: orderNumber,
+        access_token: accessToken,
+        client_ip_hash: ipHash,
+        email: ship.email,
+        full_name: ship.fullName,
+        address_line1: ship.addressLine1,
+        address_line2: ship.addressLine2,
+        city: ship.city,
+        state: ship.state,
+        postal_code: ship.postalCode,
         country: 'US',
         device_price_sats: devicePriceSats,
         shipping_price_sats: shippingPriceSats,
@@ -163,27 +227,24 @@ export async function createPetOrder(params: CreateOrderParams): Promise<CreateO
         bitcoin_price_usd: bitcoinPriceUsd,
         payment_request: invoiceResult.paymentRequest,
         payment_hash: invoiceResult.rHash,
+        invoice_expires_at: expiresAt.toISOString(),
         payment_status: 'pending',
         order_status: 'pending',
         is_preorder: isPreorder,
       })
-      .select()
+      .select("order_number, access_token, total_price_sats")
       .single()
 
-    if (orderError) {
+    if (orderError || !order) {
       console.error("Failed to store order:", orderError)
       return { success: false, error: "Failed to create order. Please try again." }
     }
 
     return {
       success: true,
-      orderId: order.id,
       orderNumber: order.order_number,
-      paymentRequest: invoiceResult.paymentRequest,
-      paymentHash: invoiceResult.rHash,
-      totalSats: totalPriceSats,
-      devicePriceSats,
-      shippingPriceSats,
+      accessToken: order.access_token,
+      totalSats: order.total_price_sats,
     }
   } catch (error) {
     console.error("Unexpected error creating pet order:", error)
@@ -192,24 +253,28 @@ export async function createPetOrder(params: CreateOrderParams): Promise<CreateO
 }
 
 /**
- * Check payment status for an order
+ * Check payment status for an order (browser poll). Same code path as the
+ * reconcile cron (syncPetOrderPayment). Returns no buyer details.
  */
 export async function checkOrderPaymentStatus(paymentHash: string): Promise<{
   success: boolean
   paid?: boolean
+  expired?: boolean
   orderNumber?: string
-  email?: string
   error?: string
 }> {
   try {
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
+    if (typeof paymentHash !== "string" || !/^[0-9a-f]{64}$/i.test(paymentHash)) {
+      return { success: false, error: "Order not found" }
+    }
+    if (!allowRequest("poll", 60, 60_000)) {
+      return { success: false, error: "Too many requests" }
+    }
 
-    // First check our database
+    const adminSupabase = adminClient()
     const { data: order, error: orderError } = await adminSupabase
       .from("pet_orders")
-      .select("*")
+      .select(PET_ORDER_COLUMNS)
       .eq("payment_hash", paymentHash)
       .single()
 
@@ -217,57 +282,15 @@ export async function checkOrderPaymentStatus(paymentHash: string): Promise<{
       return { success: false, error: "Order not found" }
     }
 
-    // If already marked as paid, return success
-    if (order.payment_status === 'paid') {
-      return {
-        success: true,
-        paid: true,
-        orderNumber: order.order_number,
-        email: order.email,
-      }
+    const result = await syncPetOrderPayment(adminSupabase, order)
+    if (result.status === "error") {
+      return { success: false, error: result.error }
     }
-
-    // Check Lightning invoice status
-    const invoiceStatus = await checkInvoice(paymentHash)
-
-    if (!invoiceStatus.success) {
-      return { success: false, error: "Failed to check payment status" }
-    }
-
-    // If invoice is settled, update order
-    if (invoiceStatus.settled) {
-      const { error: updateError } = await adminSupabase
-        .from("pet_orders")
-        .update({
-          payment_status: 'paid',
-          paid_at: new Date().toISOString(),
-          order_status: 'confirmed',
-        })
-        .eq("payment_hash", paymentHash)
-
-      if (updateError) {
-        console.error("Failed to update order status:", updateError)
-      }
-
-      // Send confirmation email to customer
-      await sendOrderConfirmationEmail(order.email, order.order_number, order.full_name, order.total_price_sats)
-
-      // Send admin notification
-      await sendAdminOrderNotification(order)
-
-      return {
-        success: true,
-        paid: true,
-        orderNumber: order.order_number,
-        email: order.email,
-      }
-    }
-
     return {
       success: true,
-      paid: false,
+      paid: result.status === "paid",
+      expired: result.status === "expired",
       orderNumber: order.order_number,
-      email: order.email,
     }
   } catch (error) {
     console.error("Error checking order payment status:", error)
@@ -275,63 +298,103 @@ export async function checkOrderPaymentStatus(paymentHash: string): Promise<{
   }
 }
 
-/**
- * Get order details by order number
- */
-export async function getOrderByNumber(orderNumber: string): Promise<{
-  success: boolean
-  order?: {
-    orderNumber: string
-    email: string
-    fullName: string
-    totalPriceSats: number
-    paymentStatus: string
-    orderStatus: string
-    createdAt: string
-    shippingAddress: {
-      line1: string
-      line2?: string
-      city: string
-      state: string
-      postalCode: string
-    }
+export interface PublicOrderView {
+  orderNumber: string
+  paymentStatus: string
+  orderStatus: string
+  totalPriceSats: number
+  createdAt: string
+  isPreorder: boolean
+  city: string
+  state: string
+  maskedEmail: string
+}
+
+export interface FullOrderView extends PublicOrderView {
+  email: string
+  fullName: string
+  devicePriceSats: number
+  shippingPriceSats: number
+  shippingAddress: {
+    line1: string
+    line2?: string
+    city: string
+    state: string
+    postalCode: string
   }
+  trackingNumber: string | null
+  /** Only while the order is unpaid */
+  paymentRequest: string | null
+  paymentHash: string | null
+  invoiceExpiresAt: string | null
+}
+
+/**
+ * Get order details by order number. Without the order's access token this
+ * returns only non-identifying fields; with it (`?t=` from the checkout
+ * redirect or the confirmation email), the full order.
+ */
+export async function getOrderByNumber(orderNumber: string, accessToken?: string | null): Promise<{
+  success: boolean
+  hasAccess?: boolean
+  order?: PublicOrderView | FullOrderView
   error?: string
 }> {
   try {
-    const adminSupabase = createServerSupabaseClient({
-      supabaseKey: process.env.SUPABASE_SECRET_API_KEY,
-    })
+    if (!allowRequest("lookup", 30, 60_000)) {
+      return { success: false, error: "Too many requests. Please wait a minute and try again." }
+    }
+    const normalized = String(orderNumber || "").trim().toUpperCase()
+    if (!ORDER_NUMBER_REGEX.test(normalized)) {
+      return { success: false, error: "Order not found" }
+    }
 
-    const { data: order, error } = await adminSupabase
+    const { data: order, error } = await adminClient()
       .from("pet_orders")
-      .select("*")
-      .eq("order_number", orderNumber.toUpperCase())
+      .select(PET_ORDER_COLUMNS)
+      .eq("order_number", normalized)
       .single()
 
     if (error || !order) {
       return { success: false, error: "Order not found" }
     }
 
-    return {
-      success: true,
-      order: {
-        orderNumber: order.order_number,
-        email: order.email,
-        fullName: order.full_name,
-        totalPriceSats: order.total_price_sats,
-        paymentStatus: order.payment_status,
-        orderStatus: order.order_status,
-        createdAt: order.created_at,
-        shippingAddress: {
-          line1: order.address_line1,
-          line2: order.address_line2,
-          city: order.city,
-          state: order.state,
-          postalCode: order.postal_code,
-        },
-      },
+    const publicView: PublicOrderView = {
+      orderNumber: order.order_number,
+      paymentStatus: order.payment_status,
+      orderStatus: order.order_status,
+      totalPriceSats: order.total_price_sats,
+      createdAt: order.created_at,
+      isPreorder: order.is_preorder === true,
+      city: order.city,
+      state: order.state,
+      maskedEmail: maskEmail(order.email || ""),
     }
+
+    if (!accessTokenMatches(accessToken, order.access_token)) {
+      return { success: true, hasAccess: false, order: publicView }
+    }
+
+    const unpaid = order.payment_status === "pending" || order.payment_status === "expired"
+    const full: FullOrderView = {
+      ...publicView,
+      email: order.email,
+      fullName: order.full_name,
+      devicePriceSats: order.device_price_sats,
+      shippingPriceSats: order.shipping_price_sats,
+      shippingAddress: {
+        line1: order.address_line1,
+        line2: order.address_line2 || undefined,
+        city: order.city,
+        state: order.state,
+        postalCode: order.postal_code,
+      },
+      trackingNumber: order.tracking_number ?? null,
+      paymentRequest: unpaid ? order.payment_request : null,
+      paymentHash: unpaid ? order.payment_hash : null,
+      invoiceExpiresAt: unpaid ? invoiceExpiresAt(order).toISOString() : null,
+    }
+    return { success: true, hasAccess: true, order: full }
   } catch (error) {
     console.error("Error fetching order:", error)
     return { success: false, error: "An unexpected error occurred" }
@@ -339,200 +402,85 @@ export async function getOrderByNumber(orderNumber: string): Promise<{
 }
 
 /**
- * Send order confirmation email
+ * Replace the expired invoice of an unpaid order with a new one for the same
+ * amount. Requires the order's access token. Checks the old invoice with the
+ * node first: if it was paid after all, records the payment instead.
  */
-async function sendOrderConfirmationEmail(
-  email: string,
-  orderNumber: string,
-  customerName: string,
-  totalSats: number
-): Promise<void> {
+export async function renewPetOrderInvoice(orderNumber: string, accessToken: string): Promise<{
+  success: boolean
+  paid?: boolean
+  paymentRequest?: string
+  paymentHash?: string
+  invoiceExpiresAt?: string
+  error?: string
+}> {
   try {
-    const resendApiKey = process.env.RESEND_API_KEY
-    if (!resendApiKey) {
-      console.warn("RESEND_API_KEY not configured, skipping confirmation email")
-      return
+    if (!allowRequest("renew", 10, 3600_000)) {
+      return { success: false, error: "Too many requests. Please try again later." }
+    }
+    const normalized = String(orderNumber || "").trim().toUpperCase()
+    if (!ORDER_NUMBER_REGEX.test(normalized)) return { success: false, error: "Order not found" }
+
+    const adminSupabase = adminClient()
+    const { data: order, error } = await adminSupabase
+      .from("pet_orders")
+      .select(PET_ORDER_COLUMNS)
+      .eq("order_number", normalized)
+      .single()
+
+    if (error || !order || !accessTokenMatches(accessToken, order.access_token)) {
+      return { success: false, error: "Order not found" }
+    }
+    if (order.payment_status === "paid") return { success: true, paid: true }
+    if (order.payment_status !== "pending" && order.payment_status !== "expired") {
+      return { success: false, error: "This order can't be paid. Please contact support@ganamos.earth." }
+    }
+    if (!order.payment_hash) return { success: false, error: "Order has no invoice" }
+
+    const inv: any = await checkInvoice(order.payment_hash)
+    if (!inv.success) return { success: false, error: "Failed to check payment status. Please try again." }
+    if (inv.settled === true || inv.state === "SETTLED") {
+      const result = await markPetOrderPaid(adminSupabase, order)
+      return result.status === "paid" ? { success: true, paid: true } : { success: false, error: "Failed to record payment" }
+    }
+    if (!isInvoiceDead(inv, invoiceExpiresAt(order), new Date())) {
+      return { success: false, error: "The current invoice hasn't expired yet. Please wait a moment and try again." }
     }
 
-    const resend = new Resend(resendApiKey)
-
-    await resend.emails.send({
-      from: "Satoshi Pet <orders@ganamos.earth>",
-      to: email,
-      subject: `Order Confirmed: ${orderNumber} - Satoshi Pet`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { text-align: center; margin-bottom: 30px; }
-            .logo { width: 80px; height: 80px; background: linear-gradient(135deg, #a855f7, #3b82f6); border-radius: 50%; margin: 0 auto 16px; }
-            h1 { color: #1a1a1a; margin: 0; }
-            .order-box { background: #f9fafb; border-radius: 12px; padding: 24px; margin: 24px 0; }
-            .order-number { font-size: 24px; font-weight: bold; color: #22c55e; }
-            .details { margin-top: 16px; }
-            .detail-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
-            .detail-row:last-child { border-bottom: none; }
-            .footer { text-align: center; margin-top: 40px; color: #6b7280; font-size: 14px; }
-            .button { display: inline-block; background: #22c55e; color: white !important; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 16px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <div class="logo"></div>
-              <h1 style="color: #ffffff !important;">Thank You for Your Order!</h1>
-            </div>
-            
-            <p>Hi ${customerName},</p>
-            
-            <p>We've received your Satoshi Pet pre-order and your payment has been confirmed. We're excited to ship your new Bitcoin companion soon!</p>
-            
-            <div class="order-box">
-              <p style="margin: 0 0 8px; color: #6b7280;">Order Number</p>
-              <p class="order-number">${orderNumber}</p>
-              
-              <div class="details">
-                <div class="detail-row">
-                  <span>Amount Paid</span>
-                  <span><strong>${totalSats.toLocaleString()} sats</strong></span>
-                </div>
-                <div class="detail-row">
-                  <span>Status</span>
-                  <span><strong style="color: #22c55e;">Confirmed</strong></span>
-                </div>
-              </div>
-            </div>
-            
-            <p><strong>What's Next?</strong></p>
-            <ul>
-              <li>We'll prepare your Satoshi Pet for shipping</li>
-              <li>You'll receive a shipping confirmation email with tracking info</li>
-              <li>Once it arrives, visit <a href="https://satoshipet.com/setup">satoshipet.com/setup</a> to get started</li>
-            </ul>
-            
-            <p style="text-align: center;">
-              <a href="https://ganamos.earth" class="button">Create Your Account</a>
-            </p>
-            
-            <div class="footer">
-              <p>Questions? Reply to this email or visit <a href="https://satoshipet.com">satoshipet.com</a></p>
-              <p>© ${new Date().getFullYear()} Satoshi Pet. All rights reserved.</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `,
-    })
-
-    console.log(`Order confirmation email sent to ${email} for order ${orderNumber}`)
-  } catch (error) {
-    console.error("Failed to send order confirmation email:", error)
-    // Don't throw - email failure shouldn't break the order flow
-  }
-}
-
-/**
- * Send admin notification for new order
- */
-async function sendAdminOrderNotification(order: any): Promise<void> {
-  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL
-  
-  try {
-    const resendApiKey = process.env.RESEND_API_KEY
-    if (!resendApiKey) {
-      console.warn("RESEND_API_KEY not configured, skipping admin notification")
-      return
+    const expiresAt = new Date(Date.now() + PET_INVOICE_EXPIRY_SECONDS * 1000)
+    const invoiceResult: any = await createInvoice(order.total_price_sats, `SATOSHI-PET-ORDER: ${order.order_number}`)
+    if (!invoiceResult.success) {
+      console.error("Failed to create renewal invoice:", invoiceResult.error)
+      return { success: false, error: "Failed to create payment invoice. Please try again." }
     }
 
-    const resend = new Resend(resendApiKey)
+    const { data: updated, error: updateError } = await adminSupabase
+      .from("pet_orders")
+      .update({
+        payment_request: invoiceResult.paymentRequest,
+        payment_hash: invoiceResult.rHash,
+        invoice_expires_at: expiresAt.toISOString(),
+        payment_status: "pending",
+      })
+      .eq("id", order.id)
+      .eq("payment_hash", order.payment_hash)
+      .in("payment_status", ["pending", "expired"])
+      .select("payment_request, payment_hash, invoice_expires_at")
 
-    const shippingAddress = [
-      order.address_line1,
-      order.address_line2,
-      `${order.city}, ${order.state} ${order.postal_code}`,
-    ].filter(Boolean).join("<br>")
+    if (updateError || !updated || updated.length === 0) {
+      // Changed concurrently (paid, or renewed in another tab): the caller reloads the order.
+      return { success: false, error: "This order was updated. Please reload the page." }
+    }
 
-    await resend.emails.send({
-      from: "Satoshi Pet Orders <orders@ganamos.earth>",
-      to: ADMIN_EMAIL,
-      subject: `🎉 New Order: ${order.order_number} - ${order.total_price_sats.toLocaleString()} sats`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-            h1 { color: #22c55e; margin: 0 0 16px; font-size: 24px; }
-            h2 { color: #1a1a1a; margin: 0 0 12px; font-size: 18px; }
-            .order-number { font-size: 28px; font-weight: bold; color: #8b5cf6; }
-            .amount { font-size: 32px; font-weight: bold; color: #22c55e; }
-            .label { color: #6b7280; font-size: 14px; margin-bottom: 4px; }
-            .value { font-size: 16px; color: #1a1a1a; }
-            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
-            .button { display: inline-block; background: #8b5cf6; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="card">
-              <h1 style="color: #22c55e !important;">🎉 New Satoshi Pet Order!</h1>
-              <p class="label">Order Number</p>
-              <p class="order-number">${order.order_number}</p>
-            </div>
-            
-            <div class="card">
-              <h2>💰 Payment</h2>
-              <p class="label">Amount</p>
-              <p class="amount">${order.total_price_sats.toLocaleString()} sats</p>
-              <div class="grid">
-                <div>
-                  <p class="label">Device Price</p>
-                  <p class="value">${order.device_price_sats?.toLocaleString() || 'N/A'} sats</p>
-                </div>
-                <div>
-                  <p class="label">Shipping</p>
-                  <p class="value">${order.shipping_price_sats?.toLocaleString() || 'N/A'} sats</p>
-                </div>
-              </div>
-            </div>
-            
-            <div class="card">
-              <h2>👤 Customer</h2>
-              <p class="label">Name</p>
-              <p class="value">${order.full_name}</p>
-              <p class="label" style="margin-top: 12px;">Email</p>
-              <p class="value">${order.email}</p>
-            </div>
-            
-            <div class="card">
-              <h2>📦 Shipping Address</h2>
-              <p class="value">${shippingAddress}</p>
-            </div>
-            
-            <div class="card" style="text-align: center;">
-              <a href="https://ganamos.earth/admin/orders" class="button">View in Admin Dashboard</a>
-            </div>
-            
-            <p style="text-align: center; color: #6b7280; font-size: 12px; margin-top: 20px;">
-              Order placed at ${new Date().toLocaleString()}
-            </p>
-          </div>
-        </body>
-        </html>
-      `,
-    })
-
-    console.log(`Admin notification sent for order ${order.order_number}`)
+    return {
+      success: true,
+      paid: false,
+      paymentRequest: updated[0].payment_request,
+      paymentHash: updated[0].payment_hash,
+      invoiceExpiresAt: updated[0].invoice_expires_at,
+    }
   } catch (error) {
-    console.error("Failed to send admin notification:", error)
-    // Don't throw - email failure shouldn't break the order flow
+    console.error("Error renewing pet order invoice:", error)
+    return { success: false, error: "An unexpected error occurred" }
   }
 }
-
