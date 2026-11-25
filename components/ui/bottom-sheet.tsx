@@ -15,6 +15,7 @@ import { X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const BottomSheet = DialogPrimitive.Root
+export const BottomSheetTrigger = DialogPrimitive.Trigger
 export const BottomSheetTitle = DialogPrimitive.Title
 export const BottomSheetDescription = DialogPrimitive.Description
 
