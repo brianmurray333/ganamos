@@ -8,21 +8,30 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
   Cat, Heart, Zap, Wifi, Package, Check, ArrowRight, 
-  ChevronDown, Loader2, Copy, CheckCircle2, Bitcoin,
-  Smartphone, Settings, Link2, Github, Code, Wrench, Cpu,
+  ChevronDown, Loader2, CheckCircle2, Bitcoin,
+  Smartphone, Link2, Github, Wrench, Cpu,
   Download, ExternalLink, ShoppingCart, Printer, GitPullRequest
 } from "lucide-react"
 import { toast } from "@/components/ui/toast"
 import { 
   createPetOrder, 
   calculateShippingCost,
-  checkOrderPaymentStatus,
 } from "@/app/actions/pet-order-actions"
 import {
   PET_DEVICE_LIST_PRICE_SATS,
   PET_DEVICE_PREORDER_PRICE_SATS,
+  PET_PREORDER_ACTIVE,
+  PREORDER_SHIP_ESTIMATE,
+  SUPPORT_EMAIL,
+  currentPetDevicePriceSats,
+  preorderShipEstimateText,
 } from "@/lib/pet-order-constants"
-import QRCode from "@/components/qr-code"
+import {
+  PET_ORDER_FIELD_LIMITS,
+  US_ZIP_REGEX,
+  validatePetOrderShipping,
+  type PetOrderField,
+} from "@/lib/pet-order-validation"
 
 // Format sats with k for thousands (e.g. 40000 -> "40k")
 const formatSatsK = (sats: number): string => {
@@ -53,7 +62,17 @@ const US_STATES = [
   { code: 'WV', name: 'West Virginia' }, { code: 'WI', name: 'Wisconsin' }, { code: 'WY', name: 'Wyoming' },
 ]
 
-type CheckoutStep = 'landing' | 'shipping' | 'payment'
+type CheckoutStep = 'landing' | 'shipping'
+
+type FieldErrors = Partial<Record<PetOrderField, string>>
+
+// Device price for a new order (pre-order pricing is decided on the server by
+// the same constant; the client never sends it)
+const DEVICE_PRICE_SATS = currentPetDevicePriceSats()
+
+const PREORDER_SHIP_ESTIMATE_SENTENCE = PREORDER_SHIP_ESTIMATE
+  ? `Estimated ship: ${PREORDER_SHIP_ESTIMATE}.`
+  : "We'll email you a ship date before it ships."
 
 export default function SatoshiPetPage() {
   const router = useRouter()
@@ -70,21 +89,14 @@ export default function SatoshiPetPage() {
   const [city, setCity] = useState("")
   const [state, setState] = useState("")
   const [postalCode, setPostalCode] = useState("")
+  const [touched, setTouched] = useState<Partial<Record<PetOrderField, boolean>>>({})
+  const [serverErrors, setServerErrors] = useState<FieldErrors>({})
   
   // Order state
   const [isCalculatingShipping, setIsCalculatingShipping] = useState(false)
   const [shippingSats, setShippingSats] = useState<number | null>(null)
   const [estimatedDays, setEstimatedDays] = useState<string | null>(null)
   const [isCreatingOrder, setIsCreatingOrder] = useState(false)
-  
-  // Payment state
-  const [paymentRequest, setPaymentRequest] = useState<string | null>(null)
-  const [paymentHash, setPaymentHash] = useState<string | null>(null)
-  const [orderNumber, setOrderNumber] = useState<string | null>(null)
-  const [totalSats, setTotalSats] = useState<number | null>(null)
-  const [isCheckingPayment, setIsCheckingPayment] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const pollingRef = useRef<NodeJS.Timeout | null>(null)
 
   // Fetch Bitcoin price
   useEffect(() => {
@@ -117,115 +129,100 @@ export default function SatoshiPetPage() {
     return usd.toFixed(2)
   }, [bitcoinPrice])
 
-  // Calculate shipping when state changes
+  // Calculate shipping once the state and a valid ZIP are entered
   useEffect(() => {
-    if (state && postalCode && postalCode.length >= 5) {
-      const calcShipping = async () => {
-        setIsCalculatingShipping(true)
-        try {
-          const result = await calculateShippingCost(state, postalCode)
-          if (result.success) {
-            setShippingSats(result.shippingSats!)
-            setEstimatedDays(result.estimatedDays!)
-          } else {
-            setShippingSats(null)
-            setEstimatedDays(null)
-          }
-        } catch (error) {
-          console.error("Error calculating shipping:", error)
-        } finally {
-          setIsCalculatingShipping(false)
-        }
-      }
-      calcShipping()
+    if (!state || !US_ZIP_REGEX.test(postalCode.trim())) {
+      setShippingSats(null)
+      setEstimatedDays(null)
+      return
     }
+    let cancelled = false
+    const calcShipping = async () => {
+      setIsCalculatingShipping(true)
+      try {
+        const result = await calculateShippingCost(state, postalCode.trim())
+        if (cancelled) return
+        if (result.success) {
+          setShippingSats(result.shippingSats!)
+          setEstimatedDays(result.estimatedDays!)
+        } else {
+          setShippingSats(null)
+          setEstimatedDays(null)
+        }
+      } catch (error) {
+        console.error("Error calculating shipping:", error)
+      } finally {
+        if (!cancelled) setIsCalculatingShipping(false)
+      }
+    }
+    calcShipping()
+    return () => { cancelled = true }
   }, [state, postalCode])
 
-  // Scroll to setup section
-  const scrollToSetup = () => {
-    setupRef.current?.scrollIntoView({ behavior: 'smooth' })
+  // In-page section links: real anchors, smooth-scrolled (back to the landing view first if needed)
+  const goToSection = (e: React.MouseEvent, id: string) => {
+    e.preventDefault()
+    const scroll = () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' })
+    if (step !== 'landing') {
+      setStep('landing')
+      setTimeout(scroll, 50)
+    } else {
+      scroll()
+    }
   }
 
-  // Check if form is valid
-  const isFormValid = email && fullName && addressLine1 && city && state && postalCode && shippingSats !== null
+  // Same validation rules as the server (lib/pet-order-validation.ts)
+  const validation = validatePetOrderShipping({ email, fullName, addressLine1, addressLine2, city, state, postalCode })
+  const clientErrors: FieldErrors = validation.ok ? {} : validation.errors
+  const fieldError = (field: PetOrderField): string | undefined =>
+    serverErrors[field] || (touched[field] ? clientErrors[field] : undefined)
+  const markTouched = (field: PetOrderField) => setTouched(t => ({ ...t, [field]: true }))
+  const fieldProps = (field: PetOrderField) => {
+    const err = fieldError(field)
+    return {
+      onBlur: () => markTouched(field),
+      'aria-invalid': err ? true : undefined,
+      'aria-describedby': err ? `${field}-error` : undefined,
+    }
+  }
+  const renderFieldError = (field: PetOrderField) => {
+    const err = fieldError(field)
+    return err ? <p id={`${field}-error`} className="mt-1 text-xs text-red-400">{err}</p> : null
+  }
 
-  // Create order
+  // A server-reported field error goes away once the buyer edits the form
+  useEffect(() => {
+    setServerErrors({})
+  }, [email, fullName, addressLine1, addressLine2, city, state, postalCode])
+
+  // Check if form is valid
+  const isFormValid = validation.ok && shippingSats !== null
+
+  // Create order, then continue on the order page (invoice + payment status there,
+  // so a refresh or reopened link resumes checkout)
   const handleCreateOrder = async () => {
+    if (!validation.ok) {
+      setTouched({ email: true, fullName: true, addressLine1: true, addressLine2: true, city: true, state: true, postalCode: true })
+      return
+    }
     if (!isFormValid) return
     
     setIsCreatingOrder(true)
     try {
-      const result = await createPetOrder({
-        email,
-        fullName,
-        addressLine1,
-        addressLine2: addressLine2 || undefined,
-        city,
-        state,
-        postalCode,
-        isPreorder: true,
-      })
+      const result = await createPetOrder(validation.value.addressLine2 === null
+        ? { ...validation.value, addressLine2: undefined }
+        : { ...validation.value, addressLine2: validation.value.addressLine2 })
 
-      if (result.success) {
-        setPaymentRequest(result.paymentRequest!)
-        setPaymentHash(result.paymentHash!)
-        setOrderNumber(result.orderNumber!)
-        setTotalSats(result.totalSats!)
-        setStep('payment')
-        startPaymentPolling(result.paymentHash!)
-      } else {
-        toast.error("Order Failed", { description: result.error })
+      if (result.success && result.orderNumber && result.accessToken) {
+        router.push(`/satoshi-pet/order/${encodeURIComponent(result.orderNumber)}?t=${encodeURIComponent(result.accessToken)}`)
+        return // keep the button disabled while navigating
       }
+      setServerErrors((result.fieldErrors || {}) as FieldErrors)
+      toast.error("Order Failed", { description: result.error })
     } catch (error) {
       toast.error("Order Failed", { description: "An unexpected error occurred" })
-    } finally {
-      setIsCreatingOrder(false)
     }
-  }
-
-  // Start polling for payment
-  const startPaymentPolling = (hash: string) => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current)
-    }
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        setIsCheckingPayment(true)
-        const result = await checkOrderPaymentStatus(hash)
-        if (result.success && result.paid) {
-          clearInterval(pollingRef.current!)
-          toast.success("Payment Received!", { description: "Your order has been confirmed" })
-          router.push(`/satoshi-pet/order/${result.orderNumber}`)
-        }
-      } catch (error) {
-        console.error("Error checking payment:", error)
-      } finally {
-        setIsCheckingPayment(false)
-      }
-    }, 3000)
-  }
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current)
-      }
-    }
-  }, [])
-
-  // Copy invoice to clipboard
-  const copyInvoice = async () => {
-    if (!paymentRequest) return
-    try {
-      await navigator.clipboard.writeText(paymentRequest)
-      setCopied(true)
-      toast.success("Copied to clipboard")
-      setTimeout(() => setCopied(false), 2000)
-    } catch (error) {
-      toast.error("Failed to copy")
-    }
+    setIsCreatingOrder(false)
   }
 
   // Feature list
@@ -248,7 +245,31 @@ export default function SatoshiPetPage() {
     {
       icon: <Package className="h-6 w-6 text-purple-500" />,
       title: "Portable Design",
-      description: "USB-C rechargeable with long battery life - carry Bitcoin everywhere"
+      description: "Rechargeable battery with USB-C charging - carry Bitcoin everywhere"
+    },
+  ]
+
+  const faqs: { q: string; a: string }[] = [
+    {
+      q: "What's in the box?",
+      a: "A SatoshiPet device in its case, with a rechargeable battery and USB-C charging.",
+    },
+    {
+      q: "How do pre-orders work?",
+      a: `You pay now in sats over Lightning and we ship when devices are ready. ${PREORDER_SHIP_ESTIMATE_SENTENCE} You'll get a shipping confirmation with tracking when it's on its way.`,
+    },
+    {
+      // NEEDS OWNER CONFIRMATION: refund policy wording (draft).
+      q: "Can I get a refund?",
+      a: `Changed your mind before it ships? Email ${SUPPORT_EMAIL} for a refund in sats.`,
+    },
+    {
+      q: "Where do you ship?",
+      a: "We currently ship within the United States only (including Alaska and Hawaii).",
+    },
+    {
+      q: "How do I get help?",
+      a: `Email ${SUPPORT_EMAIL} and include your order number.`,
     },
   ]
 
@@ -288,43 +309,42 @@ export default function SatoshiPetPage() {
           0% { transform: scale(0.8); opacity: 0.5; }
           100% { transform: scale(1.2); opacity: 0; }
         }
+
+        @media (prefers-reduced-motion: reduce) {
+          .sp-motion { animation: none !important; }
+        }
       `}</style>
 
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-md border-b border-gray-800">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center">
+          <a href="/" className="flex items-center gap-2 shrink-0">
+            <span className="w-8 h-8 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center" aria-hidden="true">
               <Cat size={18} color="white" strokeWidth={2} />
-            </div>
-            <span className="font-bold text-lg text-white">Satoshi Pet</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={scrollToSetup}
-              className="hidden sm:flex text-gray-300 hover:text-white hover:bg-gray-800"
+            </span>
+            <span className="font-bold text-lg text-white hidden min-[400px]:inline">Satoshi Pet</span>
+          </a>
+          <nav className="flex items-center gap-1 sm:gap-3" aria-label="Main">
+            <a
+              href="#setup"
+              onClick={(e) => goToSection(e, 'setup')}
+              className="px-2 py-1.5 rounded-md text-sm text-gray-300 hover:text-white hover:bg-gray-800"
             >
-              Setup Guide
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="sm"
-              onClick={() => document.getElementById('diy')?.scrollIntoView({ behavior: 'smooth' })}
-              className="hidden sm:flex text-gray-300 hover:text-white hover:bg-gray-800"
+              Setup<span className="hidden sm:inline"> Guide</span>
+            </a>
+            <a
+              href="#diy"
+              onClick={(e) => goToSection(e, 'diy')}
+              className="px-2 py-1.5 rounded-md text-sm text-gray-300 hover:text-white hover:bg-gray-800 flex items-center"
             >
-              <Github className="h-4 w-4 mr-1" />
-              Build Your Own
+              <Github className="h-4 w-4 mr-1 hidden sm:inline" aria-hidden="true" />
+              <span className="sm:hidden">DIY</span>
+              <span className="hidden sm:inline">Build Your Own</span>
+            </a>
+            <Button asChild size="sm" className="bg-green-600 hover:bg-green-700 text-white">
+              <a href="https://ganamos.earth/connect-pet">Connect Pet</a>
             </Button>
-            <Button 
-              size="sm"
-              onClick={() => window.location.href = 'https://ganamos.earth/connect-pet'}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              Connect Pet
-            </Button>
-          </div>
+          </nav>
         </div>
       </header>
 
@@ -340,10 +360,10 @@ export default function SatoshiPetPage() {
                   <div className="flex justify-center order-2 md:order-1 mt-8 md:mt-0">
                     <div className="relative">
                       {/* Animated Pet Circle */}
-                      <div className="relative w-64 h-64 sm:w-80 sm:h-80">
+                      <div className="relative w-64 h-64 sm:w-80 sm:h-80" aria-hidden="true">
                         {/* Bitcoin Coins Raining - z-0 so they appear behind text */}
                         <div 
-                          className="flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
+                          className="sp-motion flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
                           style={{ 
                             left: '10%', 
                             top: '-10%',
@@ -354,7 +374,7 @@ export default function SatoshiPetPage() {
                           ₿
                         </div>
                         <div 
-                          className="flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
+                          className="sp-motion flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
                           style={{ 
                             left: '50%', 
                             top: '-10%',
@@ -366,7 +386,7 @@ export default function SatoshiPetPage() {
                           ₿
                         </div>
                         <div 
-                          className="flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
+                          className="sp-motion flex absolute z-0 w-8 h-8 border-2 border-amber-400 bg-amber-50 rounded-full items-center justify-center text-sm font-bold text-amber-600"
                           style={{ 
                             left: '80%', 
                             top: '-10%',
@@ -379,14 +399,14 @@ export default function SatoshiPetPage() {
                         </div>
 
                         {/* Pulse rings */}
-                        <div className="absolute inset-0 rounded-full border-2 border-purple-400/30" style={{ animation: 'pulse-ring 2s ease-out infinite' }} />
-                        <div className="absolute inset-0 rounded-full border-2 border-blue-400/30" style={{ animation: 'pulse-ring 2s ease-out infinite', animationDelay: '0.5s' }} />
+                        <div className="sp-motion absolute inset-0 rounded-full border-2 border-purple-400/30" style={{ animation: 'pulse-ring 2s ease-out infinite' }} />
+                        <div className="sp-motion absolute inset-0 rounded-full border-2 border-blue-400/30" style={{ animation: 'pulse-ring 2s ease-out infinite', animationDelay: '0.5s' }} />
 
                         {/* Main Circle */}
                         <div className="relative w-full h-full bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center shadow-2xl shadow-purple-500/30">
                           <div className="absolute inset-4 bg-white/10 rounded-full" />
                           <div 
-                            className="relative z-10"
+                            className="sp-motion relative z-10"
                             style={{ animation: 'float 4s ease-in-out infinite, wiggle 6s ease-in-out infinite' }}
                           >
                             <Cat size={140} color="white" strokeWidth={1.2} />
@@ -399,8 +419,8 @@ export default function SatoshiPetPage() {
                   {/* Right: Product Info - z-10 so text appears above bitcoin coins */}
                   <div className="text-center md:text-left order-1 md:order-2 relative z-10">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-900/50 text-green-400 rounded-full text-sm font-medium mb-4">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative flex h-2 w-2" aria-hidden="true">
+                        <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                       </span>
                       Pre-Order Now Available
@@ -422,12 +442,15 @@ export default function SatoshiPetPage() {
                     <div className="bg-gray-800 rounded-2xl p-6 mb-6 max-w-md mx-auto md:mx-0 border border-gray-700">
                       <div className="flex items-baseline gap-3 mb-2">
                         <span className="text-3xl font-bold text-white flex items-center gap-2">
-                          <Bitcoin className="h-7 w-7 text-orange-400" />
-                          {formatSatsK(PET_DEVICE_PREORDER_PRICE_SATS)} sats
+                          <Bitcoin className="h-7 w-7 text-orange-400" aria-hidden="true" />
+                          {formatSatsK(DEVICE_PRICE_SATS)} sats
                         </span>
-                        <span className="text-lg text-gray-500 line-through">
-                          {formatSatsK(PET_DEVICE_LIST_PRICE_SATS)} sats
-                        </span>
+                        {PET_PREORDER_ACTIVE && (
+                          <span className="text-lg text-gray-400 line-through">
+                            <span className="sr-only">Regular price </span>
+                            {formatSatsK(PET_DEVICE_LIST_PRICE_SATS)} sats
+                          </span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 text-gray-400 mb-4">
                         {isLoadingPrice ? (
@@ -435,20 +458,27 @@ export default function SatoshiPetPage() {
                         ) : bitcoinPrice ? (
                           <>
                             <span className="text-sm">
-                              ≈ ${satsToUsd(PET_DEVICE_PREORDER_PRICE_SATS)} USD
+                              ≈ ${satsToUsd(DEVICE_PRICE_SATS)} USD
                             </span>
-                            <span className="text-xs text-gray-500">
-                              (was ${satsToUsd(PET_DEVICE_LIST_PRICE_SATS)})
-                            </span>
+                            {PET_PREORDER_ACTIVE && (
+                              <span className="text-xs text-gray-400">
+                                (was ${satsToUsd(PET_DEVICE_LIST_PRICE_SATS)})
+                              </span>
+                            )}
                           </>
                         ) : (
-                          <span className="text-sm text-gray-500">USD price unavailable</span>
+                          <span className="text-sm text-gray-400">USD price unavailable</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-green-400">
-                        <Check className="h-4 w-4" />
-                        <span>Save {((1 - PET_DEVICE_PREORDER_PRICE_SATS / PET_DEVICE_LIST_PRICE_SATS) * 100).toFixed(0)}% with pre-order pricing</span>
-                      </div>
+                      {PET_PREORDER_ACTIVE && (
+                        <>
+                          <div className="flex items-center gap-2 text-sm text-green-400">
+                            <Check className="h-4 w-4" aria-hidden="true" />
+                            <span>Save {((1 - PET_DEVICE_PREORDER_PRICE_SATS / PET_DEVICE_LIST_PRICE_SATS) * 100).toFixed(0)}% with pre-order pricing</span>
+                          </div>
+                          <p className="mt-2 text-sm text-gray-300">{preorderShipEstimateText()}</p>
+                        </>
+                      )}
                     </div>
 
                     {/* CTA Buttons */}
@@ -458,26 +488,24 @@ export default function SatoshiPetPage() {
                         className="sm:flex-1 h-14 text-lg bg-green-600 hover:bg-green-700 text-white"
                         onClick={() => setStep('shipping')}
                       >
-                        <img
-                          src="/images/bitcoin-logo.png"
-                          alt="Bitcoin"
-                          className="h-5 w-5 mr-2"
-                        />
-                        Pre-Order Now
+                        <Bitcoin className="h-5 w-5 mr-2" aria-hidden="true" />
+                        {PET_PREORDER_ACTIVE ? "Pre-Order Now" : "Order Now"}
                       </Button>
                       <Button 
+                        asChild
                         variant="outline" 
                         size="lg"
                         className="h-14 text-lg bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
-                        onClick={() => document.getElementById('diy')?.scrollIntoView({ behavior: 'smooth' })}
                       >
-                        <Wrench className="h-5 w-5 mr-2" />
-                        Build Your Own
+                        <a href="#diy" onClick={(e) => goToSection(e, 'diy')}>
+                          <Wrench className="h-5 w-5 mr-2" aria-hidden="true" />
+                          Build Your Own
+                        </a>
                       </Button>
                     </div>
 
-                    <p className="text-sm text-gray-500 mt-4 text-center md:text-left relative z-20">
-                      Pay with Bitcoin Lightning ⚡ Ships within the US | <button onClick={() => window.location.href = 'https://ganamos.earth/connect-pet'} className="underline hover:text-gray-400">I already have one</button>
+                    <p className="text-sm text-gray-400 mt-4 text-center md:text-left relative z-20">
+                      Pay with Bitcoin Lightning <span aria-hidden="true">⚡</span> Ships within the US | <a href="https://ganamos.earth/connect-pet" className="underline hover:text-gray-300">I already have one</a>
                     </p>
                   </div>
                 </div>
@@ -501,25 +529,6 @@ export default function SatoshiPetPage() {
                     </div>
                   ))}
                 </div>
-              </div>
-            </section>
-
-            {/* Social Proof */}
-            <section className="py-16 bg-gray-800">
-              <div className="max-w-6xl mx-auto px-4 text-center">
-                <p className="text-gray-400 mb-4">Join families already using Satoshi Pet</p>
-                <div className="flex justify-center items-center gap-1 mb-4">
-                  {[...Array(5)].map((_, i) => (
-                    <svg key={i} className="w-6 h-6 text-amber-400 fill-current" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-                <blockquote className="text-lg text-gray-300 max-w-2xl mx-auto">
-                  "My kids finally understand saving! Every time they earn sats, they run to check on their pet. 
-                  It's the best Bitcoin education tool I've found."
-                </blockquote>
-                <p className="text-gray-500 mt-4">— Sarah M., Austin, TX</p>
               </div>
             </section>
 
@@ -570,12 +579,12 @@ export default function SatoshiPetPage() {
                         Connect Pet to WiFi
                       </h3>
                       <p className="text-gray-400 mb-3">
-                        Power on your device. It will create a WiFi network called "SatoshiPet".
+                        Power on your device. It will create a WiFi network called "SatoshiPet-Setup".
                       </p>
                       <ul className="space-y-2 text-sm text-gray-400">
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-400" />
-                          Connect to "SatoshiPet" from your phone/laptop
+                          Connect to "SatoshiPet-Setup" from your phone/laptop
                         </li>
                         <li className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-400" />
@@ -652,21 +661,17 @@ export default function SatoshiPetPage() {
 
                 {/* Download Buttons */}
                 <div className="grid sm:grid-cols-2 gap-4 mb-12 max-w-2xl mx-auto">
-                  <Button 
-                    size="lg"
-                    className="h-14 bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => window.open('https://github.com/brianmurray333/satoshipet-firmware/archive/refs/heads/main.zip', '_blank')}
-                  >
-                    <Download className="h-5 w-5 mr-2" />
-                    Download Firmware (.zip)
+                  <Button asChild size="lg" className="h-14 bg-blue-600 hover:bg-blue-700 text-white">
+                    <a href="https://github.com/brianmurray333/satoshipet-firmware/archive/refs/heads/main.zip" target="_blank" rel="noopener noreferrer">
+                      <Download className="h-5 w-5 mr-2" aria-hidden="true" />
+                      Download Firmware (.zip)
+                    </a>
                   </Button>
-                  <Button 
-                    size="lg"
-                    className="h-14 bg-purple-600 hover:bg-purple-700 text-white"
-                    onClick={() => window.open('https://github.com/brianmurray333/satoshipet-firmware/raw/main/hardware/3d-models/case-v1.stl', '_blank')}
-                  >
-                    <Printer className="h-5 w-5 mr-2" />
-                    Download Case STL
+                  <Button asChild size="lg" className="h-14 bg-purple-600 hover:bg-purple-700 text-white">
+                    <a href="https://github.com/brianmurray333/satoshipet-firmware/raw/main/hardware/3d-models/case-v1.stl" target="_blank" rel="noopener noreferrer">
+                      <Printer className="h-5 w-5 mr-2" aria-hidden="true" />
+                      Download Case STL
+                    </a>
                   </Button>
                 </div>
 
@@ -800,12 +805,11 @@ export default function SatoshiPetPage() {
                     <p className="text-gray-400 text-sm mb-4">
                       Complete Arduino firmware, wiring diagrams, and setup instructions.
                     </p>
-                    <Button 
-                      className="w-full bg-white text-gray-900 hover:bg-gray-100"
-                      onClick={() => window.open('https://github.com/brianmurray333/satoshipet-firmware', '_blank')}
-                    >
-                      <Github className="h-4 w-4 mr-2" />
-                      View Repository
+                    <Button asChild className="w-full bg-white text-gray-900 hover:bg-gray-100">
+                      <a href="https://github.com/brianmurray333/satoshipet-firmware" target="_blank" rel="noopener noreferrer">
+                        <Github className="h-4 w-4 mr-2" aria-hidden="true" />
+                        View Repository
+                      </a>
                     </Button>
                   </div>
 
@@ -822,13 +826,11 @@ export default function SatoshiPetPage() {
                     <p className="text-gray-400 text-sm mb-4">
                       Have a better case design? Code improvements? We welcome PRs and suggestions!
                     </p>
-                    <Button 
-                      variant="outline"
-                      className="w-full border-green-700 text-green-400 hover:bg-green-900/30"
-                      onClick={() => window.open('https://github.com/brianmurray333/satoshipet-firmware/issues', '_blank')}
-                    >
-                      <GitPullRequest className="h-4 w-4 mr-2" />
-                      Open an Issue / PR
+                    <Button asChild variant="outline" className="w-full border-green-700 text-green-400 hover:bg-green-900/30">
+                      <a href="https://github.com/brianmurray333/satoshipet-firmware/issues" target="_blank" rel="noopener noreferrer">
+                        <GitPullRequest className="h-4 w-4 mr-2" aria-hidden="true" />
+                        Open an Issue / PR
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -849,7 +851,7 @@ export default function SatoshiPetPage() {
                     onClick={() => setStep('shipping')}
                   >
                     <Bitcoin className="h-5 w-5 mr-2" />
-                    Buy Pre-Built for {formatSatsK(PET_DEVICE_PREORDER_PRICE_SATS)} sats
+                    Buy Pre-Built for {formatSatsK(DEVICE_PRICE_SATS)} sats
                   </Button>
                 </div>
               </div>
@@ -860,7 +862,7 @@ export default function SatoshiPetPage() {
               <div className="max-w-4xl mx-auto px-4 text-center">
                 <h2 className="text-3xl font-bold mb-4">Ready to Make Bitcoin Fun?</h2>
                 <p className="text-white/80 mb-8 max-w-2xl mx-auto">
-                  Pre-order your Satoshi Pet today and join families who are teaching the next generation about Bitcoin through play.
+                  {PET_PREORDER_ACTIVE ? "Pre-order" : "Order"} your Satoshi Pet today and start teaching the next generation about Bitcoin through play.
                 </p>
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <Button 
@@ -869,8 +871,26 @@ export default function SatoshiPetPage() {
                     onClick={() => setStep('shipping')}
                   >
                     <Bitcoin className="h-5 w-5 mr-2" />
-                    Pre-Order for {formatSatsK(PET_DEVICE_PREORDER_PRICE_SATS)} sats
+                    {PET_PREORDER_ACTIVE ? "Pre-Order" : "Order"} for {formatSatsK(DEVICE_PRICE_SATS)} sats
                   </Button>
+                </div>
+              </div>
+            </section>
+
+            {/* FAQ */}
+            <section id="faq" className="py-16 sm:py-24 bg-gray-900 scroll-mt-20">
+              <div className="max-w-3xl mx-auto px-4">
+                <h2 className="text-3xl font-bold text-center mb-10 text-white">Frequently Asked Questions</h2>
+                <div className="space-y-3">
+                  {faqs.map((faq) => (
+                    <details key={faq.q} className="group bg-gray-800 border border-gray-700 rounded-xl p-5">
+                      <summary className="cursor-pointer list-none flex items-center justify-between font-semibold text-white">
+                        {faq.q}
+                        <ChevronDown className="h-5 w-5 text-gray-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+                      </summary>
+                      <p className="mt-3 text-gray-300 text-sm leading-relaxed">{faq.a}</p>
+                    </details>
+                  ))}
                 </div>
               </div>
             </section>
@@ -882,10 +902,11 @@ export default function SatoshiPetPage() {
           <section className="min-h-screen pt-24 pb-8 sm:pt-32 sm:pb-16 bg-gray-900">
             <div className="max-w-lg mx-auto px-4">
               <button 
+                type="button"
                 onClick={() => setStep('landing')}
                 className="flex items-center text-gray-400 hover:text-white mb-6"
               >
-                <ChevronDown className="h-4 w-4 rotate-90 mr-1" />
+                <ChevronDown className="h-4 w-4 rotate-90 mr-1" aria-hidden="true" />
                 Back
               </button>
 
@@ -893,86 +914,130 @@ export default function SatoshiPetPage() {
                 <CardContent className="p-6 sm:p-8 text-white">
                   {/* Product Summary */}
                   <div className="flex items-center gap-4 pb-6 border-b border-gray-700 mb-6">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-blue-500 rounded-2xl flex items-center justify-center">
+                    <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-blue-500 rounded-2xl flex items-center justify-center shrink-0" aria-hidden="true">
                       <Cat size={32} color="white" strokeWidth={1.5} />
                     </div>
                     <div>
                       <h2 className="font-bold text-lg">Satoshi Pet</h2>
-                      <p className="text-sm text-gray-400">Pre-Order</p>
+                      <p className="text-sm text-gray-400">{PET_PREORDER_ACTIVE ? "Pre-Order" : "Order"}</p>
                     </div>
                     <div className="ml-auto text-right">
-                      <p className="font-bold">{formatSatsK(PET_DEVICE_PREORDER_PRICE_SATS)} sats</p>
+                      <p className="font-bold">{formatSatsK(DEVICE_PRICE_SATS)} sats</p>
                       {bitcoinPrice && (
-                        <p className="text-sm text-gray-400">≈ ${satsToUsd(PET_DEVICE_PREORDER_PRICE_SATS)}</p>
+                        <p className="text-sm text-gray-400">≈ ${satsToUsd(DEVICE_PRICE_SATS)}</p>
                       )}
                     </div>
                   </div>
 
                   <h3 className="font-semibold mb-4">Shipping Information</h3>
                   
-                  <div className="space-y-4">
+                  <form
+                    className="space-y-4"
+                    noValidate
+                    onSubmit={(e) => { e.preventDefault(); handleCreateOrder() }}
+                  >
                     <div>
-                      <Label htmlFor="email" className="text-gray-300">Email *</Label>
+                      <Label htmlFor="email" className="text-gray-300">Email <span aria-hidden="true">*</span></Label>
                       <Input
                         id="email"
+                        name="email"
                         type="email"
+                        autoComplete="email"
+                        inputMode="email"
+                        required
+                        aria-required="true"
+                        maxLength={PET_ORDER_FIELD_LIMITS.email}
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        {...fieldProps('email')}
                         placeholder="you@example.com"
-                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
                       />
+                      {renderFieldError('email')}
+                      <p className="mt-1 text-xs text-gray-400">We'll send your order confirmation and shipping updates here.</p>
                     </div>
 
                     <div>
-                      <Label htmlFor="fullName" className="text-gray-300">Full Name *</Label>
+                      <Label htmlFor="fullName" className="text-gray-300">Full Name <span aria-hidden="true">*</span></Label>
                       <Input
                         id="fullName"
+                        name="name"
+                        autoComplete="name"
+                        required
+                        aria-required="true"
+                        maxLength={PET_ORDER_FIELD_LIMITS.fullName}
                         value={fullName}
                         onChange={(e) => setFullName(e.target.value)}
+                        {...fieldProps('fullName')}
                         placeholder="John Doe"
-                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
                       />
+                      {renderFieldError('fullName')}
                     </div>
 
                     <div>
-                      <Label htmlFor="addressLine1" className="text-gray-300">Address *</Label>
+                      <Label htmlFor="addressLine1" className="text-gray-300">Address <span aria-hidden="true">*</span></Label>
                       <Input
                         id="addressLine1"
+                        name="address-line1"
+                        autoComplete="address-line1"
+                        required
+                        aria-required="true"
+                        maxLength={PET_ORDER_FIELD_LIMITS.addressLine1}
                         value={addressLine1}
                         onChange={(e) => setAddressLine1(e.target.value)}
+                        {...fieldProps('addressLine1')}
                         placeholder="123 Main St"
-                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
                       />
+                      {renderFieldError('addressLine1')}
                     </div>
 
                     <div>
                       <Label htmlFor="addressLine2" className="text-gray-300">Apartment, suite, etc. (optional)</Label>
                       <Input
                         id="addressLine2"
+                        name="address-line2"
+                        autoComplete="address-line2"
+                        maxLength={PET_ORDER_FIELD_LIMITS.addressLine2}
                         value={addressLine2}
                         onChange={(e) => setAddressLine2(e.target.value)}
+                        {...fieldProps('addressLine2')}
                         placeholder="Apt 4B"
-                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
                       />
+                      {renderFieldError('addressLine2')}
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label htmlFor="city" className="text-gray-300">City *</Label>
+                        <Label htmlFor="city" className="text-gray-300">City <span aria-hidden="true">*</span></Label>
                         <Input
                           id="city"
+                          name="address-level2"
+                          autoComplete="address-level2"
+                          required
+                          aria-required="true"
+                          maxLength={PET_ORDER_FIELD_LIMITS.city}
                           value={city}
                           onChange={(e) => setCity(e.target.value)}
+                          {...fieldProps('city')}
                           placeholder="San Francisco"
-                          className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
+                          className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
                         />
+                        {renderFieldError('city')}
                       </div>
                       <div>
-                        <Label htmlFor="state" className="text-gray-300">State *</Label>
+                        <Label htmlFor="state" className="text-gray-300">State <span aria-hidden="true">*</span></Label>
                         <select
                           id="state"
+                          name="address-level1"
+                          autoComplete="address-level1"
+                          required
+                          aria-required="true"
                           value={state}
                           onChange={(e) => setState(e.target.value)}
+                          {...fieldProps('state')}
                           className="mt-1 w-full h-10 px-3 rounded-md border border-gray-600 bg-gray-700 text-white text-sm"
                         >
                           <option value="">Select state</option>
@@ -980,144 +1045,96 @@ export default function SatoshiPetPage() {
                             <option key={s.code} value={s.code}>{s.name}</option>
                           ))}
                         </select>
+                        {renderFieldError('state')}
                       </div>
                     </div>
 
                     <div>
-                      <Label htmlFor="postalCode" className="text-gray-300">ZIP Code *</Label>
+                      <Label htmlFor="postalCode" className="text-gray-300">ZIP Code <span aria-hidden="true">*</span></Label>
                       <Input
                         id="postalCode"
+                        name="postal-code"
+                        autoComplete="postal-code"
+                        inputMode="numeric"
+                        required
+                        aria-required="true"
+                        pattern="\d{5}(-\d{4})?"
                         value={postalCode}
                         onChange={(e) => setPostalCode(e.target.value)}
+                        {...fieldProps('postalCode')}
                         placeholder="94102"
-                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-500"
-                        maxLength={10}
+                        className="mt-1 bg-gray-700 border-gray-600 text-white placeholder:text-gray-400"
+                        maxLength={PET_ORDER_FIELD_LIMITS.postalCode}
                       />
+                      {renderFieldError('postalCode')}
                     </div>
-                  </div>
 
-                  {/* Order Summary */}
-                  <div className="mt-8 pt-6 border-t border-gray-700 space-y-3">
-                    <div className="flex justify-between text-sm text-gray-300">
-                      <span>Satoshi Pet (Pre-Order)</span>
-                      <span>{PET_DEVICE_PREORDER_PRICE_SATS.toLocaleString()} sats</span>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-300">
-                      <span>Shipping (US)</span>
-                      {isCalculatingShipping ? (
-                        <span className="flex items-center text-gray-500">
-                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                          Calculating...
-                        </span>
-                      ) : shippingSats !== null ? (
-                        <span>{shippingSats.toLocaleString()} sats</span>
-                      ) : (
-                        <span className="text-gray-500">Enter address</span>
+                    {/* Order Summary */}
+                    <div className="mt-8 pt-6 border-t border-gray-700 space-y-3">
+                      <div className="flex justify-between text-sm text-gray-300">
+                        <span>Satoshi Pet{PET_PREORDER_ACTIVE ? " (Pre-Order)" : ""}</span>
+                        <span>{DEVICE_PRICE_SATS.toLocaleString()} sats</span>
+                      </div>
+                      {PET_PREORDER_ACTIVE && (
+                        <p className="text-xs text-gray-400">{preorderShipEstimateText()}</p>
                       )}
-                    </div>
-                    {estimatedDays && (
-                      <p className="text-xs text-gray-500">Estimated delivery: {estimatedDays}</p>
-                    )}
-                    <div className="flex justify-between font-bold text-lg pt-3 border-t border-gray-700">
-                      <span>Total</span>
-                      <div className="text-right">
-                        <span>
-                          {shippingSats !== null 
-                            ? (PET_DEVICE_PREORDER_PRICE_SATS + shippingSats).toLocaleString() 
-                            : PET_DEVICE_PREORDER_PRICE_SATS.toLocaleString()
-                          } sats
-                        </span>
-                        {bitcoinPrice && shippingSats !== null && (
-                          <p className="text-sm font-normal text-gray-400">
-                            ≈ ${satsToUsd(PET_DEVICE_PREORDER_PRICE_SATS + shippingSats)}
-                          </p>
+                      <div className="flex justify-between text-sm text-gray-300">
+                        <span>Shipping (US)</span>
+                        {isCalculatingShipping ? (
+                          <span className="flex items-center text-gray-400">
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" aria-hidden="true" />
+                            Calculating...
+                          </span>
+                        ) : shippingSats !== null ? (
+                          <span>{shippingSats.toLocaleString()} sats</span>
+                        ) : (
+                          <span className="text-gray-400">Enter address</span>
                         )}
                       </div>
+                      {estimatedDays && (
+                        <p className="text-xs text-gray-400">Transit time after shipping: {estimatedDays}</p>
+                      )}
+                      <div className="flex justify-between font-bold text-lg pt-3 border-t border-gray-700">
+                        <span>Total</span>
+                        <div className="text-right">
+                          <span>
+                            {shippingSats !== null 
+                              ? (DEVICE_PRICE_SATS + shippingSats).toLocaleString() 
+                              : DEVICE_PRICE_SATS.toLocaleString()
+                            } sats
+                          </span>
+                          {bitcoinPrice && shippingSats !== null && (
+                            <p className="text-sm font-normal text-gray-400">
+                              ≈ ${satsToUsd(DEVICE_PRICE_SATS + shippingSats)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <Button
-                    className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700"
-                    disabled={!isFormValid || isCreatingOrder}
-                    onClick={handleCreateOrder}
-                  >
-                    {isCreatingOrder ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Creating Order...
-                      </>
-                    ) : (
-                      <>
-                        Continue to Payment
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
+                    <Button
+                      type="submit"
+                      className="w-full h-12 mt-6 bg-green-600 hover:bg-green-700"
+                      disabled={!isFormValid || isCreatingOrder}
+                    >
+                      {isCreatingOrder ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden="true" />
+                          Creating Order...
+                        </>
+                      ) : (
+                        <>
+                          Continue to Payment
+                          <ArrowRight className="ml-2 h-4 w-4" aria-hidden="true" />
+                        </>
+                      )}
+                    </Button>
+                  </form>
 
-                  <p className="text-xs text-center text-gray-500 mt-4">
-                    You'll pay with Bitcoin Lightning on the next step
-                  </p>
-                </CardContent>
-              </Card>
-            </div>
-          </section>
-        )}
-
-        {/* Payment Step */}
-        {step === 'payment' && paymentRequest && (
-          <section className="min-h-screen pt-24 pb-8 sm:pt-32 sm:pb-16 bg-gray-50">
-            <div className="max-w-lg mx-auto px-4">
-              <Card className="shadow-xl bg-white border-gray-200">
-                <CardContent className="p-6 sm:p-8 text-center text-gray-900">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Cat size={32} color="white" strokeWidth={1.5} />
-                  </div>
-                  
-                  <h2 className="text-xl font-bold mb-2">Complete Your Payment</h2>
-                  <p className="text-gray-600 mb-1">Order #{orderNumber}</p>
-                  <p className="text-2xl font-bold mb-6">{totalSats?.toLocaleString()} sats</p>
-
-                  {/* QR Code */}
-                  <div className="bg-white p-4 rounded-xl inline-block mb-6">
-                    <QRCode data={paymentRequest} size={240} />
-                  </div>
-
-                  {/* Status */}
-                  <div className="flex items-center justify-center gap-2 text-amber-600 mb-6">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Waiting for payment...</span>
-                  </div>
-
-                  {/* Copy Button */}
-                  <Button
-                    variant="outline"
-                    className="w-full mb-4"
-                    onClick={copyInvoice}
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4 mr-2" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4 mr-2" />
-                        Copy Invoice
-                      </>
-                    )}
-                  </Button>
-
-                  {/* Invoice Preview */}
-                  <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                    <p className="text-xs font-mono text-gray-500 break-all">
-                      {paymentRequest.substring(0, 50)}...
-                    </p>
-                  </div>
-
-                  <p className="text-xs text-gray-500">
-                    Scan with any Lightning wallet or copy the invoice.
-                    <br />
-                    Invoice expires in 1 hour.
+                  <p className="text-xs text-center text-gray-400 mt-4">
+                    You'll pay with Bitcoin Lightning on the next step.
+                    {" "}See our <a href="https://www.ganamos.earth/privacy" className="underline hover:text-gray-300">Privacy Policy</a>
+                    {" "}and <a href="https://www.ganamos.earth/terms" className="underline hover:text-gray-300">Terms</a>.
                   </p>
                 </CardContent>
               </Card>
@@ -1130,7 +1147,7 @@ export default function SatoshiPetPage() {
       <footer className="bg-gray-900 text-gray-400 py-8">
         <div className="max-w-6xl mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center">
+            <div className="w-6 h-6 bg-gradient-to-br from-purple-400 to-blue-500 rounded-full flex items-center justify-center" aria-hidden="true">
               <Cat size={14} color="white" strokeWidth={2} />
             </div>
             <span className="font-semibold text-white">Satoshi Pet</span>
@@ -1138,6 +1155,12 @@ export default function SatoshiPetPage() {
           <p className="text-sm mb-4">
             A product by <a href="https://ganamos.earth" className="text-white hover:underline">Ganamos</a>
           </p>
+          <nav aria-label="Footer" className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm mb-4">
+            <a href="#faq" onClick={(e) => goToSection(e, 'faq')} className="hover:text-white hover:underline">FAQ</a>
+            <a href="https://www.ganamos.earth/privacy" className="hover:text-white hover:underline">Privacy</a>
+            <a href="https://www.ganamos.earth/terms" className="hover:text-white hover:underline">Terms</a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-white hover:underline">{SUPPORT_EMAIL}</a>
+          </nav>
           <p className="text-xs">
             © {new Date().getFullYear()} Satoshi Pet. All rights reserved.
           </p>

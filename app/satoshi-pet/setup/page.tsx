@@ -28,12 +28,8 @@ export default function SetupPage() {
               <span className="font-bold text-lg">Setup Guide</span>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => window.location.href = 'https://ganamos.earth/connect-pet'}
-          >
-            Connect Pet
+          <Button asChild variant="outline" size="sm">
+            <a href="https://ganamos.earth/connect-pet">Connect Pet</a>
           </Button>
         </div>
       </header>
@@ -117,12 +113,11 @@ export default function SetupPage() {
                       </ul>
                     </div>
 
-                    <Button 
-                      onClick={() => window.open('https://ganamos.earth/auth/register', '_blank')}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      Create Account
-                      <ExternalLink className="ml-2 h-4 w-4" />
+                    <Button asChild className="bg-green-600 hover:bg-green-700">
+                      <a href="https://ganamos.earth/auth/register" target="_blank" rel="noopener noreferrer">
+                        Create Account
+                        <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -156,10 +151,10 @@ export default function SetupPage() {
                       <div className="bg-gray-50 rounded-lg p-4">
                         <p className="font-medium mb-2 flex items-center gap-2">
                           <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm">a</span>
-                          Find the "SatoshiPet" network
+                          Find the "SatoshiPet-Setup" network
                         </p>
                         <p className="text-sm text-gray-600 ml-8">
-                          Open WiFi settings on your phone or laptop. Look for a network called <code className="bg-gray-200 px-1.5 py-0.5 rounded text-blue-600">SatoshiPet</code> and connect to it.
+                          Open WiFi settings on your phone or laptop. Look for a network called <code className="bg-gray-200 px-1.5 py-0.5 rounded text-blue-600">SatoshiPet-Setup</code> and connect to it.
                         </p>
                       </div>
 
@@ -248,12 +243,11 @@ export default function SetupPage() {
                       </div>
                     </div>
 
-                    <Button 
-                      onClick={() => window.location.href = 'https://ganamos.earth/connect-pet'}
-                      className="mt-4 bg-purple-600 hover:bg-purple-700"
-                    >
-                      Go to Connect Pet
-                      <ExternalLink className="ml-2 h-4 w-4" />
+                    <Button asChild className="mt-4 bg-purple-600 hover:bg-purple-700">
+                      <a href="https://ganamos.earth/connect-pet">
+                        Go to Connect Pet
+                        <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -272,7 +266,7 @@ export default function SetupPage() {
                 <p className="text-gray-600">Make sure it's charged. Connect via USB-C and wait a few minutes before trying again.</p>
               </div>
               <div>
-                <p className="font-medium text-gray-900">Can't find "SatoshiPet" network?</p>
+                <p className="font-medium text-gray-900">Can't find "SatoshiPet-Setup" network?</p>
                 <p className="text-gray-600">Hold the reset button for 10 seconds to factory reset the device. It will restart in setup mode.</p>
               </div>
               <div>
@@ -290,12 +284,8 @@ export default function SetupPage() {
         {/* CTA */}
         <div className="mt-12 text-center">
           <p className="text-gray-600 mb-4">Don't have a Satoshi Pet yet?</p>
-          <Button 
-            size="lg"
-            className="h-14 px-8 bg-green-600 hover:bg-green-700"
-            onClick={() => window.location.href = '/satoshi-pet'}
-          >
-            Order Your Satoshi Pet
+          <Button asChild size="lg" className="h-14 px-8 bg-green-600 hover:bg-green-700">
+            <a href="/satoshi-pet">Order Your Satoshi Pet</a>
           </Button>
         </div>
       </main>

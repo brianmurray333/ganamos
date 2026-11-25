@@ -49,14 +49,24 @@ export async function getAdminOrders() {
   }
 }
 
+// Values allowed by the pet_orders.order_status CHECK constraint
+const PET_ORDER_STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"]
+// Fulfilment states that require a recorded payment
+const PET_ORDER_PAID_ONLY_STATUSES = ["shipped", "delivered"]
+
+/** Change a pet order's fulfilment status (order_status). Shipping requires payment_status='paid'. */
 export async function updateOrderStatus(orderId: string, status: string, trackingNumber?: string) {
   const { authorized, supabase } = await verifyAdmin()
   if (!authorized || !supabase) {
     return { success: false, error: "Unauthorized" }
   }
 
+  if (!PET_ORDER_STATUSES.includes(status)) {
+    return { success: false, error: "Invalid order status" }
+  }
+
   try {
-    const updates: any = { status }
+    const updates: any = { order_status: status }
     
     if (status === "shipped") {
       updates.shipped_at = new Date().toISOString()
@@ -65,14 +75,27 @@ export async function updateOrderStatus(orderId: string, status: string, trackin
       }
     }
 
-    const { error } = await supabase
+    let query = supabase
       .from("pet_orders")
       .update(updates)
       .eq("id", orderId)
+    // Conditional on payment in the same UPDATE, so an unpaid order can never be moved to shipped
+    if (PET_ORDER_PAID_ONLY_STATUSES.includes(status)) {
+      query = query.eq("payment_status", "paid")
+    }
+    const { data, error } = await query.select("id")
 
     if (error) {
       console.error("Error updating order:", error)
       return { success: false, error: error.message }
+    }
+    if (!data || data.length === 0) {
+      return {
+        success: false,
+        error: PET_ORDER_PAID_ONLY_STATUSES.includes(status)
+          ? "This order is not paid. Only paid orders can be marked shipped or delivered."
+          : "Order not found",
+      }
     }
 
     return { success: true }
@@ -565,14 +588,17 @@ export async function getAdminStats() {
 
   try {
     const [ordersResult, usersResult, postsResult, transactionsResult] = await Promise.all([
-      supabase.from("pet_orders").select("id, status", { count: "exact" }),
+      supabase.from("pet_orders").select("id, payment_status, order_status", { count: "exact" }),
       supabase.from("profiles").select("id", { count: "exact" }),
       supabase.from("posts").select("id", { count: "exact" }),
       supabase.from("transactions").select("id", { count: "exact" }),
     ])
 
     const orders = ordersResult.data || []
-    const pendingOrders = orders.filter((o: any) => o.status === "pending").length
+    // Paid orders still waiting to ship
+    const pendingOrders = orders.filter(
+      (o: any) => o.payment_status === "paid" && ["pending", "confirmed", "processing"].includes(o.order_status)
+    ).length
 
     return {
       success: true,

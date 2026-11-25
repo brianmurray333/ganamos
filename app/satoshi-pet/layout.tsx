@@ -1,6 +1,8 @@
 import { Metadata, Viewport } from "next"
 
 export const metadata: Metadata = {
+  // Resolves the generated Open Graph image (opengraph-image.tsx) to an absolute URL
+  metadataBase: new URL("https://satoshipet.com"),
   title: "Satoshi Pet - Make Bitcoin Physical & Fun",
   description: "A cute hardware companion that reacts to your Bitcoin activity. Perfect for making Bitcoin tangible for the whole family.",
   keywords: ["bitcoin", "hardware", "education", "kids", "satoshi", "pet", "lightning"],
