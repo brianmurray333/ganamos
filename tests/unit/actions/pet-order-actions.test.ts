@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 /**
  * Satoshi Pet orders: the paid transition, the reconcile cron, access-token
- * gating of order details, validation, server-side pricing, order reuse,
+ * gating of order details, validation, server-side pricing, cancelled orders,
  * rate limits and invoice renewal. Runs against the stateful in-memory
  * Supabase fake, with LND (checkInvoice/createInvoice) and Resend mocked.
  */
@@ -148,6 +148,23 @@ describe('paid transition (checkOrderPaymentStatus)', () => {
     expect(result.success).toBe(false)
     expect(fake.row('pet_orders', 'order-1')!.payment_status).toBe('pending')
     expect(h.send).not.toHaveBeenCalled()
+  })
+
+  it('keeps an admin-cancelled order cancelled when its invoice settles late, and only alerts the admin', async () => {
+    fake.tables.pet_orders.push(orderRow({ order_status: 'cancelled' }))
+    vi.mocked(checkInvoice).mockResolvedValue(settled as any)
+
+    const result = await checkOrderPaymentStatus(HASH)
+    expect(result.paid).toBe(true)
+    expect(fake.row('pet_orders', 'order-1')).toMatchObject({ payment_status: 'paid', order_status: 'cancelled' })
+    expect(h.send).toHaveBeenCalledTimes(1)
+    const sent = h.send.mock.calls[0][0]
+    expect(sent.to).toBe('admin@example.com')
+    expect(sent.subject).toMatch(/REFUND DUE/)
+
+    // Polling again sends nothing more
+    await checkOrderPaymentStatus(HASH)
+    expect(h.send).toHaveBeenCalledTimes(1)
   })
 
   it('reports an open invoice as unpaid and rejects malformed hashes', async () => {
@@ -360,24 +377,13 @@ describe('createPetOrder', () => {
     expect(vi.mocked(createInvoice).mock.calls[0][1]).not.toContain('Alice')
   })
 
-  it('reuses the open pending order for the same buyer and address', async () => {
+  it('never hands back an earlier order\'s private link for matching checkout details', async () => {
     const first = await createPetOrder(validShipping)
-    const second = await createPetOrder({ ...validShipping, email: 'buyer@example.com' })
-    expect(second).toEqual(first)
-    expect(createInvoice).toHaveBeenCalledTimes(1)
-    expect(fake.tables.pet_orders).toHaveLength(1)
-
-    // Different address: new order
-    const third = await createPetOrder({ ...validShipping, addressLine2: 'Apt 2' })
-    expect(third.orderNumber).not.toBe(first.orderNumber)
-    expect(createInvoice).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not reuse an order whose invoice is about to expire', async () => {
-    const first = await createPetOrder(validShipping)
-    fake.tables.pet_orders[0].invoice_expires_at = new Date(Date.now() + 60_000).toISOString()
     const second = await createPetOrder(validShipping)
+    expect(second.success).toBe(true)
     expect(second.orderNumber).not.toBe(first.orderNumber)
+    expect(second.accessToken).not.toBe(first.accessToken)
+    expect(createInvoice).toHaveBeenCalledTimes(2)
   })
 
   it('limits orders per email per hour (durable, DB-backed)', async () => {
@@ -428,6 +434,18 @@ describe('renewPetOrderInvoice', () => {
     expect(result).toEqual({ success: true, paid: true })
     expect(createInvoice).not.toHaveBeenCalled()
     expect(fake.row('pet_orders', 'order-1')!.payment_status).toBe('paid')
+  })
+
+  it('refuses a new invoice for an order the admin cancelled', async () => {
+    fake.tables.pet_orders.push(orderRow({
+      order_status: 'cancelled', payment_status: 'expired',
+      invoice_expires_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    }))
+    vi.mocked(checkInvoice).mockResolvedValue(canceled as any)
+    const result = await renewPetOrderInvoice('SP-ABC234', TOKEN)
+    expect(result.success).toBe(false)
+    expect(result.error).toMatch(/cancelled/)
+    expect(createInvoice).not.toHaveBeenCalled()
   })
 
   it('refuses while the invoice is still payable, for paid orders, and without the token', async () => {

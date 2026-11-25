@@ -30,8 +30,6 @@ import {
 // Durable (DB-backed) limits on order creation: they hold across Vercel instances.
 const MAX_ORDERS_PER_EMAIL_PER_HOUR = 5
 const MAX_ORDERS_PER_IP_PER_HOUR = 10
-// A reused pending invoice must have at least this long left, so the buyer can still pay it.
-const REUSE_MIN_REMAINING_MS = 10 * 60_000
 
 export type CreateOrderParams = PetOrderShippingInput
 
@@ -126,33 +124,6 @@ export async function createPetOrder(params: CreateOrderParams): Promise<CreateO
     const adminSupabase = adminClient()
     const now = Date.now()
     const ipHash = hashClientIp(clientIp())
-
-    // Reuse an open pending order for the same buyer and address instead of minting a new invoice.
-    let reuseQuery = adminSupabase
-      .from("pet_orders")
-      .select(PET_ORDER_COLUMNS)
-      .eq("email", ship.email)
-      .eq("full_name", ship.fullName)
-      .eq("address_line1", ship.addressLine1)
-      .eq("city", ship.city)
-      .eq("state", ship.state)
-      .eq("postal_code", ship.postalCode)
-      .eq("payment_status", "pending")
-      .eq("total_price_sats", totalPriceSats)
-      .gt("invoice_expires_at", new Date(now + REUSE_MIN_REMAINING_MS).toISOString())
-    reuseQuery = ship.addressLine2 === null
-      ? reuseQuery.is("address_line2", null)
-      : reuseQuery.eq("address_line2", ship.addressLine2)
-    const { data: reusable } = await reuseQuery.order("created_at", { ascending: false }).limit(1)
-    const existing = reusable?.[0]
-    if (existing?.access_token && existing.payment_request) {
-      return {
-        success: true,
-        orderNumber: existing.order_number,
-        accessToken: existing.access_token,
-        totalSats: existing.total_price_sats,
-      }
-    }
 
     // Durable rate limits: recent orders by email and by (hashed) IP.
     const hourAgo = new Date(now - 3600_000).toISOString()
@@ -432,6 +403,9 @@ export async function renewPetOrderInvoice(orderNumber: string, accessToken: str
       return { success: false, error: "Order not found" }
     }
     if (order.payment_status === "paid") return { success: true, paid: true }
+    if (order.order_status === "cancelled") {
+      return { success: false, error: "This order was cancelled. Please contact support@ganamos.earth." }
+    }
     if (order.payment_status !== "pending" && order.payment_status !== "expired") {
       return { success: false, error: "This order can't be paid. Please contact support@ganamos.earth." }
     }

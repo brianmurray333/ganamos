@@ -122,6 +122,7 @@ export async function markPetOrderPaid(supabase: any, order: PetOrderRow): Promi
     })
     .eq("payment_hash", order.payment_hash)
     .in("payment_status", ["pending", "expired"])
+    .neq("order_status", "cancelled")
     .select(PET_ORDER_COLUMNS)
 
   if (error) {
@@ -130,13 +131,14 @@ export async function markPetOrderPaid(supabase: any, order: PetOrderRow): Promi
   }
 
   if (!data || data.length === 0) {
-    // Another check got there first (or the row changed). Report what's stored.
+    // Another check got there first, or the admin cancelled the order. Look at what's stored.
     const { data: current } = await supabase
       .from("pet_orders")
       .select(PET_ORDER_COLUMNS)
       .eq("payment_hash", order.payment_hash)
       .maybeSingle()
     if (current?.payment_status === "paid") return { status: "paid", order: current, newlyPaid: false }
+    if (current?.order_status === "cancelled") return markCancelledOrderPaid(supabase, current)
     console.error(`[pet-orders] Paid update matched no row for ${order.order_number}`)
     return { status: "error", error: "Failed to record payment" }
   }
@@ -145,6 +147,37 @@ export async function markPetOrderPaid(supabase: any, order: PetOrderRow): Promi
   await sendOrderConfirmationEmail(paidOrder)
   await sendAdminOrderNotification(paidOrder)
   return { status: "paid", order: paidOrder, newlyPaid: true }
+}
+
+/**
+ * The invoice settled after the admin cancelled the order. Record the money
+ * (so it can be refunded) but keep the order cancelled: no customer
+ * confirmation, and the admin is told a refund is due.
+ */
+async function markCancelledOrderPaid(supabase: any, order: PetOrderRow): Promise<PaymentSyncResult> {
+  const { data, error } = await supabase
+    .from("pet_orders")
+    .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+    .eq("payment_hash", order.payment_hash)
+    .in("payment_status", ["pending", "expired"])
+    .eq("order_status", "cancelled")
+    .select(PET_ORDER_COLUMNS)
+  if (error) {
+    console.error(`[pet-orders] Failed to record payment on cancelled order ${order.order_number}:`, error)
+    return { status: "error", error: "Failed to record payment" }
+  }
+  if (!data || data.length === 0) {
+    const { data: current } = await supabase
+      .from("pet_orders")
+      .select(PET_ORDER_COLUMNS)
+      .eq("payment_hash", order.payment_hash)
+      .maybeSingle()
+    if (current?.payment_status === "paid") return { status: "paid", order: current, newlyPaid: false }
+    return { status: "error", error: "Failed to record payment" }
+  }
+  console.error(`[pet-orders] Order ${order.order_number} was paid after it was cancelled: refund due`)
+  await sendAdminOrderNotification(data[0], { paidAfterCancel: true })
+  return { status: "paid", order: data[0], newlyPaid: true }
 }
 
 /**
@@ -334,7 +367,10 @@ export function renderOrderConfirmationEmail(order: PetOrderRow): { subject: str
   return { subject: `Order Confirmed: ${order.order_number} - Satoshi Pet`, html }
 }
 
-export function renderAdminOrderNotificationEmail(order: PetOrderRow): { subject: string; html: string } {
+export function renderAdminOrderNotificationEmail(
+  order: PetOrderRow,
+  opts: { paidAfterCancel?: boolean } = {}
+): { subject: string; html: string } {
   const fmt = (n: unknown) => (n == null ? "N/A" : escapeHtml(Number(n).toLocaleString("en-US")))
   const html = `
 <!DOCTYPE html>
@@ -343,7 +379,10 @@ export function renderAdminOrderNotificationEmail(order: PetOrderRow): { subject
 <body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333333;">
   <div style="max-width:600px;margin:0 auto;padding:20px;">
     <div style="background:#ffffff;border-radius:12px;padding:24px;margin-bottom:16px;">
-      <h1 style="color:#15803d;margin:0 0 16px;font-size:24px;">New Satoshi Pet Order (paid)</h1>
+      ${opts.paidAfterCancel
+        ? `<h1 style="color:#b91c1c;margin:0 0 16px;font-size:24px;">Paid after cancellation: refund due</h1>
+      <p style="margin:0 0 12px;">This order was cancelled before its invoice was paid. The payment has been recorded; refund the buyer and keep the order cancelled.</p>`
+        : `<h1 style="color:#15803d;margin:0 0 16px;font-size:24px;">New Satoshi Pet Order (paid)</h1>`}
       <p style="color:#6b7280;font-size:14px;margin:0 0 4px;">Order Number</p>
       <p style="font-size:28px;font-weight:bold;color:#7c3aed;margin:0;">${escapeHtml(order.order_number)}</p>
       <p style="margin:8px 0 0;">${order.is_preorder ? "Pre-order" : "Order"}</p>
@@ -369,7 +408,7 @@ export function renderAdminOrderNotificationEmail(order: PetOrderRow): { subject
 </body>
 </html>`
   return {
-    subject: `New Order: ${order.order_number} - ${Number(order.total_price_sats).toLocaleString("en-US")} sats`,
+    subject: `${opts.paidAfterCancel ? "REFUND DUE - paid after cancellation" : "New Order"}: ${order.order_number} - ${Number(order.total_price_sats).toLocaleString("en-US")} sats`,
     html,
   }
 }
@@ -395,7 +434,7 @@ async function sendOrderConfirmationEmail(order: PetOrderRow): Promise<void> {
   }
 }
 
-async function sendAdminOrderNotification(order: PetOrderRow): Promise<void> {
+async function sendAdminOrderNotification(order: PetOrderRow, opts: { paidAfterCancel?: boolean } = {}): Promise<void> {
   const adminEmail = process.env.ADMIN_EMAIL || process.env.NEXT_PUBLIC_ADMIN_EMAIL
   try {
     const resendApiKey = process.env.RESEND_API_KEY
@@ -403,7 +442,7 @@ async function sendAdminOrderNotification(order: PetOrderRow): Promise<void> {
       console.warn("RESEND_API_KEY or ADMIN_EMAIL not configured, skipping admin notification")
       return
     }
-    const { subject, html } = renderAdminOrderNotificationEmail(order)
+    const { subject, html } = renderAdminOrderNotificationEmail(order, opts)
     await new Resend(resendApiKey).emails.send({
       from: "Satoshi Pet Orders <orders@ganamos.earth>",
       to: adminEmail,
