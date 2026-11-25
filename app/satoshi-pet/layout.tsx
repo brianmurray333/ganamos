@@ -19,7 +19,8 @@ export const metadata: Metadata = {
     siteName: "Satoshi Pet",
     type: "website",
     // A 5 s loop of the same render; iMessage, Discord and Telegram play it, others show the image
-    videos: [{ url: "/satoshi-pet/og-loop.mp4", type: "video/mp4", width: 1200, height: 630 }],
+    // Absolute: Next resolves og:image against metadataBase but not og:video
+    videos: [{ url: "https://satoshipet.com/satoshi-pet/og-loop.mp4", type: "video/mp4", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
