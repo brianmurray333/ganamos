@@ -109,6 +109,32 @@ describe('generateEmailHTML', () => {
     expect(html).not.toContain('Node holds more')
   })
 
+  it('counts the closing-fee reserve in the node balance it compares', () => {
+    const telemetry = {
+      since: '2026-11-19T02:53:39Z',
+      channels: { count: 2, opened: 2, closingFeeReserve: 922, anchorReserve: 1320, inFlight: 0 },
+      onchainUnconfirmed: 0,
+      routingFeesEarned: { sats: 0, events: 0 },
+      paymentFeesPaid: { sats: 0, payments: 0, sent: 0 },
+      invoicesSettled: { sats: 0, count: 0 },
+      errors: [],
+    }
+    // 785,858 on the node + 922 reserve = the app's 786,780: in sync
+    const d = { ...summary({ ...breakdown, totalAppBalance: 786_780 }, 785_858), nodeTelemetry: telemetry } as any
+    const html = generateEmailHTML(d)
+    expect(html).toContain('786,780 sats')
+    expect(html).toContain('In sync')
+    expect(html).toContain('922 sats, counted in the node balance')
+
+    // Without readable channels the reserve isn't counted, and the email says so
+    const noChannels = { ...d, nodeTelemetry: { ...telemetry, errors: ['channels'] } }
+    const html2 = generateEmailHTML(noChannels)
+    expect(html2).toContain('closing-fee reserve not counted')
+    expect(html2).toContain('Unknown (channels unreadable), not counted in the node balance')
+    expect(html2).not.toContain('counted in the node balance;')
+    expect(html2).toContain('App owes more than the node holds')
+  })
+
   it('says the node is unavailable instead of comparing against a zero balance', () => {
     const d = { ...summary(breakdown, 0), nodeBalanceError: 'LND timeout' } as any
     // Health check succeeded later; the balance shown was still never read

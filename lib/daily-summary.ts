@@ -809,15 +809,29 @@ export const BALANCE_TOLERANCE_SATS = 100
 const sats = (n: number) => `${n.toLocaleString('en-US')} sats`
 const signedSats = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toLocaleString('en-US')} sats`
 
+/**
+ * Sats the node holds back to pay the closing fee of channels it opened. LND
+ * leaves it out of the channel balance and moves it with on-chain fee rates,
+ * so counting it keeps fee swings from showing up as a balance difference.
+ * Null when telemetry couldn't read the channels.
+ */
+export function closingFeeReserveSats(data: DailySummaryData): number | null {
+  const t = data.nodeTelemetry
+  if (!t || t.errors.includes('channels')) return null
+  return t.channels.closingFeeReserve
+}
+
 export function generateEmailHTML(data: DailySummaryData, date: Date = new Date()): string {
   const b = data.balanceBreakdown
-  const node = data.nodeBalance.total_balance
+  const reserve = closingFeeReserveSats(data)
+  // Compared against the app: channel + pending + on-chain + closing-fee reserve
+  const node = data.nodeBalance.total_balance + (reserve ?? 0)
   const difference = node - b.totalAppBalance
   const inSync = Math.abs(difference) <= BALANCE_TOLERANCE_SATS
   const nodeUnavailable = Boolean(data.nodeBalanceError)
 
   const details: Array<[string, string]> = [
-    ['Node balance', nodeUnavailable ? 'Unavailable' : `<strong>${sats(node)}</strong>`],
+    ['Node balance', nodeUnavailable ? 'Unavailable' : `<strong>${sats(node)}</strong>${reserve === null ? ' (closing-fee reserve not counted: channels unreadable)' : ''}`],
     ['App balance', `<strong>${sats(b.totalAppBalance)}</strong>`],
     ['Difference', nodeUnavailable ? 'Unknown' : `<strong style="color:${inSync ? '#15803d' : '#b91c1c'};">${signedSats(difference)}</strong>`],
     ['User balances', sats(b.userBalances)],
@@ -833,11 +847,13 @@ export function generateEmailHTML(data: DailySummaryData, date: Date = new Date(
   if (t && !nodeUnavailable) {
     const sinceLabel = new Date(t.since).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })
     details.push(
-      ['Node: channel / on-chain', `${sats(data.nodeBalance.channel_balance)} / ${sats(data.nodeBalance.onchain_balance)}`],
+      ['Node: channel / on-chain / closing-fee reserve', `${sats(data.nodeBalance.channel_balance)} / ${sats(data.nodeBalance.onchain_balance)} / ${reserve === null ? 'unknown' : sats(reserve)}`],
       [`Routing fees earned since ${sinceLabel}`, `${signedSats(t.routingFeesEarned.sats)} (${t.routingFeesEarned.events} forwards)`],
       [`Fees paid since ${sinceLabel}`, `${signedSats(-t.paymentFeesPaid.sats)} (${t.paymentFeesPaid.payments} payments)`],
       [`Payments received since ${sinceLabel}`, `${sats(t.invoicesSettled.sats)} (${t.invoicesSettled.count} invoices)`],
-      ['Closing-fee reserve', `${sats(t.channels.closingFeeReserve)} + ${sats(t.channels.anchorReserve)} anchors (${t.channels.opened} of ${t.channels.count} channels opened by us)`],
+      ['Closing-fee reserve', reserve === null
+        ? 'Unknown (channels unreadable), not counted in the node balance'
+        : `${sats(reserve)}, counted in the node balance; ${sats(t.channels.anchorReserve)} in anchors, not counted (${t.channels.opened} of ${t.channels.count} channels opened by us)`],
     )
     if (t.channels.inFlight) details.push(['Payments in flight', sats(t.channels.inFlight)])
     if (t.onchainUnconfirmed) details.push(['Unconfirmed on-chain', sats(t.onchainUnconfirmed)])
