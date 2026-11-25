@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/reconcile-pet-orders",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sweep-game-rooms",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
