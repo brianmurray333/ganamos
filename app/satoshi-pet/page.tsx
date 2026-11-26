@@ -362,9 +362,9 @@ export default function SatoshiPetPage() {
               <Github className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
               <span className="hidden sm:inline">Open source</span>
             </a>
-            <Button asChild size="sm" variant="outline" className="ml-1 border-white/25 bg-white/5 text-white hover:bg-white/15 hover:text-white">
+            <Button asChild size="sm" variant="outline" className="ml-1 gap-1.5 border-white/25 bg-white/5 text-white hover:bg-white/15 hover:text-white">
               <a href="https://ganamos.earth/connect-pet">
-                <Cat className="h-4 w-4 mr-1.5" strokeWidth={2} aria-hidden="true" />
+                <Cat className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
                 Connect Pet
               </a>
             </Button>
