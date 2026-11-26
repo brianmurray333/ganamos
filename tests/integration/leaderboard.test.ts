@@ -79,3 +79,38 @@ describe('GET /api/leaderboard - Integration Tests', () => {
     expect(data.totalEntries).toBeGreaterThanOrEqual(25)
   })
 })
+
+describe('GET /api/leaderboard?game=&best=1 (satoshipet.com leaderboard)', () => {
+  async function seedScores(petName: string, game: string, scores: number[]) {
+    const user = await seedUser({ name: `LB ${petName}` })
+    const device = await seedDevice(user.id, { petName })
+    for (const score of scores) {
+      await queryDB(
+        `INSERT INTO flappy_bird_game (device_id, user_id, score, game) VALUES ($1::uuid, $2::uuid, $3::int, $4)`,
+        [device.id, user.id, score, game]
+      )
+    }
+  }
+  const get = async (q: string) => {
+    const res = await GET(new NextRequest(`http://localhost:3000/api/leaderboard${q}`))
+    return { status: res.status, data: await res.json() }
+  }
+
+  it('returns only the asked game, with each pet once at its best score', async () => {
+    await seedScores('Catcher-A', 'satcatcher', [BASE + 3, BASE + 9, BASE + 5])
+    await seedScores('Catcher-B', 'satcatcher', [BASE + 7])
+    await seedScores('Flapper', 'flappy', [BASE + 100])
+
+    const { status, data } = await get('?game=satcatcher&best=1')
+    expect(status).toBe(200)
+    const top = data.leaderboard.slice(0, 2)
+    expect(top.map((e: any) => [e.petName, e.score])).toEqual([['Catcher-A', BASE + 9], ['Catcher-B', BASE + 7]])
+    expect(data.leaderboard.some((e: any) => e.petName === 'Flapper')).toBe(false)
+    expect(data.leaderboard.filter((e: any) => e.petName === 'Catcher-A')).toHaveLength(1)
+    expect(data.leaderboard.length).toBeLessThanOrEqual(10)
+  })
+
+  it('refuses an unknown game', async () => {
+    expect((await get('?game=chess')).status).toBe(400)
+  })
+})
