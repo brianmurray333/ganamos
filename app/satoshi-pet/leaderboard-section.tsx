@@ -1,15 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Trophy } from "lucide-react"
+import { Bird, Coins, Trophy, Volleyball, type LucideIcon } from "lucide-react"
 
 type Game = "flappy" | "satcatcher" | "pickleball"
 type Entry = { rank: number; petName: string; score: number }
 
-const GAMES: { id: Game; name: string; unit: string }[] = [
-  { id: "flappy", name: "Flappy Pet", unit: "walls" },
-  { id: "satcatcher", name: "Sat Catcher", unit: "sats" },
-  { id: "pickleball", name: "Pickleball", unit: "rally" },
+const GAMES: { id: Game; name: string; unit: string; Icon: LucideIcon }[] = [
+  { id: "flappy", name: "Flappy Pet", unit: "walls", Icon: Bird },
+  { id: "satcatcher", name: "Sat Catcher", unit: "sats", Icon: Coins },
+  { id: "pickleball", name: "Pickleball", unit: "rally", Icon: Volleyball },
 ]
 
 /** Top 10 pets per game (each pet's best score), from the same leaderboards the pets show. */
@@ -44,7 +44,7 @@ export function LeaderboardSection() {
           <p className="mt-3 text-white/60">The best pets in every game. Scores come straight from the pets.</p>
         </div>
 
-        <div className="flex justify-center gap-2 mb-6" role="tablist" aria-label="Game">
+        <div className="flex flex-wrap justify-center gap-2 mb-6" role="tablist" aria-label="Game">
           {GAMES.map((g) => (
             <button
               key={g.id}
@@ -52,10 +52,11 @@ export function LeaderboardSection() {
               role="tab"
               aria-selected={game === g.id}
               onClick={() => setGame(g.id)}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                 game === g.id ? "bg-[#F7931A] text-[#1d1100]" : "bg-white/5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"
               }`}
             >
+              <g.Icon className="h-4 w-4" aria-hidden="true" />
               {g.name}
             </button>
           ))}

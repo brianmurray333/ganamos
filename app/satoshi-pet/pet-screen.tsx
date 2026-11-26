@@ -448,6 +448,8 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
           className="absolute inset-0 h-full w-full select-none"
           draggable={false}
         />
+        {/* The OLED's black glass: fills the window so the pixels sit inset from the bezel */}
+        <div aria-hidden="true" className="absolute z-10 left-[40.12%] top-[29.08%] w-[28.39%] h-[28.39%] rounded-[2px] bg-black" />
         <canvas
           ref={screenRef}
           width={W * 4}
@@ -469,7 +471,7 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
           }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          className={`absolute z-10 left-[40.12%] top-[29.08%] w-[28.39%] h-[28.39%] bg-black [image-rendering:pixelated] select-none
+          className={`absolute z-10 left-[41.82%] top-[30.78%] w-[24.99%] h-[24.99%] bg-black [image-rendering:pixelated] select-none
             [filter:drop-shadow(0_0_3px_rgba(200,220,255,0.5))]
             ${interactive ? "touch-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A]" : ""}`}
         />
@@ -486,11 +488,10 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
           />
         )}
       </div>
-      {interactive && (
-        <p className="mt-1 text-center text-xs text-white/45">
-          {focused ? "Space or tap to play" : "Tap the pet to play"}
-        </p>
-      )}
+      {/* Always takes its line, so the device doesn't shift when a game comes on */}
+      <p className={`mt-1 text-center text-xs text-white/45 ${interactive ? "" : "invisible"}`} aria-hidden={!interactive}>
+        {focused ? "Space or tap to play" : "Tap the pet to play"}
+      </p>
     </div>
   )
 }
