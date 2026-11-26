@@ -407,7 +407,7 @@ export default function SatoshiPetPage() {
                     A pocket pet that lives <span className="text-[#F7931A] sp-glow-text">on Bitcoin.</span>
                   </h1>
                   <p className="sp-rise mt-5 text-lg text-white/70 max-w-md" style={{ animationDelay: '160ms' }}>
-                    It reacts when you earn and spend sats, plays games, and makes Bitcoin something the whole family can hold.
+                    Kids earn sats to feed it, play to keep it happy, and watch their savings grow.
                   </p>
 
                   {/* Price */}
@@ -467,11 +467,6 @@ export default function SatoshiPetPage() {
             </section>
 
             {/* How it works: one pinned device whose screen follows Earn → Play → Care as you scroll */}
-            <div className="pt-16 sm:pt-24 px-4">
-              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance text-center max-w-3xl mx-auto">
-                A pet that runs on real work, real play and real sats
-              </h2>
-            </div>
             <PetStory />
 
             <LeaderboardSection />
