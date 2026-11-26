@@ -456,89 +456,59 @@ export default function SatoshiPetPage() {
               </div>
             </section>
 
-            {/* How it works: the pet's own screen */}
+            {/* How it works: the pet's own screen, in a render of the device */}
             <section className="py-16 sm:py-24">
-              <div className="max-w-6xl mx-auto px-4 flex flex-col gap-20 sm:gap-28">
-                <div className="text-center max-w-2xl mx-auto">
-                  <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance">A pet that runs on real work, real play and real sats</h2>
-                  <p className="mt-4 text-white/60">Every screen below is the pet&apos;s own, drawn from its firmware.</p>
-                </div>
+              <div className="max-w-5xl mx-auto px-4 flex flex-col gap-20 sm:gap-28">
+                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance text-center">
+                  A pet that runs on real work, real play and real sats
+                </h2>
 
-                {/* Jobs */}
-                <div className="grid md:grid-cols-2 gap-8 md:gap-14 items-center">
-                  <PetScreen mode="home" label="The pet's home screen, then a new job alert" className="w-full max-w-md mx-auto md:mx-0" />
-                  <div className="min-w-0">
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Earn</p>
                     <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Jobs keep it alive</h3>
-                    <p className="mt-4 text-white/65 leading-relaxed">
-                      Kids earn sats by doing jobs posted in Ganamos: chores from family, or fixes around the neighborhood.
-                      When a new job goes up, the pet lights up and shows the reward. Every sat they earn lands on the pet,
-                      and that&apos;s what pays for its food.
-                    </p>
-                    <ul className="mt-5 space-y-2 text-sm text-white/60">
-                      <li className="flex gap-2"><Check className="h-4 w-4 mt-0.5 shrink-0 text-[#F7931A]" aria-hidden="true" />Balance, coins, happiness and fullness on the home screen</li>
-                      <li className="flex gap-2"><Check className="h-4 w-4 mt-0.5 shrink-0 text-[#F7931A]" aria-hidden="true" />A chirp and a glow when a job or a payment arrives</li>
-                    </ul>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Kids earn sats doing jobs posted in Ganamos. Every sat lands on the pet, and pays for its food.</p>
                   </div>
+                  <PetScreen mode="home" label="The pet's home screen, then a new job alert" className="w-full max-w-4xl" />
                 </div>
 
-                {/* Games */}
-                <div className="grid md:grid-cols-2 gap-8 md:gap-14 items-center">
-                  <div className="md:order-2 w-full max-w-md mx-auto md:mx-0">
-                    <div className="mb-3 flex gap-2" role="tablist" aria-label="Games">
-                      {([["flappy", "Flappy Pet"], ["satcatcher", "Sat Catcher"]] as const).map(([id, name]) => (
-                        <button
-                          key={id}
-                          type="button"
-                          role="tab"
-                          aria-selected={gameTab === id}
-                          onClick={() => setGameTab(id)}
-                          className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                            gameTab === id ? "bg-[#F7931A] text-[#1d1100]" : "bg-white/5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"
-                          }`}
-                        >
-                          {name}
-                        </button>
-                      ))}
-                    </div>
-                    <PetScreen
-                      key={gameTab}
-                      mode={gameTab}
-                      label={gameTab === "flappy" ? "Play Flappy Pet: tap to flap" : "Play Sat Catcher: tap to turn around"}
-                    />
-                  </div>
-                  <div className="min-w-0 md:order-1">
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Play</p>
                     <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Games keep it happy</h3>
-                    <p className="mt-4 text-white/65 leading-relaxed">
-                      Every game makes the pet happier. Play Flappy Pet, Sat Catcher or Pickleball on one button, and chase the
-                      top of each game&apos;s leaderboard. Try one right here: tap the screen.
-                    </p>
-                    <p className="mt-4 text-white/65 leading-relaxed">
-                      Or play with friends. Open a room, and family and friends join from their own pets. Bet real sats if you
-                      want to (10 to 500 each), and the winner takes the pot. Pickleball is live, head to head; in Flappy Pet and
-                      Sat Catcher everyone takes a turn on the same course and the high score wins. If a game doesn&apos;t finish,
-                      everyone gets their sats back.
-                    </p>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Playing makes the pet happy. Play solo, or with friends for real sats: winner takes the pot.</p>
                   </div>
+                  <div className="flex gap-2" role="tablist" aria-label="Games">
+                    {([["flappy", "Flappy Pet"], ["satcatcher", "Sat Catcher"]] as const).map(([id, name]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-selected={gameTab === id}
+                        onClick={() => setGameTab(id)}
+                        className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                          gameTab === id ? "bg-[#F7931A] text-[#1d1100]" : "bg-white/5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                  <PetScreen
+                    key={gameTab}
+                    mode={gameTab}
+                    label={gameTab === "flappy" ? "Play Flappy Pet: tap to flap" : "Play Sat Catcher: tap to turn around"}
+                    className="w-full max-w-4xl -mt-2"
+                  />
                 </div>
 
-                {/* Food */}
-                <div className="grid md:grid-cols-2 gap-8 md:gap-14 items-center">
-                  <PetScreen mode="feed" label="The food menu, then the pet eating" className="w-full max-w-md mx-auto md:mx-0" />
-                  <div className="min-w-0">
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
                     <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Care</p>
                     <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Food keeps it fed</h3>
-                    <p className="mt-4 text-white/65 leading-relaxed">
-                      The pet gets hungry over the day, so it needs feeding a few times a day. Food costs the coins kids
-                      earned: a quick snack, a proper meal, or a feast that fills it right up. Let it go hungry or bored and it
-                      turns sad; leave it long enough and it won&apos;t make it.
-                    </p>
-                    <ul className="mt-5 space-y-2 text-sm text-white/60">
-                      <li className="flex gap-2"><Check className="h-4 w-4 mt-0.5 shrink-0 text-[#F7931A]" aria-hidden="true" />Three foods for every pet, from 100 to 1,000 coins</li>
-                      <li className="flex gap-2"><Check className="h-4 w-4 mt-0.5 shrink-0 text-[#F7931A]" aria-hidden="true" />Earning, saving and spending, all on one little screen</li>
-                    </ul>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Feed it a few times a day with the coins it earned. Forget, and it gets sad.</p>
                   </div>
+                  <PetScreen mode="feed" label="The food menu, then the pet eating" className="w-full max-w-4xl" />
                 </div>
               </div>
             </section>

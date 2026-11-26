@@ -2,8 +2,8 @@
 
 /**
  * The Satoshi Pet's 128x64 OLED, in the browser: the firmware's own sprites
- * (pet-sprites.ts) drawn at the device's resolution, thresholded to 1-bit like
- * the real screen, and scaled up with a soft glow.
+ * (pet-sprites.ts) and an Arial-metric 1-bit font, drawn at the device's
+ * resolution and scaled up inside a render of the device.
  *
  * Modes:
  *   home        the pet idling with its stats; now and then a NEW JOB! alert
@@ -21,6 +21,7 @@ import {
   FOODS,
   GAME_CHARACTER,
   HEART,
+  PIXEL_FONTS,
   ROCK,
   type Sprite,
 } from "./pet-sprites"
@@ -31,7 +32,7 @@ const W = 128
 const H = 64
 
 // ---------------------------------------------------------------------------
-// Drawing onto a 128x64 canvas, then thresholding to on/off pixels
+// Drawing onto a 128x64 canvas (everything is 1-bit: sprites and glyphs)
 // ---------------------------------------------------------------------------
 
 const spriteCache = new Map<string, HTMLCanvasElement>()
@@ -82,12 +83,17 @@ class Oled {
   sprite(s: Sprite, x: number, y: number, flip = false) {
     this.ctx.drawImage(spriteCanvas(s, flip), Math.round(x), Math.round(y))
   }
-  /** ArialMT_Plain_10 / _16 / _24 stand-ins; y is the top of the text like the firmware */
-  text(t: string, x: number, y: number, size: 10 | 16 | 24 = 10, align: CanvasTextAlign = "left") {
-    this.ctx.font = `${size === 10 ? 10 : size === 16 ? 15 : 22}px Arial, Helvetica, sans-serif`
-    this.ctx.textAlign = align
-    this.ctx.textBaseline = "top"
-    this.ctx.fillText(t, x, y + 1)
+  /** Firmware drawString: y is the top of the text; Arial-metric 1-bit glyphs */
+  text(t: string, x: number, y: number, size: 10 | 16 | 24 = 10, align: "left" | "center" | "right" = "left") {
+    const font = PIXEL_FONTS[String(size) as "10" | "16" | "24"]
+    let width = 0
+    for (const ch of t) width += (font.glyphs[ch] ?? font.glyphs["?"]).adv
+    let cx = Math.round(align === "center" ? x - width / 2 : align === "right" ? x - width : x)
+    for (const ch of t) {
+      const g = font.glyphs[ch] ?? font.glyphs["?"]
+      if (ch !== " ") this.sprite(g, cx, y - 1)
+      cx += g.adv
+    }
   }
   /** Snap anti-aliased text edges to on/off, like the real 1-bit panel */
   threshold() {
@@ -415,7 +421,6 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
       if (reduced && !scene.interactive && drawn) return
       drawn = true
       scene.frame(oled, now)
-      oled.threshold()
       out.imageSmoothingEnabled = false
       out.clearRect(0, 0, screen.width, screen.height)
       out.drawImage(off, 0, 0, screen.width, screen.height)
@@ -431,35 +436,59 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
 
   const interactive = mode === "flappy" || mode === "satcatcher"
   return (
-    <div className={`rounded-2xl bg-[#14161d] p-3 ring-1 ring-white/10 shadow-[0_0_60px_rgba(80,110,255,0.12)] ${className}`}>
-      <canvas
-        ref={screenRef}
-        width={W * 4}
-        height={H * 4}
-        role={interactive ? "button" : "img"}
-        aria-label={label}
-        tabIndex={interactive ? 0 : -1}
-        onPointerDown={(e) => {
-          if (!interactive) return
-          e.preventDefault()
-          press()
-        }}
-        onKeyDown={(e) => {
-          if (!interactive) return
-          if (e.key === " " || e.key === "Enter" || e.key === "ArrowUp") {
+    <div className={className}>
+      {/* The device, straight on (rendered from the case STLs); the screen sits in its window */}
+      <div className="relative w-full aspect-[2/1]">
+        <img
+          src="/satoshi-pet/pet-frame.webp"
+          alt=""
+          aria-hidden="true"
+          width={1400}
+          height={700}
+          className="absolute inset-0 h-full w-full select-none"
+          draggable={false}
+        />
+        <canvas
+          ref={screenRef}
+          width={W * 4}
+          height={H * 4}
+          role={interactive ? "button" : "img"}
+          aria-label={label}
+          tabIndex={interactive ? 0 : -1}
+          onPointerDown={(e) => {
+            if (!interactive) return
             e.preventDefault()
             press()
-          }
-        }}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        className={`block w-full aspect-[2/1] rounded-md bg-black [image-rendering:pixelated] select-none
-          [filter:drop-shadow(0_0_6px_rgba(190,215,255,0.45))]
-          ${interactive ? "touch-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A]" : ""}`}
-      />
+          }}
+          onKeyDown={(e) => {
+            if (!interactive) return
+            if (e.key === " " || e.key === "Enter" || e.key === "ArrowUp") {
+              e.preventDefault()
+              press()
+            }
+          }}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          className={`absolute z-10 left-[40.12%] top-[29.08%] w-[28.39%] h-[28.39%] bg-black [image-rendering:pixelated] select-none
+            [filter:drop-shadow(0_0_3px_rgba(200,220,255,0.5))]
+            ${interactive ? "touch-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A]" : ""}`}
+        />
+        {interactive && (
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            onPointerDown={(e) => {
+              e.preventDefault()
+              press()
+            }}
+            className="absolute inset-0 cursor-pointer bg-transparent"
+          />
+        )}
+      </div>
       {interactive && (
-        <p className="mt-2 text-center text-xs text-white/45">
-          {focused ? "Space or tap to play" : "Tap the screen to play"}
+        <p className="mt-1 text-center text-xs text-white/45">
+          {focused ? "Space or tap to play" : "Tap the pet to play"}
         </p>
       )}
     </div>
