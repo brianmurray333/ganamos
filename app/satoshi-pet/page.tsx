@@ -14,7 +14,7 @@ import {
   BatteryCharging, Volume2, CircleDot, Cable
 } from "lucide-react"
 import { toast } from "@/components/ui/toast"
-import { PetScreen } from "./pet-screen"
+import { PetStory } from "./pet-story"
 import { LeaderboardSection } from "./leaderboard-section"
 import { 
   createPetOrder, 
@@ -84,7 +84,6 @@ export default function SatoshiPetPage() {
   const [isLoadingPrice, setIsLoadingPrice] = useState(true)
   const setupRef = useRef<HTMLDivElement>(null)
   const [headerSolid, setHeaderSolid] = useState(false)
-  const [gameTab, setGameTab] = useState<'flappy' | 'satcatcher'>('flappy')
 
   // Checkout starts at the top of the page, not wherever the landing page was scrolled to
   useEffect(() => {
@@ -467,62 +466,13 @@ export default function SatoshiPetPage() {
               </div>
             </section>
 
-            {/* How it works: the pet's own screen, in a render of the device */}
-            <section className="py-16 sm:py-24">
-              <div className="max-w-5xl mx-auto px-4 flex flex-col gap-20 sm:gap-28">
-                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance text-center">
-                  A pet that runs on real work, real play and real sats
-                </h2>
-
-                <div className="flex flex-col items-center gap-6 text-center">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Earn</p>
-                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Jobs keep it alive</h3>
-                    <p className="mt-3 text-white/65 max-w-md mx-auto">Kids earn sats doing jobs posted in Ganamos. Every sat lands on the pet, and pays for its food.</p>
-                  </div>
-                  <PetScreen mode="home" label="The pet's home screen, then a new job alert" className="w-full max-w-4xl" />
-                </div>
-
-                <div className="flex flex-col items-center gap-6 text-center">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Play</p>
-                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Games keep it happy</h3>
-                    <p className="mt-3 text-white/65 max-w-md mx-auto">Playing makes the pet happy. Play solo, or with friends for real sats: winner takes the pot.</p>
-                  </div>
-                  <div className="flex gap-2" role="tablist" aria-label="Games">
-                    {([["flappy", "Flappy Pet"], ["satcatcher", "Sat Catcher"]] as const).map(([id, name]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        role="tab"
-                        aria-selected={gameTab === id}
-                        onClick={() => setGameTab(id)}
-                        className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                          gameTab === id ? "bg-[#F7931A] text-[#1d1100]" : "bg-white/5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"
-                        }`}
-                      >
-                        {name}
-                      </button>
-                    ))}
-                  </div>
-                  <PetScreen
-                    key={gameTab}
-                    mode={gameTab}
-                    label={gameTab === "flappy" ? "Play Flappy Pet: tap to flap" : "Play Sat Catcher: tap to turn around"}
-                    className="w-full max-w-4xl -mt-2"
-                  />
-                </div>
-
-                <div className="flex flex-col items-center gap-6 text-center">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Care</p>
-                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Food keeps it fed</h3>
-                    <p className="mt-3 text-white/65 max-w-md mx-auto">Feed it a few times a day with the coins it earned. Forget, and it gets sad.</p>
-                  </div>
-                  <PetScreen mode="feed" label="The food menu, then the pet eating" className="w-full max-w-4xl" />
-                </div>
-              </div>
-            </section>
+            {/* How it works: one pinned device whose screen follows Earn → Play → Care as you scroll */}
+            <div className="pt-16 sm:pt-24 px-4">
+              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance text-center max-w-3xl mx-auto">
+                A pet that runs on real work, real play and real sats
+              </h2>
+            </div>
+            <PetStory />
 
             <LeaderboardSection />
 

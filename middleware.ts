@@ -99,6 +99,11 @@ export async function middleware(req: NextRequest) {
     host.includes("satoshi.pet")
 
   if (isSatoshiPetDomain) {
+    // The page's own data calls (same origin): leaderboard scores and the BTC
+    // price. Anything else on this domain still goes to the landing page.
+    if (path === "/api/leaderboard" || path === "/api/bitcoin-price") {
+      return res
+    }
     // If at root, rewrite to /satoshi-pet
     if (path === "/" || path === "") {
       return NextResponse.rewrite(new URL("/satoshi-pet", req.url))
