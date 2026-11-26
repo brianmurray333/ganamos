@@ -83,15 +83,15 @@ export function PetStory() {
 
   return (
     <section ref={sectionRef} aria-label="How Satoshi Pet works" className="relative h-[320svh] md:-mt-16">
-      <div className="sticky top-0 flex h-[100svh] flex-col gap-8 overflow-hidden pt-[clamp(4.5rem,13svh,9rem)] md:gap-12">
+      <div className="sticky top-0 flex h-[100svh] flex-col gap-8 overflow-hidden pt-[clamp(4.25rem,11svh,9rem)] max-md:gap-4 md:gap-12">
         {/* The heading rides along with the pinned scene, so there's no gap above it */}
-        <h2 className="mx-auto max-w-3xl px-4 text-center text-3xl font-bold tracking-tight text-balance sm:text-4xl">
+        <h2 className="mx-auto max-w-3xl px-4 text-center text-2xl font-bold tracking-tight text-balance sm:text-4xl">
           Make Bitcoin physical, fun and rewarding for your kids
         </h2>
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-6 px-4 md:grid-cols-[minmax(0,5fr)_minmax(0,8fr)] md:gap-10">
+        <div className="mx-auto grid w-full max-w-6xl items-center gap-3 px-4 md:grid-cols-[minmax(0,5fr)_minmax(0,8fr)] md:gap-10">
           {/* Copy: one step at a time, sliding through as you scroll */}
           <div className="relative">
-            <div className="relative h-[12.5rem] sm:h-[13rem] md:h-[16rem]">
+            <div className="relative h-[11rem] sm:h-[13rem] md:h-[16rem]">
               {STEPS.map((s, i) => {
                 const active = i === step
                 return (
@@ -103,7 +103,7 @@ export function PetStory() {
                     }`}
                   >
                     <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">{s.eyebrow}</p>
-                    <h3 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{s.title}</h3>
+                    <h3 className="mt-2 text-2xl font-bold tracking-tight sm:text-4xl">{s.title}</h3>
                     <p className="mx-auto mt-3 max-w-md text-white/65 md:mx-0">{s.body}</p>
                     {i === 1 && (
                       <div className="mt-5 flex justify-center gap-2 md:justify-start" role="tablist" aria-label="Games">
@@ -131,7 +131,7 @@ export function PetStory() {
             </div>
 
             {/* Where you are: Earn / Play / Care */}
-            <div className="mt-4 flex justify-center gap-3 md:justify-start" aria-label="Steps">
+            <div className="mt-1 flex justify-center gap-3 md:mt-4 md:justify-start" aria-label="Steps">
               {STEPS.map((s, i) => (
                 <button
                   key={s.eyebrow}
@@ -148,7 +148,7 @@ export function PetStory() {
           </div>
 
           {/* The device stays; its screen follows the step */}
-          <PetScreen mode={mode} label={label} className="mx-auto w-full max-w-3xl" />
+          <PetScreen mode={mode} label={label} className="mx-auto w-full max-w-3xl max-md:max-w-[min(100%,calc((100svh-24rem)*2))]" />
         </div>
       </div>
     </section>
