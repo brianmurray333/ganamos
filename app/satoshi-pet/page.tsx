@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
-  Zap, Wifi, Check, ArrowRight, 
+  Cat, Zap, Wifi, Check, ArrowRight, 
   ChevronDown, Loader2, CheckCircle2, Bitcoin,
   Smartphone, Link2, Github, Wrench, Cpu,
   Download, ExternalLink, ShoppingCart, Printer, GitPullRequest,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "@/components/ui/toast"
 import { PetScreen } from "./pet-screen"
+import { LeaderboardSection } from "./leaderboard-section"
 import { 
   createPetOrder, 
   calculateShippingCost,
@@ -336,27 +337,37 @@ export default function SatoshiPetPage() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2 shrink-0">
             <img src="/images/bitcoin-logo.png" alt="" width={28} height={28} className="h-7 w-7 drop-shadow-[0_0_10px_rgba(247,147,26,0.6)]" />
-            <span className="font-bold text-lg tracking-tight hidden min-[400px]:inline">Satoshi Pet</span>
+            <span className="font-bold text-lg tracking-tight hidden md:inline">Satoshi Pet</span>
           </a>
-          <nav className="flex items-center gap-1 sm:gap-3" aria-label="Main">
+          <nav className="flex items-center gap-0.5 sm:gap-3" aria-label="Main">
             <a
               href="#setup"
               onClick={(e) => goToSection(e, 'setup')}
               className="px-2 py-1.5 rounded-md text-sm text-white/70 hover:text-white hover:bg-white/10"
             >
-              Setup<span className="hidden sm:inline"> Guide</span>
+              Setup
+            </a>
+            <a
+              href="#leaderboard"
+              onClick={(e) => goToSection(e, 'leaderboard')}
+              className="px-2 py-1.5 rounded-md text-sm text-white/70 hover:text-white hover:bg-white/10"
+            >
+              Leaderboard
             </a>
             <a
               href="#diy"
               onClick={(e) => goToSection(e, 'diy')}
+              aria-label="Open source"
               className="px-2 py-1.5 rounded-md text-sm text-white/70 hover:text-white hover:bg-white/10 flex items-center"
             >
-              <Github className="h-4 w-4 mr-1 hidden sm:inline" aria-hidden="true" />
-              <span className="sm:hidden">DIY</span>
-              <span className="hidden sm:inline">Build Your Own</span>
+              <Github className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Open source</span>
             </a>
-            <Button asChild size="sm" variant="outline" className="border-white/25 bg-white/5 text-white hover:bg-white/15 hover:text-white">
-              <a href="https://ganamos.earth/connect-pet">Connect Pet</a>
+            <Button asChild size="sm" variant="outline" className="ml-1 border-white/25 bg-white/5 text-white hover:bg-white/15 hover:text-white">
+              <a href="https://ganamos.earth/connect-pet">
+                <Cat className="h-4 w-4 mr-1.5" strokeWidth={2} aria-hidden="true" />
+                Connect Pet
+              </a>
             </Button>
           </nav>
         </div>
@@ -512,6 +523,8 @@ export default function SatoshiPetPage() {
                 </div>
               </div>
             </section>
+
+            <LeaderboardSection />
 
             {/* Setup Guide */}
             <section ref={setupRef} id="setup" className="py-16 sm:py-24 scroll-mt-20">
