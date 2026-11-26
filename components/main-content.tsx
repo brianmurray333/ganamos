@@ -17,6 +17,7 @@ export function MainContent({ children }: { children: React.ReactNode }) {
 
   return (
     <main
+      data-app-main=""
       className={cn(
         "min-h-[calc(100vh-4rem)] mx-auto bg-background pt-[env(safe-area-inset-top)]",
         showHeaderPadding && "lg:pt-16"
