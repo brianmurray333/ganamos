@@ -82,8 +82,12 @@ export function PetStory() {
         : "The food menu, then the pet eating"
 
   return (
-    <section ref={sectionRef} aria-label="How Satoshi Pet works" className="relative h-[320svh]">
-      <div className="sticky top-0 flex h-[100svh] items-center overflow-hidden pt-16">
+    <section ref={sectionRef} aria-label="How Satoshi Pet works" className="relative h-[320svh] md:-mt-16">
+      <div className="sticky top-0 flex h-[100svh] flex-col gap-8 overflow-hidden pt-[clamp(4.5rem,13svh,9rem)] md:gap-12">
+        {/* The heading rides along with the pinned scene, so there's no gap above it */}
+        <h2 className="mx-auto max-w-3xl px-4 text-center text-3xl font-bold tracking-tight text-balance sm:text-4xl">
+          Make Bitcoin physical, fun and rewarding for your kids
+        </h2>
         <div className="mx-auto grid w-full max-w-6xl items-center gap-6 px-4 md:grid-cols-[minmax(0,5fr)_minmax(0,8fr)] md:gap-10">
           {/* Copy: one step at a time, sliding through as you scroll */}
           <div className="relative">
