@@ -114,3 +114,26 @@ describe('GET /api/leaderboard?game=&best=1 (satoshipet.com leaderboard)', () =>
     expect((await get('?game=chess')).status).toBe(400)
   })
 })
+
+describe('GET /api/leaderboard?best=1 with one pet hogging the top', () => {
+  it('still lists other pets when one pet has more than a page of top attempts', async () => {
+    const hog = await seedUser({ name: 'LB Hog' })
+    const hogDevice = await seedDevice(hog.id, { petName: 'Hog' })
+    await queryDB(
+      `INSERT INTO flappy_bird_game (device_id, user_id, score, game)
+       SELECT $1::uuid, $2::uuid, $3::int + g, 'pickleball' FROM generate_series(1, 600) g`,
+      [hogDevice.id, hog.id, BASE + 1000]
+    )
+    const other = await seedUser({ name: 'LB Other' })
+    const otherDevice = await seedDevice(other.id, { petName: 'Other' })
+    await queryDB(
+      `INSERT INTO flappy_bird_game (device_id, user_id, score, game) VALUES ($1::uuid, $2::uuid, $3::int, 'pickleball')`,
+      [otherDevice.id, other.id, BASE + 10]
+    )
+    const res = await GET(new NextRequest('http://localhost:3000/api/leaderboard?game=pickleball&best=1'))
+    const names = (await res.json()).leaderboard.map((e: any) => e.petName)
+    expect(names[0]).toBe('Hog')
+    expect(names).toContain('Other')
+    expect(names.filter((n: string) => n === 'Hog')).toHaveLength(1)
+  })
+})

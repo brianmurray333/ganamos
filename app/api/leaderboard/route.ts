@@ -45,10 +45,14 @@ export async function GET(request: NextRequest): Promise<NextResponse<Leaderboar
     const bestPerPet = params.get('best') === '1';
     const supabase = createServerSupabaseClient();
 
-    // Query top 20 scores with device pet names
-    const { data: scores, error: scoresError } = await supabase
-      .from('flappy_bird_game')
-      .select(`
+    // Top scores, best first. With best=1, page through until ten different
+    // pets are found (one pet's many attempts can't crowd the others out).
+    const PAGE = 500;
+    const MAX_PAGES = 20;
+    const select = () =>
+      supabase
+        .from('flappy_bird_game')
+        .select(`
         score,
         created_at,
         device_id,
@@ -56,10 +60,31 @@ export async function GET(request: NextRequest): Promise<NextResponse<Leaderboar
           pet_name
         )
       `)
-      .eq('game', game)
-      .order('score', { ascending: false })
-      .order('created_at', { ascending: true })
-      .limit(bestPerPet ? 500 : 20);
+        .eq('game', game)
+        .order('score', { ascending: false })
+        .order('created_at', { ascending: true });
+
+    let scores: any[] | null = null;
+    let scoresError: any = null;
+    if (!bestPerPet) {
+      ({ data: scores, error: scoresError } = await select().limit(20));
+    } else {
+      const seen = new Set<string>();
+      const best: any[] = [];
+      for (let page = 0; page < MAX_PAGES && best.length < 10; page++) {
+        const { data, error } = await select().range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) { scoresError = error; break; }
+        for (const r of data || []) {
+          const key = String(r.device_id);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          best.push(r);
+          if (best.length === 10) break;
+        }
+        if (!data || data.length < PAGE) break;
+      }
+      scores = best;
+    }
 
     if (scoresError) {
       console.error('Error fetching leaderboard scores:', scoresError);
@@ -85,18 +110,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<Leaderboar
     }
 
     // Transform data to leaderboard format
-    // best=1: keep each pet's best score (rows are already best-first)
-    let rows = scores || [];
-    if (bestPerPet) {
-      const seen = new Set<string>();
-      rows = rows.filter((r) => {
-        const key = String(r.device_id);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      }).slice(0, 10);
-    }
-    const leaderboard: LeaderboardEntry[] = rows.map((entry, index) => ({
+    const leaderboard: LeaderboardEntry[] = (scores || []).map((entry, index) => ({
       rank: index + 1,
       petName: (entry.devices as any)?.pet_name || 'Anonymous Pet',
       score: entry.score,

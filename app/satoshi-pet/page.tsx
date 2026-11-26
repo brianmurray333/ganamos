@@ -337,7 +337,7 @@ export default function SatoshiPetPage() {
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2 shrink-0">
             <img src="/images/bitcoin-logo.png" alt="" width={28} height={28} className="h-7 w-7 drop-shadow-[0_0_10px_rgba(247,147,26,0.6)]" />
-            <span className="font-bold text-lg tracking-tight hidden min-[400px]:inline">Satoshi Pet</span>
+            <span className="font-bold text-lg tracking-tight hidden md:inline">Satoshi Pet</span>
           </a>
           <nav className="flex items-center gap-0.5 sm:gap-3" aria-label="Main">
             <a
