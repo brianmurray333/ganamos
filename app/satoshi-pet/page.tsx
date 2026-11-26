@@ -407,7 +407,22 @@ export default function SatoshiPetPage() {
                     A pocket pet that lives <span className="text-[#F7931A] sp-glow-text">on Bitcoin.</span>
                   </h1>
                   <p className="sp-rise mt-5 text-lg text-white/70 max-w-md" style={{ animationDelay: '160ms' }}>
-                    Kids earn sats to feed it, play to keep it happy, and watch their savings grow.
+                    Kids earn sats on{" "}
+                    <a
+                      href="https://ganamos.earth"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group inline-flex items-baseline gap-1.5 whitespace-nowrap align-baseline text-white"
+                    >
+                      <img src="/favicon.png" alt="" aria-hidden="true" width={20} height={20} className="h-5 w-5 self-center rounded-full" />
+                      <span
+                        className="underline decoration-dotted decoration-[#22c55e]/70 decoration-2 underline-offset-[6px] transition-colors group-hover:decoration-[#22c55e]"
+                        style={{ fontFamily: "var(--font-pacifico), Pacifico, cursive" }}
+                      >
+                        Ganamos!
+                      </span>
+                    </a>{" "}
+                    to feed their pet, play to keep it happy, and watch their savings grow.
                   </p>
 
                   {/* Price */}
