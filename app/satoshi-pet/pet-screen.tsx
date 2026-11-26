@@ -471,8 +471,7 @@ export function PetScreen({ mode, label, className = "" }: { mode: PetScreenMode
           }}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          className={`absolute z-10 left-[41.82%] top-[30.78%] w-[24.99%] h-[24.99%] bg-black [image-rendering:pixelated] select-none
-            [filter:drop-shadow(0_0_3px_rgba(200,220,255,0.5))]
+          className={`absolute z-10 left-[43.24%] top-[32.20%] w-[22.15%] h-[22.15%] bg-black [image-rendering:pixelated] select-none
             ${interactive ? "touch-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-[#F7931A]" : ""}`}
         />
         {interactive && (
