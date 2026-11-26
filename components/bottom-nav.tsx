@@ -155,6 +155,7 @@ export function BottomNav() {
       {/* Docked bottom navigation bar */}
     <nav
       id="bottom-nav"
+      data-app-chrome=""
       aria-label="Main"
         className="fixed bottom-0 left-0 z-50 w-full h-[82px] bg-white/80 backdrop-blur-md dark:bg-gray-900/80 pb-[env(safe-area-inset-bottom)] lg:hidden"
     >

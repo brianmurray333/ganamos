@@ -7,13 +7,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { 
-  Heart, Zap, Wifi, Package, Check, ArrowRight, 
+  Zap, Wifi, Check, ArrowRight, 
   ChevronDown, Loader2, CheckCircle2, Bitcoin,
   Smartphone, Link2, Github, Wrench, Cpu,
   Download, ExternalLink, ShoppingCart, Printer, GitPullRequest,
   BatteryCharging, Volume2, CircleDot, Cable
 } from "lucide-react"
 import { toast } from "@/components/ui/toast"
+import { PetScreen } from "./pet-screen"
 import { 
   createPetOrder, 
   calculateShippingCost,
@@ -82,6 +83,7 @@ export default function SatoshiPetPage() {
   const [isLoadingPrice, setIsLoadingPrice] = useState(true)
   const setupRef = useRef<HTMLDivElement>(null)
   const [headerSolid, setHeaderSolid] = useState(false)
+  const [gameTab, setGameTab] = useState<'flappy' | 'satcatcher'>('flappy')
 
   // Checkout starts at the top of the page, not wherever the landing page was scrolled to
   useEffect(() => {
@@ -240,29 +242,6 @@ export default function SatoshiPetPage() {
     setIsCreatingOrder(false)
   }
 
-  // Feature list
-  const features = [
-    {
-      icon: <Heart className="h-6 w-6 text-[#F7931A]" aria-hidden="true" />,
-      title: "Real Bitcoin Connection",
-      description: "Your pet reacts when you earn or spend sats - making Bitcoin tangible and fun"
-    },
-    {
-      icon: <Zap className="h-6 w-6 text-[#F7931A]" aria-hidden="true" />,
-      title: "Educational & Fun",
-      description: "Perfect for teaching kids (and adults!) Bitcoin concepts through interactive play"
-    },
-    {
-      icon: <Wifi className="h-6 w-6 text-[#F7931A]" aria-hidden="true" />,
-      title: "Always Connected",
-      description: "WiFi-enabled device syncs with your Ganamos wallet in real-time"
-    },
-    {
-      icon: <Package className="h-6 w-6 text-[#F7931A]" aria-hidden="true" />,
-      title: "Portable Design",
-      description: "Rechargeable battery with USB-C charging - carry Bitcoin everywhere"
-    },
-  ]
 
   const setupSteps = [
     {
@@ -442,8 +421,7 @@ export default function SatoshiPetPage() {
                     </span>
                     {PET_PREORDER_ACTIVE && (
                       <span className="basis-full text-sm text-white/60">
-                        <span className="text-[#F7931A]">Save {((1 - PET_DEVICE_PREORDER_PRICE_SATS / PET_DEVICE_LIST_PRICE_SATS) * 100).toFixed(0)}% with pre-order pricing.</span>{' '}
-                        {preorderShipEstimateText()}
+                        <span className="text-[#F7931A]">Save {((1 - PET_DEVICE_PREORDER_PRICE_SATS / PET_DEVICE_LIST_PRICE_SATS) * 100).toFixed(0)}% with pre-order pricing.</span>
                       </span>
                     )}
                   </div>
@@ -472,28 +450,65 @@ export default function SatoshiPetPage() {
                   </div>
 
                   <p className="sp-rise text-sm text-white/55 mt-5" style={{ animationDelay: '400ms' }}>
-                    Pay with Bitcoin Lightning · Ships within the US · <a href="https://ganamos.earth/connect-pet" className="underline underline-offset-2 hover:text-white">I already have one</a>
+                    Pay with Bitcoin Lightning · Ships within the US
                   </p>
                 </div>
               </div>
             </section>
 
-            {/* Features */}
+            {/* How it works: the pet's own screen, in a render of the device */}
             <section className="py-16 sm:py-24">
-              <div className="max-w-6xl mx-auto px-4">
-                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-center mb-12 text-balance">
-                  Why Satoshi Pet?
+              <div className="max-w-5xl mx-auto px-4 flex flex-col gap-20 sm:gap-28">
+                <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-balance text-center">
+                  A pet that runs on real work, real play and real sats
                 </h2>
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {features.map((feature) => (
-                    <div key={feature.title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-sm">
-                      <div className="w-12 h-12 rounded-xl bg-[#F7931A]/10 ring-1 ring-[#F7931A]/30 flex items-center justify-center mb-4 shadow-[0_0_24px_rgba(247,147,26,0.15)]">
-                        {feature.icon}
-                      </div>
-                      <h3 className="font-semibold mb-2">{feature.title}</h3>
-                      <p className="text-white/60 text-sm leading-relaxed">{feature.description}</p>
-                    </div>
-                  ))}
+
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Earn</p>
+                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Jobs keep it alive</h3>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Kids earn sats doing jobs posted in Ganamos. Every sat lands on the pet, and pays for its food.</p>
+                  </div>
+                  <PetScreen mode="home" label="The pet's home screen, then a new job alert" className="w-full max-w-4xl" />
+                </div>
+
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Play</p>
+                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Games keep it happy</h3>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Playing makes the pet happy. Play solo, or with friends for real sats: winner takes the pot.</p>
+                  </div>
+                  <div className="flex gap-2" role="tablist" aria-label="Games">
+                    {([["flappy", "Flappy Pet"], ["satcatcher", "Sat Catcher"]] as const).map(([id, name]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-selected={gameTab === id}
+                        onClick={() => setGameTab(id)}
+                        className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                          gameTab === id ? "bg-[#F7931A] text-[#1d1100]" : "bg-white/5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                  <PetScreen
+                    key={gameTab}
+                    mode={gameTab}
+                    label={gameTab === "flappy" ? "Play Flappy Pet: tap to flap" : "Play Sat Catcher: tap to turn around"}
+                    className="w-full max-w-4xl -mt-2"
+                  />
+                </div>
+
+                <div className="flex flex-col items-center gap-6 text-center">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#F7931A]">Care</p>
+                    <h3 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight">Food keeps it fed</h3>
+                    <p className="mt-3 text-white/65 max-w-md mx-auto">Feed it a few times a day with the coins it earned. Forget, and it gets sad.</p>
+                  </div>
+                  <PetScreen mode="feed" label="The food menu, then the pet eating" className="w-full max-w-4xl" />
                 </div>
               </div>
             </section>

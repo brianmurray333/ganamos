@@ -42,8 +42,15 @@ export default function SatoshiPetLayout({
 }: {
   children: React.ReactNode
 }) {
-  // This layout provides metadata for SEO. The bottom nav is hidden via 
-  // the pathname check in bottom-nav.tsx
-  return <>{children}</>
+  // satoshipet.com has its own header. The Ganamos header and bottom nav hide
+  // themselves on /satoshi-pet paths, but on satoshipet.com the browser path is
+  // "/" (middleware rewrite), so they would render; hide them here instead. As a
+  // stylesheet in this layout it applies in the server render too (no flash).
+  return (
+    <>
+      <style>{`[data-app-chrome]{display:none!important}main[data-app-main]{padding-top:0!important;background:transparent!important}`}</style>
+      {children}
+    </>
+  )
 }
 
